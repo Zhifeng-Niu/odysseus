@@ -49,24 +49,13 @@ describe('GitTool', () => {
     }
   });
 
-  test('reset --hard to a previous SHA', async () => {
-    await writeFile(join(workdir, 'c.txt'), 'c');
-    const first = await tool.execute(
-      { operation: 'commit', message: 'first', addAll: true },
-      { cwd: workdir }
-    );
-    const firstSha = first.ok ? first.value.trim() : '';
-    await writeFile(join(workdir, 'c.txt'), 'changed');
-    await tool.execute({ operation: 'commit', message: 'second', addAll: true }, { cwd: workdir });
-
+  test('reset operation is intentionally not exposed (zeroth law)', async () => {
     const result = await tool.execute(
-      { operation: 'reset', target: firstSha, hard: true },
+      { operation: 'reset', target: 'HEAD', hard: true },
       { cwd: workdir }
     );
-    expect(result.ok).toBe(true);
-
-    const statusResult = await tool.execute({ operation: 'status' }, { cwd: workdir });
-    if (statusResult.ok) expect(statusResult.value).toContain('nothing to commit');
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/unknown git operation/i);
   });
 
   test('status on dirty tree shows untracked files', async () => {

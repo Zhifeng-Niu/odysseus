@@ -1,23 +1,23 @@
 import { execFileNoThrow } from '../util/exec.js';
 import type { Tool, ToolContext, ToolResult } from './types.js';
 
-type GitOperation = 'commit' | 'log' | 'reset' | 'status' | 'rev-parse' | 'diff';
+type GitOperation = 'commit' | 'log' | 'status' | 'rev-parse' | 'diff';
 
 export class GitTool implements Tool {
   readonly name = 'git';
   readonly description =
-    'Git wrapper. Operations: commit, log, reset, status, rev-parse, diff. Uses execFile (no shell).';
+    'Git wrapper. Operations: commit, log, status, rev-parse, diff. Uses execFile (no shell). ' +
+    'Note: git reset is intentionally NOT exposed — the Cerebellum orchestrator owns rollback via the session-scoped rollbackTo primitive (design spec Section 6.1, zeroth law).';
   readonly parameters = {
     type: 'object',
     properties: {
       operation: {
         type: 'string',
-        enum: ['commit', 'log', 'reset', 'status', 'rev-parse', 'diff'],
+        enum: ['commit', 'log', 'status', 'rev-parse', 'diff'],
       },
       message: { type: 'string', description: 'commit message (operation=commit)' },
       addAll: { type: 'boolean', description: 'git add -A before commit (operation=commit)' },
-      target: { type: 'string', description: 'SHA or ref (operation=reset/diff)' },
-      hard: { type: 'boolean', description: '--hard flag (operation=reset)' },
+      target: { type: 'string', description: 'SHA or ref (operation=diff)' },
       limit: { type: 'number', description: 'commit count (operation=log)' },
       rev: { type: 'string', description: 'revision (operation=rev-parse, default HEAD)' },
     },
@@ -32,8 +32,6 @@ export class GitTool implements Tool {
           return await this.commit(args, ctx);
         case 'log':
           return await this.log(args, ctx);
-        case 'reset':
-          return await this.reset(args, ctx);
         case 'status':
           return await this.status(ctx);
         case 'rev-parse':
@@ -92,16 +90,6 @@ export class GitTool implements Tool {
       return { ok: false, error: `git log failed: ${result.stderr}` };
     }
     return { ok: true, value: result.stdout };
-  }
-
-  private async reset(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
-    const target = String(args.target ?? 'HEAD');
-    const cmd = args.hard ? ['reset', '--hard', target] : ['reset', target];
-    const result = await execFileNoThrow('git', cmd, { cwd: ctx.cwd });
-    if (result.exitCode !== 0) {
-      return { ok: false, error: `git reset failed: ${result.stderr}` };
-    }
-    return { ok: true, value: `reset to ${target}` };
   }
 
   private async status(ctx: ToolContext): Promise<ToolResult> {
