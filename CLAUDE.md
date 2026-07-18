@@ -6,7 +6,7 @@ Spike Phase of Odysseus v2. Iteration 0 is hand-written; from Iteration 1 the ag
 
 ## Architecture
 
-Single TypeScript ESM package, ~1500 LOC across 19 source files at Iteration 0 (the original design spec estimated ~530; actual came in larger once all primitives, retry logic, and the orchestrator were wired together):
+Single TypeScript ESM package, ~1500 LOC across 20 source files at Iteration 0 (the original design spec estimated ~530; actual came in larger once all primitives, retry logic, and the orchestrator were wired together):
 - `src/agent/` — outer loop, context, prompt builder
 - `src/llm/` — GLM-5.2 provider (OpenAI-compatible), retry
 - `src/tools/` — registry, file tools, git tool
