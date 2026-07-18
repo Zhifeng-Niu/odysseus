@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+.env.local
+*.log
+.odysseus/trace.jsonl
+coverage/
+.vitest-cache/
+.DS_Store
+.claude/
