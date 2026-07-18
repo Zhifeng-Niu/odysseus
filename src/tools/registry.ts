@@ -3,10 +3,19 @@ import type { Tool, ToolContext, ToolResult, ToolSpec } from './types.js';
 export class ToolRegistry {
   private readonly tools = new Map<string, Tool>();
 
+  /**
+   * Register a tool. If a tool with the same name already exists, it is
+   * silently replaced (last-write-wins). Callers are responsible for
+   * ensuring no unintended shadowing occurs at registration sites.
+   */
   register(tool: Tool): void {
     this.tools.set(tool.name, tool);
   }
 
+  /**
+   * Look up a tool by name. Returns `undefined` if no tool is registered
+   * under that name.
+   */
   get(name: string): Tool | undefined {
     return this.tools.get(name);
   }

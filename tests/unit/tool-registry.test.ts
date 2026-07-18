@@ -65,4 +65,29 @@ describe('ToolRegistry', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toBe('boom');
   });
+
+  test('register replaces existing tool with the same name (last-write-wins)', () => {
+    const registry = new ToolRegistry();
+    registry.register(makeTool('echo', 'first'));
+    registry.register(makeTool('echo', 'second'));
+
+    const result = registry.listSpecs();
+    expect(result).toHaveLength(1);
+
+    return registry.dispatch('echo', { input: 'x' }, { cwd: '/tmp' }).then((r) => {
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.value).toBe('second');
+    });
+  });
+
+  test('get returns the registered tool or undefined', () => {
+    const registry = new ToolRegistry();
+    registry.register(makeTool('echo', 'echoed'));
+
+    const found = registry.get('echo');
+    expect(found?.name).toBe('echo');
+
+    const missing = registry.get('nope');
+    expect(missing).toBeUndefined();
+  });
 });
