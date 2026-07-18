@@ -45,5 +45,14 @@ export async function rollbackTo(input: RollbackInput): Promise<RollbackResult> 
     return { ok: false, error: `git reset failed: ${reset.stderr.trim()}` };
   }
 
+  // Remove untracked files written during ACT so failed changes are fully discarded.
+  // `-d` includes directories; `-f` is non-interactive; gitignored files are preserved.
+  const clean = await execFileNoThrow('git', ['clean', '-fd'], {
+    cwd: input.cwd,
+  });
+  if (clean.exitCode !== 0) {
+    return { ok: false, error: `git clean failed: ${clean.stderr.trim()}` };
+  }
+
   return { ok: true, sha: input.sha };
 }

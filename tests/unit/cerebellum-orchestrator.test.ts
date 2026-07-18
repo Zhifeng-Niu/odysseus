@@ -14,6 +14,15 @@ async function initRepo(dir: string): Promise<void> {
   await execFileNoThrow('git', ['config', 'user.name', 'T'], { cwd: dir });
 }
 
+function extractToolCalls(content: string): unknown {
+  try {
+    const parsed = JSON.parse(content) as { toolCalls?: unknown };
+    return parsed.toolCalls;
+  } catch {
+    return undefined;
+  }
+}
+
 function makeMockProvider(responses: string[]): LLMProvider {
   let call = 0;
   return {
@@ -25,7 +34,7 @@ function makeMockProvider(responses: string[]): LLMProvider {
         model: 'mock',
         usage: { inputTokens: 10, outputTokens: 5 },
         finishReason: 'stop',
-        toolCalls: content.startsWith('{') ? undefined : undefined,
+        toolCalls: content.startsWith('{') ? extractToolCalls(content) : undefined,
       };
     },
     async *stream() {
