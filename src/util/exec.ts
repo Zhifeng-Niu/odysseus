@@ -24,6 +24,12 @@ export function execFileNoThrow(
   options: ExecOptions = {}
 ): Promise<ExecResult> {
   return new Promise((resolve) => {
+    const onAbort = () => child.kill('SIGTERM');
+    const cleanup = () => {
+      if (options.signal) {
+        options.signal.removeEventListener('abort', onAbort);
+      }
+    };
     const child = execFile(
       file,
       [...args],
@@ -35,6 +41,7 @@ export function execFileNoThrow(
         signal: options.signal,
       },
       (err, stdout, stderr) => {
+        cleanup();
         if (err) {
           const errnoCode = (err as NodeJS.ErrnoException).code;
           resolve({
@@ -59,13 +66,7 @@ export function execFileNoThrow(
       }
     );
     if (options.signal) {
-      options.signal.addEventListener(
-        'abort',
-        () => {
-          child.kill('SIGTERM');
-        },
-        { once: true }
-      );
+      options.signal.addEventListener('abort', onAbort, { once: true });
     }
   });
 }

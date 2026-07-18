@@ -1,4 +1,5 @@
 import { describe, test, expect } from 'vitest';
+import { getEventListeners } from 'node:events';
 import { execFileNoThrow } from '../../src/util/exec.js';
 
 describe('execFileNoThrow', () => {
@@ -41,5 +42,17 @@ describe('execFileNoThrow', () => {
     const elapsed = Date.now() - start;
     expect(result.exitCode).not.toBe(0);
     expect(elapsed).toBeLessThan(2000);
+  });
+
+  test('removes abort listener after child completes normally', async () => {
+    const controller = new AbortController();
+    const before = getEventListeners(controller.signal, 'abort').length;
+
+    await execFileNoThrow('node', ['-e', 'process.stdout.write("ok")'], {
+      signal: controller.signal,
+    });
+
+    const after = getEventListeners(controller.signal, 'abort').length;
+    expect(after).toBe(before);
   });
 });
