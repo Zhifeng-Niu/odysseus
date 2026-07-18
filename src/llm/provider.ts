@@ -16,6 +16,11 @@ export interface ToolSpec {
   function: {
     name: string;
     description: string;
+    /**
+     * JSON Schema object describing the tool's input parameters.
+     * Most providers expect `{ type: 'object', properties: {...}, required: [...] }`.
+     * Untyped here to avoid coupling the interface to a specific JSON Schema version.
+     */
     parameters: Record<string, unknown>;
   };
 }
