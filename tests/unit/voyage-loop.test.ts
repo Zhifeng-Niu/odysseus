@@ -475,7 +475,10 @@ describe('CerebellumOrchestrator voyage loop', () => {
     // picks up the dreamed item as the next waypoint.
     process.env.ODYSSEUS_AUTO_APPROVE = '1';
 
-    const followupGoal = 'followup task from dream';
+    // Use a unique seed goal to avoid collision with the in-memory
+    // seedAttempts map (which persists across tests in the same suite).
+    const seedGoal = 'auto-approve seed';
+    const followupGoal = 'auto-approve followup from dream';
     const provider = makeMockProvider([
       // Waypoint 1 (seed): write a file, then DONE.
       fileWriteArgs(workdir, 'seed.ts', 'export const s = 0;'),
@@ -500,24 +503,12 @@ describe('CerebellumOrchestrator voyage loop', () => {
       verifyLayers: ['syntax'],
       autoApprove: true,
     });
-    const events = subscribe(orch);
 
-    const result = await orch.runVoyage({ seedGoal: 'seed task' });
-
-    // Debug: surface what actually happened.
-    if (result.waypoints.length !== 2) {
-      const types = events.map((e) => e.type);
-      // eslint-disable-next-line no-console
-      console.error('DEBUG events:', types);
-      // eslint-disable-next-line no-console
-      console.error('DEBUG outcome:', result.outcome);
-      // eslint-disable-next-line no-console
-      console.error('DEBUG waypoint goals:', result.waypoints.map((w) => w.waypoint.goal));
-    }
+    const result = await orch.runVoyage({ seedGoal });
 
     // Two waypoints ran — the second one was auto-approved from the dream.
     expect(result.waypoints.length).toBe(2);
-    expect(result.waypoints[0]!.waypoint.goal).toBe('seed task');
+    expect(result.waypoints[0]!.waypoint.goal).toBe(seedGoal);
     expect(result.waypoints[1]!.waypoint.goal).toBe(followupGoal);
 
     // The dreamed item moved through pending-review (audit trail) but the
