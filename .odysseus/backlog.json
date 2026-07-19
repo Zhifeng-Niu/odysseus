@@ -65,13 +65,6 @@
       "createdAt": "2026-07-19T11:28:48.110Z"
     },
     {
-      "id": "bl_5610f03ddd71",
-      "goal": "add isCompleted() check in the waypoint seeding function in src/cerebellum/backlog.ts that skips enqueueing when markCompleted has recorded the goal",
-      "origin": "dream",
-      "priority": 10,
-      "createdAt": "2026-07-19T11:36:50.126Z"
-    },
-    {
       "id": "bl_3518df3ce45a",
       "goal": "add a goalValidator(goal: string): boolean function in src/cerebellum/goalValidator.ts that rejects goals missing a file path pattern (e.g., no .ts/.js/.py extension or src/ prefix) and returns false for pure conversational input",
       "origin": "dream",
