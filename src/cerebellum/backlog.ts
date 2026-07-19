@@ -47,6 +47,50 @@ interface BacklogFile {
 
 const BACKLOG_FILENAME = 'backlog.json';
 
+// ---------------------------------------------------------------------------
+// Per-goal retry counter — blocks re-seeding after MAX_RETRY_ATTEMPTS
+// enqueues.  Uses a normalised hash of the goal description as key so that
+// minor wording differences ("add retry" vs "Add Retry!") share the same
+// counter.
+// ---------------------------------------------------------------------------
+
+const MAX_RETRY_ATTEMPTS = 3;
+const retryCounters: Map<string, number> = new Map();
+
+/** Normalise a goal description into a stable hash key. */
+function hashGoalDescription(goal: string): string {
+  return goal
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+    .trim();
+}
+
+/** Returns how many times `goal` has been enqueued (including the current call). */
+export function getRetryCount(goal: string): number {
+  return retryCounters.get(hashGoalDescription(goal)) ?? 0;
+}
+
+/** Increments the retry counter for `goal` and returns the new value. */
+export function incrementRetryCounter(goal: string): number {
+  const key = hashGoalDescription(goal);
+  const count = (retryCounters.get(key) ?? 0) + 1;
+  retryCounters.set(key, count);
+  return count;
+}
+
+/**
+ * Returns true when `goal` has already been enqueued more than
+ * MAX_RETRY_ATTEMPTS times and should no longer be re-seeded.
+ */
+export function isRetryExhausted(goal: string): boolean {
+  return getRetryCount(goal) > MAX_RETRY_ATTEMPTS;
+}
+
+/** Test helper: clears all retry counters. */
+export function clearRetryCounters(): void {
+  retryCounters.clear();
+}
+
 function backlogPath(rootDir: string): string {
   return join(rootDir, BACKLOG_FILENAME);
 }
@@ -134,6 +178,20 @@ export async function enqueueBacklog(
         : {}),
     };
   }
+  // Block re-seeding when the per-goal retry counter (tracked in this
+  // module) has exceeded MAX_RETRY_ATTEMPTS enqueues.
+  if (isRetryExhausted(trimmedGoal)) {
+    return {
+      id: options?.id ?? generateBacklogId(),
+      goal: trimmedGoal,
+      origin,
+      priority: options?.priority ?? defaultPriorityForOrigin(origin),
+      createdAt: options?.createdAt ?? new Date().toISOString(),
+      ...(options?.sourceWaypointId !== undefined
+        ? { sourceWaypointId: options.sourceWaypointId }
+        : {}),
+    };
+  }
   // Skip enqueueing when this goal has already been recorded as completed by
   // markCompleted — prevents the voyage loop from re-seeding done work.
   if (isCompleted(trimmedGoal)) {
@@ -149,6 +207,8 @@ export async function enqueueBacklog(
     };
   }
   const file = await loadBacklogFile(rootDir);
+  // Track this enqueue in the per-goal retry counter.
+  incrementRetryCounter(trimmedGoal);
   const item: BacklogItem = {
     id: options?.id ?? generateBacklogId(),
     goal: trimmedGoal,
