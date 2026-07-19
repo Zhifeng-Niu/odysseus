@@ -147,6 +147,25 @@ export class CerebellumOrchestrator {
       history.push({ role: 'assistant', content: completion.content });
     }
 
+    // If the loop exited by hitting maxIter (not via DONE), the agent has not
+    // declared success. Treat as failure — verify would otherwise pass on the
+    // empty diff and silently commit nothing. The orchestrator must never
+    // report success without an explicit DONE from the LLM.
+    const reachedDone = lastAssistantContent.trim().toUpperCase() === 'DONE';
+    if (!reachedDone) {
+      const failReason = `hit maxIterations (${maxIter}) without DONE — agent did not converge`;
+      const failed = markFailure(active, failReason, iterationsUsed);
+      await this.trace(failed, checkpoint.sha, null);
+      return {
+        waypoint: failed,
+        outcome: 'failure',
+        checkpointSha: checkpoint.sha,
+        failReason,
+        iterationsUsed,
+        tokensConsumed: { input: this.state.totalInput, output: this.state.totalOutput },
+      };
+    }
+
     // VERIFY — hard gate, no LLM confidence can bypass
     const verify = await runVerify({
       cwd: this.config.cwd,
