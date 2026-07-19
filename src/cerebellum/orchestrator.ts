@@ -462,24 +462,33 @@ export class CerebellumOrchestrator extends EventEmitter {
       };
     }
 
-    // Conversational stop — agent replied with plain text multiple times
-    // without invoking tools. The goal was not a code task. Mark abandoned
-    // (not failure — no work was attempted, no verify needed). The last
-    // assistant message has already been surfaced via the event stream.
+    // Early termination — agent produced 3+ consecutive non-tool-calling
+    // responses. This means the LLM is stuck in a text-only loop (echo
+    // chamber, conversational drift, or inability to formulate a tool plan).
+    // Return a clear failure instead of burning through maxIterations.
     if (conversationalStop) {
       const reason =
-        'agent produced multiple conversational replies without invoking tools — goal appears non-coding';
-      const abandoned = markAbandoned(active, reason);
-      await this.trace(abandoned, checkpoint.sha, null);
+        `early termination: agent produced ${consecutiveTextOnly} consecutive ` +
+        `non-tool-calling responses (threshold: 3) without reaching DONE — ` +
+        `the LLM is stuck in a text-only loop and cannot make further progress. ` +
+        `Last reply: "${lastAssistantContent.slice(0, 200)}"`;
+      const failed = markFailure(active, reason, iterationsUsed);
+      await rollbackTo({
+        cwd: this.config.cwd,
+        sha: checkpoint.sha,
+        allowedShas: Array.from(this.state.allowedShas),
+      });
+      await this.trace(failed, checkpoint.sha, null);
       this.emitEvent({
-        type: 'waypoint-failed',
+        type: 'waypoint-rolled-back',
         waypointId: waypoint.id,
-        error: reason,
+        reason,
+        iterationsUsed,
         ts: Date.now(),
       });
       return {
-        waypoint: abandoned,
-        outcome: 'abandoned',
+        waypoint: failed,
+        outcome: 'failure',
         checkpointSha: checkpoint.sha,
         failReason: reason,
         iterationsUsed,
