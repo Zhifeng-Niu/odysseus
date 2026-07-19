@@ -46,3 +46,9 @@ Attempting to wire goalValidator at orchestrator dispatch failed because the met
 
 Wiring goalValidator at the data entry point (enqueueBacklog) succeeded where wiring at the execution dispatch point failed. Entry-point validation prevents bad data from entering any pipeline stage.
 
+## [2026-07-19T12:20:13.748Z] Repeated-tool-call detector works but agent has no recovery path
+- **id**: mem_51df347bb2
+- **source**: dream
+
+The goalValidator test attempt failed when the agent ran the same vitest command 3 times (file didn't exist yet). The detector correctly aborted, but the agent couldn't recover and the task died. Abort without recovery is a hard stop, not a circuit breaker.
+

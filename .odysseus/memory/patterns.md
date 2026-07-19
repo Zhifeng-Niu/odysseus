@@ -64,3 +64,9 @@ Goals like 'reject non-coding inputs' can themselves be rejected as non-coding i
 
 Using substring matching in isCompleted() means a goal like 'fix bug in src/foo.ts' could falsely match 'fix bug in src/foo.ts.backup'. Consider exact hashing or normalized form for dedup keys.
 
+## [2026-07-19T12:20:13.748Z] Test file creation fails when agent runs tests before writing files
+- **id**: mem_51df340308
+- **source**: dream
+
+When a test file doesn't exist, running vitest on it fails, and the agent may retry the same failing command. The repeatedToolCallDetector then kills the run. Tests must be written before they are executed.
+
