@@ -77,13 +77,6 @@
       "origin": "dream",
       "priority": 20,
       "createdAt": "2026-07-19T11:36:50.127Z"
-    },
-    {
-      "id": "bl_352eb6712976",
-      "goal": "call markCompleted() in the waypoint success handler in src/orchestrator.ts immediately after a goal outcome is recorded as success",
-      "origin": "dream",
-      "priority": 12,
-      "createdAt": "2026-07-19T11:36:50.132Z"
     }
   ]
 }
