@@ -93,13 +93,6 @@
       "createdAt": "2026-07-19T12:12:34.920Z"
     },
     {
-      "id": "bl_9a8b1b8a83e7",
-      "goal": "add unit tests for isCompleted() substring matching and markCompleted() in src/cerebellum/completedGoals.test.ts",
-      "origin": "dream",
-      "priority": 15,
-      "createdAt": "2026-07-19T12:15:03.297Z"
-    },
-    {
       "id": "bl_842d5d030214",
       "goal": "add unit tests for repeatedToolCallDetector abort logic in src/orchestrator.test.ts",
       "origin": "dream",
