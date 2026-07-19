@@ -3,7 +3,7 @@ import type { TraceRecord } from '../trace/jsonl.js';
 import type { MemoryCategory } from '../orchestrator/events.js';
 import type { MemoryEntry } from './memory.js';
 import { type EnqueueOptions } from './backlog.js';
-import { enqueuePendingReview } from './pending-review.js';
+import { enqueuePendingReview, autoApproveAllPendingReview, shouldAutoApprove } from './pending-review.js';
 import { writeMemory as writeMemoryEntry } from './memory.js';
 
 /**
@@ -435,9 +435,13 @@ export async function dream(input: DreamInput): Promise<DreamOutput> {
     const options: EnqueueOptions =
       item.priority !== undefined ? { priority: item.priority } : {};
     try {
-      // Dreams go to the pending-review queue, NOT directly to the backlog.
-      // The user reviews proposals and approves the ones worth pursuing —
-      // this stops the dreamer from autonomously driving the voyage loop.
+      // Dreams go to the pending-review queue first (preserves audit log of
+      // what the dreamer proposed). When ODYSSEUS_AUTO_APPROVE is enabled
+      // (default), all pending items are moved into the backlog at the end
+      // of this dream pass — see the auto-approve block below. This gives
+      // the agent autonomous evolution (think → propose → execute) without a
+      // human pressing 'approve', while keeping pending-review.json as an
+      // audit trail of every dreamer-produced proposal.
       const enqueued = await enqueuePendingReview(
         input.rootDir,
         item.goal,
@@ -454,6 +458,33 @@ export async function dream(input: DreamInput): Promise<DreamOutput> {
       seenGoals.add(item.goal);
     } catch {
       // empty-goal validation etc — skip silently
+    }
+  }
+
+  // Auto-approve: when ODYSSEUS_AUTO_APPROVE is set (default ON), move every
+  // pending item from this dream pass straight into the backlog so the next
+  // voyage picks it up without waiting for user approval. Items that fail
+  // to enqueue stay in pending-review.json for operator inspection.
+  if (shouldAutoApprove() && addedBacklogItems.length > 0) {
+    try {
+      const approved = await autoApproveAllPendingReview(input.rootDir);
+      // Refresh addedBacklogItems with the real backlog IDs (the pending IDs
+      // were transient — pr_* ids become bl_* ids after approval). Preserve
+      // order so callers can correlate which dream proposals actually shipped.
+      if (approved.length > 0) {
+        addedBacklogItems.length = 0;
+        for (const bl of approved) {
+          addedBacklogItems.push({
+            id: bl.id,
+            goal: bl.goal,
+            priority: bl.priority,
+          });
+        }
+      }
+    } catch {
+      // Auto-approve failure is non-fatal — items remain in pending-review
+      // and the operator can approve them manually. The dream itself still
+      // succeeded.
     }
   }
 

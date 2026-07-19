@@ -45,7 +45,7 @@ import {
   sizeBacklog,
   recordRejectedGoal,
 } from './backlog.js';
-import { readMemory, type MemoryEntry } from './memory.js';
+import { readMemory, writeMemory, type MemoryEntry } from './memory.js';
 import { markCompleted } from './completedGoals.js';
 import { RepeatedToolCallDetector } from './repeated-tool-call-detector.js';
 import type { MemoryCategory } from '../orchestrator/events.js';
@@ -242,6 +242,16 @@ export class CerebellumOrchestrator extends EventEmitter {
     let consecutiveTextOnly = 0;
     let conversationalStop = false;
     let stuckLoopRetried = false;
+    // PRESERVATION BUFFER — captures the raw content of each consecutive
+    // text-only assistant turn (in order). When the 3-strike early-stop
+    // fires below, we scan this buffer for any turn > 500 chars. Such
+    // turns are likely diagnostic/reflective outputs (cf. wp_mrs855ke007)
+    // rather than conversational drift, so we write them to
+    // `.odysseus/memory/dreams.md` with source='reflect' and
+    // related=waypointId BEFORE rolling back — exempting them from the
+    // silent loss the early-stop otherwise imposes. The buffer is reset
+    // to [] whenever a tool call lands (progress on a real task).
+    const textOnlyTurns: string[] = [];
 
     // REPEATED-TOOL-CALL DETECTOR — sliding window of the last 3 tool-call
     // signatures (name + serialized args). When all 3 entries are identical
@@ -281,6 +291,7 @@ export class CerebellumOrchestrator extends EventEmitter {
           // Tool activity resets the conversational-turn counter — the agent
           // is making progress on a real code task.
           consecutiveTextOnly = 0;
+          textOnlyTurns.length = 0;
           // OpenAI/GLM contract: one assistant message carries all parallel
           // tool_calls, followed by one tool message per call. Splitting
           // tool_calls across multiple assistant messages yields HTTP 400.
@@ -392,6 +403,7 @@ export class CerebellumOrchestrator extends EventEmitter {
 
         consecutiveTextOnly += 1;
         lastAssistantContent = completion.content;
+        textOnlyTurns.push(completion.content);
         if (completion.content) {
           this.emitEvent({
             type: 'assistant-message',
@@ -480,6 +492,33 @@ export class CerebellumOrchestrator extends EventEmitter {
         `non-tool-calling responses (threshold: 3) without reaching DONE — ` +
         `the LLM is stuck in a text-only loop and cannot make further progress. ` +
         `Last reply: "${lastAssistantContent.slice(0, 200)}"`;
+
+      // PRESERVATION — before the irreversible rollback, salvage any
+      // consecutive-text-only turn whose content exceeds 500 chars. These
+      // are likely diagnostic or reflective outputs (e.g. wp_mrs855ke007)
+      // that warrant retention rather than silent loss. We write each to
+      // `.odysseus/memory/dreams.md` with source='reflect' and
+      // related=waypointId so they survive the early-stop rollback and
+      // remain available for future dreaming/consolidation. Failures here
+      // are non-fatal: a write error must NOT block the rollback below,
+      // which is what keeps the workspace clean for the next voyage.
+      for (const turn of textOnlyTurns) {
+        if (turn.length > 500) {
+          try {
+            await writeMemory(this.memoryRoot(), {
+              category: 'dreams',
+              title: `reflective output from ${waypoint.id}`,
+              source: 'reflect',
+              body: turn,
+              relatedWaypointId: waypoint.id,
+            });
+          } catch {
+            // Swallow — preservation is best-effort. The rollback below
+            // is the trust-boundary operation and must proceed regardless.
+          }
+        }
+      }
+
       const failed = markFailure(active, reason, iterationsUsed);
       await rollbackTo({
         cwd: this.config.cwd,

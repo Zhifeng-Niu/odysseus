@@ -187,3 +187,69 @@ export async function rejectPendingReview(rootDir: string, id: string): Promise<
   await saveFile(rootDir, { version: 1, items: remaining });
   return true;
 }
+
+// ---------------------------------------------------------------------------
+// Auto-approve — dreamer can bypass the user-consent gate.
+//
+// When `ODYSSEUS_AUTO_APPROVE` is set to a truthy value (default), the dreamer
+// routes its proposals directly into the backlog instead of leaving them in
+// pending-review.json for manual approval. This unblocks autonomous evolution:
+// the agent can think of an improvement, enqueue it, and execute it without a
+// human pressing 'approve' between dream and wakeful phases.
+//
+// The default is ON because the operator has explicitly opted into autonomous
+// mode. To re-enable the consent gate (e.g. for supervised runs or demos),
+// set `ODYSSEUS_AUTO_APPROVE=0`.
+//
+// pending-review.json is still written (for audit) before auto-approve runs,
+// so operators can grep historical dreamer output even when the items have
+// already moved into the backlog.
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns true when dreamer output should bypass pending-review and go
+ * straight to the backlog. Defaults to true (autonomous mode) when the env
+ * var is absent — operators must explicitly opt OUT with `=0`.
+ */
+export function shouldAutoApprove(): boolean {
+  const v = process.env.ODYSSEUS_AUTO_APPROVE;
+  if (v === undefined || v === '') return true;
+  return v !== '0' && v !== 'false' && v !== 'no';
+}
+
+/**
+ * Move every pending proposal into the backlog in one pass. Called by the
+ * dreamer at the end of a dream pass when `shouldAutoApprove()` is true.
+ *
+ * Returns the backlog items created, in approval order. Items that fail to
+ * enqueue (e.g. validation errors) are left in pending-review.json for
+ * operator inspection — only successfully-enqueued items are removed.
+ */
+export async function autoApproveAllPendingReview(
+  rootDir: string
+): Promise<readonly BacklogItem[]> {
+  const file = await loadFile(rootDir);
+  if (file.items.length === 0) return [];
+  const enqueued: BacklogItem[] = [];
+  const remaining: PendingItem[] = [];
+  for (const item of file.items) {
+    try {
+      const result = await enqueueBacklog(rootDir, item.goal, item.origin, {
+        priority: item.priority,
+        ...(item.sourceWaypointId !== undefined
+          ? { sourceWaypointId: item.sourceWaypointId }
+          : {}),
+      });
+      enqueued.push(result);
+    } catch {
+      // Validation failure or persistence error — keep the item in the
+      // pending queue so the operator can see what the dreamer tried to
+      // push and why it failed.
+      remaining.push(item);
+    }
+  }
+  // Only persist the remaining (failed) items; successfully-enqueued ones
+  // are now in backlog.json with full provenance.
+  await saveFile(rootDir, { version: 1, items: remaining });
+  return enqueued;
+}

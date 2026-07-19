@@ -11,7 +11,7 @@ import {
   buildUserPrompt,
 } from '../../src/cerebellum/dreamer.js';
 import { listBacklog } from '../../src/cerebellum/backlog.js';
-import { listPendingReview } from '../../src/cerebellum/pending-review.js';
+import { listPendingReview, shouldAutoApprove, autoApproveAllPendingReview } from '../../src/cerebellum/pending-review.js';
 import { readMemory } from '../../src/cerebellum/memory.js';
 import type { TraceRecord } from '../../src/trace/jsonl.js';
 
@@ -59,10 +59,16 @@ describe('dreamer', () => {
 
   beforeEach(async () => {
     rootDir = await mkdtemp(join(tmpdir(), 'ody-dream-'));
+    // Default tests assert the legacy "user-consent gate" path: dreamer
+    // output lands in pending-review.json and waits for approval. Auto-
+    // approve behavior (default in production) is covered by an explicit
+    // test further down.
+    process.env.ODYSSEUS_AUTO_APPROVE = '0';
   });
 
   afterEach(async () => {
     await rm(rootDir, { recursive: true, force: true });
+    delete process.env.ODYSSEUS_AUTO_APPROVE;
   });
 
   test('valid JSON produces backlog + memory entries', async () => {
@@ -449,6 +455,65 @@ describe('dreamer', () => {
 
     expect(out.backlogItemsAdded).toBe(1);
     expect(out.backlogItemsSkipped).toBe(0);
+  });
+
+  // -------------------------------------------------------------------------
+  // Auto-approve: when ODYSSEUS_AUTO_APPROVE is on (the production default),
+  // the dreamer routes proposals straight into the backlog instead of leaving
+  // them in pending-review.json. This is the autonomous-evolution path: agent
+  // dreams an improvement, enqueues it, and the next voyage picks it up
+  // without a human pressing 'approve'.
+  // -------------------------------------------------------------------------
+  test('auto-approve ON routes dreamer output directly into backlog', async () => {
+    process.env.ODYSSEUS_AUTO_APPROVE = '1';
+    const response = JSON.stringify({
+      backlogItems: [
+        { goal: 'add retry to glm provider in src/llm/glm-provider.ts', priority: 75 },
+      ],
+      memoryEntries: [],
+    });
+
+    const out = await dream({
+      rootDir,
+      provider: staticProvider(response),
+      recentTrace: emptyTrace,
+      memorySnapshot: [],
+    });
+
+    expect(out.parseOk).toBe(true);
+    expect(out.backlogItemsAdded).toBe(1);
+    // The added backlog item now has a bl_ id (backlog), not a pr_ id (pending).
+    expect(out.addedBacklogItems[0]!.id).toMatch(/^bl_/);
+
+    // Item landed in the backlog, not pending-review.
+    const pending = await listPendingReview(rootDir);
+    expect(pending.length).toBe(0);
+    const backlog = await listBacklog(rootDir);
+    expect(backlog.length).toBe(1);
+    expect(backlog[0]!.goal).toContain('add retry to glm');
+    expect(backlog[0]!.origin).toBe('dream');
+  });
+
+  test('auto-approve default ON when env var is absent', async () => {
+    // No env var set — should behave the same as ODYSSEUS_AUTO_APPROVE=1.
+    delete process.env.ODYSSEUS_AUTO_APPROVE;
+    const response = JSON.stringify({
+      backlogItems: [
+        { goal: 'extract helper in src/util/format.ts', priority: 50 },
+      ],
+      memoryEntries: [],
+    });
+
+    await dream({
+      rootDir,
+      provider: staticProvider(response),
+      recentTrace: emptyTrace,
+      memorySnapshot: [],
+    });
+
+    const backlog = await listBacklog(rootDir);
+    expect(backlog.length).toBe(1);
+    expect(backlog[0]!.origin).toBe('dream');
   });
 });
 
