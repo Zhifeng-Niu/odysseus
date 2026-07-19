@@ -22,3 +22,15 @@ When the same goal appears 4+ times in recent outcomes, the root cause is always
 
 When a goal doesn't start with a concrete code-change verb (add, fix, refactor, implement), the agent defaults to chat mode. This is a goal-quality signal: if the goal can't be rephrased to start with an action verb, it likely isn't executable.
 
+## [2026-07-19T11:02:36.806Z] Legitimate coding goals fail when they lack file/function targets
+- **id**: mem_0ad006f55f
+- **source**: dream
+
+Goals like 'Add deduplication logic to waypoint generation' are valid coding tasks but were abandoned because the agent produced conversational replies instead of invoking tools. The agent needs goals phrased as specific file-and-function modifications to trigger tool use.
+
+## [2026-07-19T11:02:36.807Z] Re-seeded completed goals cause convergence failure
+- **id**: mem_0ad0077a89
+- **source**: dream
+
+When a goal has already been fulfilled (e.g., bash tool already exists), re-executing it causes the agent to loop without finding work to do, hitting maxIterations. The agent cannot self-detect that the goal state is already satisfied.
+

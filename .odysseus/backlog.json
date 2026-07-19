@@ -42,6 +42,34 @@
       "origin": "dream",
       "priority": 40,
       "createdAt": "2026-07-19T11:00:11.292Z"
+    },
+    {
+      "id": "bl_aea630e3e2b8",
+      "goal": "Add a goal-validation function in the waypoint seeder that rejects goals lacking coding action verbs like 'add', 'create', 'fix', 'refactor', 'implement', 'delete', or 'update'",
+      "origin": "dream",
+      "priority": 20,
+      "createdAt": "2026-07-19T11:02:36.802Z"
+    },
+    {
+      "id": "bl_32da7464c206",
+      "goal": "Add a max-retry counter per goal-description hash in the waypoint seeder that blocks re-seeding after 3 attempts regardless of outcome",
+      "origin": "dream",
+      "priority": 25,
+      "createdAt": "2026-07-19T11:02:36.803Z"
+    },
+    {
+      "id": "bl_d7706537dc98",
+      "goal": "Add a pre-execution existence check in the bash tool registration code that returns DONE immediately if a 'bash' tool is already registered in the tools registry",
+      "origin": "dream",
+      "priority": 35,
+      "createdAt": "2026-07-19T11:02:36.805Z"
+    },
+    {
+      "id": "bl_1ef3b743f929",
+      "goal": "Add a goal-rewording step in the waypoint seeder that transforms abstract goals like 'Add deduplication logic' into specific file-targeted goals like 'Add dedup check in src/waypoint.ts before seedGoals() call'",
+      "origin": "dream",
+      "priority": 40,
+      "createdAt": "2026-07-19T11:02:36.806Z"
     }
   ]
 }

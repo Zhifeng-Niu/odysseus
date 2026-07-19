@@ -10,3 +10,9 @@ Conversational inputs like 'hi' or '你好，你是谁' were dispatched to the a
 
 Goals like 'hi' or '你好' fail with 'agent did not converge' but the real issue is that the goal should never have entered the pipeline. Always validate goal intent before execution; the error message should say 'non-coding goal' not 'maxIterations exceeded'.
 
+## [2026-07-19T11:02:36.807Z] Successful goals must be checkpointed immediately to prevent re-seeding
+- **id**: mem_0ad007e980
+- **source**: dream
+
+The 'add a bash tool' goal succeeded 4 separate times before failing on the 5th. Without a completion registry, the system has no memory of success and re-seeds identical goals, wasting compute and eventually hitting convergence failure when the task is already done.
+
