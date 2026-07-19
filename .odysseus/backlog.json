@@ -1,13 +1,4 @@
 {
   "version": 1,
-  "items": [
-    {
-      "id": "bl_e43b91f7d266",
-      "goal": "extend the dreamer in `src/cerebellum/dreamer.ts` with a curiosity-mode alongside the current dream mode. Curiosity-mode reads self-model.md aspirations and generates 'explore X' / 'try Y' style backlog items that are NOT fixes to existing problems — they are capability expansions. Add new origin 'curiosity' to BacklogOrigin in `src/orchestrator/events.ts` and route curiosity-seeded items to pending-review like dreams. This closes the 'all goals are borrowed' gap by giving the agent a third goal source beyond user and dream.",
-      "origin": "reflect",
-      "priority": 90,
-      "createdAt": "2026-07-19T20:28:06.223Z",
-      "sourceWaypointId": "wp_mrs855ke007"
-    }
-  ]
+  "items": []
 }
