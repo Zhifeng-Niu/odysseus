@@ -27,6 +27,7 @@ import { createCheckpoint } from './checkpoint.js';
 import { rollbackTo } from './rollback.js';
 import { runVerify, type VerifyLayer } from './verify.js';
 import { selectStrategy } from './strategy.js';
+import { validateGoal } from './goal-validator.js';
 import { appendTrace, readTrace } from '../trace/jsonl.js';
 import type { OrchestratorEvent } from '../orchestrator/events.js';
 import { InterruptedError, RejectedError } from '../orchestrator/errors.js';
@@ -156,6 +157,35 @@ export class CerebellumOrchestrator extends EventEmitter {
       strategy: strategy.name,
       ts: Date.now(),
     });
+
+    // PRE-DISPATCH GOAL VALIDATOR — reject non-coding conversational goals
+    // (greetings, identity questions, off-topic chat) before any checkpoint
+    // or LLM work. This is the cheap, deterministic complement to the
+    // reactive `consecutiveTextOnly` heuristic below: the reactive path
+    // catches ambiguous goals the validator lets through, while the
+    // validator short-circuits the obvious cases to save a checkpoint
+    // (git ops) and up to 3 wasted LLM turns.
+    const validation = validateGoal(input.goal);
+    if (!validation.valid) {
+      const reason = validation.reason ?? 'goal rejected by validator';
+      const abandoned = markAbandoned(waypoint, reason);
+      await this.trace(abandoned, null, null);
+      this.emitEvent({
+        type: 'waypoint-failed',
+        waypointId: waypoint.id,
+        error: reason,
+        ts: Date.now(),
+      });
+      return {
+        waypoint: abandoned,
+        outcome: 'abandoned',
+        ...(abandoned.failureReason !== undefined
+          ? { failReason: abandoned.failureReason }
+          : {}),
+        iterationsUsed: 0,
+        tokensConsumed: { input: 0, output: 0 },
+      };
+    }
 
     // CHECKPOINT
     const checkpoint = await createCheckpoint({

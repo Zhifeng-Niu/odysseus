@@ -2,13 +2,6 @@
   "version": 1,
   "items": [
     {
-      "id": "bl_6a35c4e82688",
-      "goal": "Add a convergence detector that interrupts the agent when it repeats the same tool call 3+ times without progress",
-      "origin": "dream",
-      "priority": 20,
-      "createdAt": "2026-07-19T10:58:08.965Z"
-    },
-    {
       "id": "bl_6785802de268",
       "goal": "Track per-goal iteration counts in the waypoint outcome log to identify goals that consistently need high iterations",
       "origin": "dream",
