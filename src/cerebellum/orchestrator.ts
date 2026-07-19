@@ -98,19 +98,22 @@ export class CerebellumOrchestrator {
     const active = markActive({ ...waypoint, checkpointSha: checkpoint.sha });
     const maxIter = this.config.maxIterations ?? strategy.maxIterations;
 
-    const history: ChatMessage[] = [
-      { role: 'user', content: `${strategy.systemPrompt}\n\nGoal: ${input.goal}` },
-    ];
+    // History excludes the system prompt — it's passed via options.systemPrompt
+    // on every call. The first call uses `prompt` to carry the goal; subsequent
+    // calls pass an empty prompt and rely on history (ending in a tool result)
+    // to drive the next turn. The provider skips empty prompts.
+    const history: ChatMessage[] = [];
 
     let iterationsUsed = 0;
     let lastAssistantContent = '';
 
     for (let iter = 1; iter <= maxIter; iter++) {
       iterationsUsed = iter;
-      const lastUserText = history[history.length - 1]?.content ?? input.goal;
-      const completion = await this.config.provider.complete(lastUserText, {
+      const isFirst = iter === 1;
+      const prompt = isFirst ? input.goal : '';
+      const completion = await this.config.provider.complete(prompt, {
         systemPrompt: strategy.systemPrompt,
-        history,
+        history: isFirst ? [] : history,
         tools: this.config.registry.listSpecs(),
       });
       this.state.totalInput += completion.usage.inputTokens;

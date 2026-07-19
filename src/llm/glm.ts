@@ -141,7 +141,12 @@ export class GLMProvider implements LLMProvider {
     if (options?.history?.length) {
       messages.push(...options.history);
     }
-    messages.push({ role: 'user', content: prompt });
+    // An empty prompt signals "continue from history" — common when the last
+    // history entry is a tool result. Skip the user message entirely; pushing
+    // `{ role: 'user', content: '' }` would confuse the model.
+    if (prompt.length > 0) {
+      messages.push({ role: 'user', content: prompt });
+    }
 
     const body: Record<string, unknown> = {
       model: options?.model ?? this.config.model,
