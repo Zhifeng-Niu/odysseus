@@ -9,13 +9,6 @@
       "createdAt": "2026-07-19T11:00:11.292Z"
     },
     {
-      "id": "bl_d7706537dc98",
-      "goal": "Add a pre-execution existence check in the bash tool registration code that returns DONE immediately if a 'bash' tool is already registered in the tools registry",
-      "origin": "dream",
-      "priority": 35,
-      "createdAt": "2026-07-19T11:02:36.805Z"
-    },
-    {
       "id": "bl_1ef3b743f929",
       "goal": "Add a goal-rewording step in the waypoint seeder that transforms abstract goals like 'Add deduplication logic' into specific file-targeted goals like 'Add dedup check in src/waypoint.ts before seedGoals() call'",
       "origin": "dream",
