@@ -23,13 +23,6 @@
       "createdAt": "2026-07-19T11:00:11.292Z"
     },
     {
-      "id": "bl_aea630e3e2b8",
-      "goal": "Add a goal-validation function in the waypoint seeder that rejects goals lacking coding action verbs like 'add', 'create', 'fix', 'refactor', 'implement', 'delete', or 'update'",
-      "origin": "dream",
-      "priority": 20,
-      "createdAt": "2026-07-19T11:02:36.802Z"
-    },
-    {
       "id": "bl_32da7464c206",
       "goal": "Add a max-retry counter per goal-description hash in the waypoint seeder that blocks re-seeding after 3 attempts regardless of outcome",
       "origin": "dream",
