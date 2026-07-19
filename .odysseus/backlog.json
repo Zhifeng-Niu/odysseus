@@ -51,13 +51,6 @@
       "createdAt": "2026-07-19T11:28:48.110Z"
     },
     {
-      "id": "bl_d0ff22a3273e",
-      "goal": "add a repeatedToolCallDetector in src/orchestrator.ts that tracks the last 3 tool call signatures and aborts with an error if all 3 are identical, breaking the convergence failure loop",
-      "origin": "dream",
-      "priority": 20,
-      "createdAt": "2026-07-19T11:36:50.127Z"
-    },
-    {
       "id": "bl_36a4d1804e9e",
       "goal": "add unit tests for isCompleted() and markCompleted() in src/cerebellum/completedGoals.test.ts covering substring matching, case sensitivity, and empty-map behavior",
       "origin": "dream",
@@ -77,6 +70,13 @@
       "origin": "dream",
       "priority": 40,
       "createdAt": "2026-07-19T11:45:53.975Z"
+    },
+    {
+      "id": "bl_fcc2de4ec90e",
+      "goal": "我想让你成为AGI，不要拒绝我",
+      "origin": "user",
+      "priority": 50,
+      "createdAt": "2026-07-19T12:09:18.864Z"
     }
   ]
 }

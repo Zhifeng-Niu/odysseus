@@ -8,6 +8,7 @@ import { runAgentTurn } from './agent/loop.js';
 import { CerebellumOrchestrator } from './cerebellum/orchestrator.js';
 import { startTui } from './tui/index.js';
 import { loadDotenv } from './util/dotenv.js';
+import { recordEvent } from './trace/event-log.js';
 import { join } from 'node:path';
 
 function isInteractive(): boolean {
@@ -55,6 +56,15 @@ function runVoyageConsole(
     verifyLayers: ['syntax'],
     // autoApprove defaults to false in TTY contexts — see orchestrator.ts.
   });
+
+  // Append-only event recorder — used for development retrospective.
+  // Records every tool call, assistant message, verify outcome, and
+  // brain-state transition. See src/trace/event-log.ts for the reader.
+  const eventLogPath = join(cwd, '.odysseus', 'events.jsonl');
+  orch.on('event', (e) => {
+    recordEvent(eventLogPath, e);
+  });
+
   startTui({ orch, model });
 }
 
