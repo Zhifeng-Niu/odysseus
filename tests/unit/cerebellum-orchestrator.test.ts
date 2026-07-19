@@ -251,6 +251,113 @@ describe('CerebellumOrchestrator', () => {
     expect(last.iterations_used).toBe(2);
   });
 
+  test('StuckLoopError triggers a single retry with nudge injection', async () => {
+    const stuckArgs = JSON.stringify({
+      path: join(workdir, 'noop.ts'),
+      content: 'export const v = 1;',
+    });
+    const stuckToolCall = JSON.stringify({
+      toolCalls: [
+        {
+          id: 'call_stuck',
+          type: 'function',
+          function: { name: 'file-write', arguments: stuckArgs },
+        },
+      ],
+    });
+
+    // Provider sequence:
+    //   calls 1-3  → identical tool calls (detector fires recovery, no StuckLoopError)
+    //   calls 4-6  → identical tool calls again (detector throws StuckLoopError)
+    //   call 7     → LLM sees nudge, writes a valid file
+    //   call 8     → DONE
+    const provider = makeMockProvider([
+      stuckToolCall, // iter 1
+      stuckToolCall, // iter 2
+      stuckToolCall, // iter 3 → detector returns recovery message
+      stuckToolCall, // iter 4
+      stuckToolCall, // iter 5
+      stuckToolCall, // iter 6 → StuckLoopError caught, nudge injected, continue
+      JSON.stringify({
+        toolCalls: [
+          {
+            id: 'call_ok',
+            type: 'function',
+            function: {
+              name: 'file-write',
+              arguments: JSON.stringify({
+                path: join(workdir, 'recovered.ts'),
+                content: 'export const v = 1;',
+              }),
+            },
+          },
+        ],
+      }),
+      'DONE',
+    ]);
+
+    const orch = new CerebellumOrchestrator({
+      cwd: workdir,
+      provider,
+      registry,
+      tracePath,
+      verifyLayers: ['syntax'],
+    });
+
+    const result = await orch.runWaypoint({ goal: 'write a file' });
+
+    // The orchestrator should have recovered and succeeded — not rolled back.
+    expect(result.outcome).toBe('success');
+    expect(result.failReason).toBeUndefined();
+    const written = await readFile(join(workdir, 'recovered.ts'), 'utf8');
+    expect(written).toContain('export const v = 1;');
+  });
+
+  test('second StuckLoopError is not retried and results in failure', async () => {
+    const stuckArgs = JSON.stringify({
+      path: join(workdir, 'noop.ts'),
+      content: 'export const v = 1;',
+    });
+    const stuckToolCall = JSON.stringify({
+      toolCalls: [
+        {
+          id: 'call_stuck',
+          type: 'function',
+          function: { name: 'file-write', arguments: stuckArgs },
+        },
+      ],
+    });
+
+    // Provider sequence:
+    //   calls 1-3  → identical (detector fires recovery)
+    //   calls 4-6  → identical (StuckLoopError → orchestrator retries once)
+    //   calls 7-9  → identical again (second StuckLoopError → propagates → rollback + failure)
+    const provider = makeMockProvider([
+      stuckToolCall, // iter 1
+      stuckToolCall, // iter 2
+      stuckToolCall, // iter 3 → recovery
+      stuckToolCall, // iter 4
+      stuckToolCall, // iter 5
+      stuckToolCall, // iter 6 → first StuckLoopError, retry
+      stuckToolCall, // iter 7
+      stuckToolCall, // iter 8
+      stuckToolCall, // iter 9 → second StuckLoopError, NOT retried → failure
+    ]);
+
+    const orch = new CerebellumOrchestrator({
+      cwd: workdir,
+      provider,
+      registry,
+      tracePath,
+      verifyLayers: ['syntax'],
+    });
+
+    const result = await orch.runWaypoint({ goal: 'write a file' });
+
+    expect(result.outcome).toBe('failure');
+    expect(result.failReason ?? '').toMatch(/Stuck loop detected/);
+  });
+
   test('reports failure when maxIterations is reached without DONE', async () => {
     // Provider emits tool calls every turn and never says DONE — loop will
     // run up to maxIter and the orchestrator must not declare success.
