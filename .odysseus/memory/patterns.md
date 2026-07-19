@@ -100,3 +100,15 @@ The StuckLoopError recovery path required three attempts: two over-specified fai
 
 Two attempts to add sophisticated recovery (inject context before abort, replace abort with throw) both hit maxIterations. A simple catch-block-with-nudge succeeded. Recovery must be structurally simpler than the failure it handles.
 
+## [2026-07-19T14:14:34.539Z] Test-file goals fail from scope creep, not validation
+- **id**: mem_ba8f2b2b79
+- **source**: dream
+
+GoalValidator now accepts .test.ts goals, but test creation still fails convergence. Root cause shifted from false-rejection to over-specified scope (3+ scenarios in one goal).
+
+## [2026-07-19T14:14:34.539Z] Shipped recovery without tests creates verification debt
+- **id**: mem_ba8f2bcc5b
+- **source**: dream
+
+StuckLoopError catch-and-retry shipped successfully but test goal was abandoned as non-coding. Recovery code is now in production with no regression safety net.
+

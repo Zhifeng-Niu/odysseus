@@ -82,3 +82,9 @@ Two failures on repeatedToolCallDetector recovery (inject context + replace abor
 
 Both the StuckLoopError catch block and the retry counter shipped without tests because the test-writing goals failed or were deprioritized. Recovery code is where bugs hurt most—test coverage should be co-shipped or immediately follow.
 
+## [2026-07-19T14:14:34.539Z] One test case per goal for test-file creation
+- **id**: mem_ba8f2b3581
+- **source**: dream
+
+Test creation goals covering multiple scenarios (substring + case + empty) consistently fail convergence. Single-scenario goals match the minimal-diff success pattern.
+
