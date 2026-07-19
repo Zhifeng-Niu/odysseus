@@ -100,13 +100,6 @@
       "createdAt": "2026-07-19T14:14:34.538Z"
     },
     {
-      "id": "bl_7e4baf276251",
-      "goal": "add unit tests for retry counter block-after-3-attempts logic in src/cerebellum/backlog.test.ts",
-      "origin": "dream",
-      "priority": 25,
-      "createdAt": "2026-07-19T14:18:31.753Z"
-    },
-    {
       "id": "bl_9b6eef5be534",
       "goal": "add edge case test to src/cerebellum/goalValidator.test.ts rejecting goals that mention .test.ts in non-coding context like 'explain what .test.ts files are'",
       "origin": "dream",
