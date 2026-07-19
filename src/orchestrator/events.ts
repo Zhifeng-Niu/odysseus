@@ -123,6 +123,14 @@ export type OrchestratorEvent =
       entryCount: number;
       bytesWritten: number;
       ts: number;
+    }
+  // ─── Recovery intervention events ───────────────────────────────────────
+  | {
+      type: 'recovery-intervention';
+      waypointId: string;
+      tool: string;
+      message: string;
+      ts: number;
     };
 
 /**
@@ -162,6 +170,8 @@ export const EVENT_TYPES = [
   'dream-completed',
   'backlog-item-added',
   'memory-consolidated',
+  // Recovery intervention
+  'recovery-intervention',
 ] as const;
 
 export type OrchestratorEventType = (typeof EVENT_TYPES)[number];

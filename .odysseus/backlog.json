@@ -84,6 +84,13 @@
       "origin": "dream",
       "priority": 25,
       "createdAt": "2026-07-19T12:21:08.744Z"
+    },
+    {
+      "id": "bl_221955c6f5cf",
+      "goal": "add catch block for StuckLoopError in main execution loop in src/orchestrator.ts that injects a context nudge and retries once",
+      "origin": "dream",
+      "priority": 20,
+      "createdAt": "2026-07-19T13:31:35.165Z"
     }
   ]
 }

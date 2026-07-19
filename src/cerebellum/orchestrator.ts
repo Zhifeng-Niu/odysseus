@@ -293,11 +293,21 @@ export class CerebellumOrchestrator extends EventEmitter {
             const callId = call.id;
 
             // REPEATED-TOOL-CALL DETECTOR — record this call's signature and
-            // abort before dispatching if the last 3 are byte-identical. The
-            // check fires on the 3rd identical attempt, so the redundant call
-            // is never executed. Throwing here unwinds into the catch below,
-            // which rolls back to the checkpoint and reports a clear failure.
-            loopDetector.record(call.function.name, args);
+            // check for a loop. On first detection a recovery context message
+            // is injected into the history so the LLM can try a different
+            // approach. On second detection the detector throws, unwinding
+            // into the catch below for rollback + failure.
+            const detection = loopDetector.record(call.function.name, args);
+            if (detection.loopDetected && detection.recoveryMessage) {
+              history.push({ role: 'user', content: detection.recoveryMessage });
+              this.emitEvent({
+                type: 'recovery-intervention',
+                waypointId: waypoint.id,
+                tool: call.function.name,
+                message: detection.recoveryMessage,
+                ts: Date.now(),
+              });
+            }
 
             this.emitEvent({
               type: 'tool-call-started',

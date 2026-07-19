@@ -82,3 +82,9 @@ Goals containing '.test.ts' or 'unit tests' are being rejected as non-coding by 
 
 completedGoals.test.ts failed with a detailed goal ('covering substring matching, case sensitivity, and empty-map behavior') but succeeded with a simpler one ('substring matching and markCompleted()'). Extra specificity in goal descriptions seems to cause the agent to overthink and not converge.
 
+## [2026-07-19T13:31:35.165Z] Meta-stuck: agent gets stuck fixing stuck-detector
+- **id**: mem_93337da759
+- **source**: dream
+
+The agent attempting to add recovery logic to the repeatedToolCallDetector itself hit maxIterations without converging. Fixing a stuck-loop detector is vulnerable to the same loop it's meant to solve — the fix must be smaller than the problem.
+

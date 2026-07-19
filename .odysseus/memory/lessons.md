@@ -64,3 +64,9 @@ The repeatedToolCallDetector aborts with an error but gives the agent no hint ab
 
 The repeated-tool-call detector caused a legitimate test-writing goal to fail because the agent was retrying a test command. The detector was correct that the agent was stuck, but aborting without a recovery step turned a recoverable situation into a hard failure. Detectors that abort should first attempt an intervention.
 
+## [2026-07-19T13:31:35.166Z] Recovery must be simpler than the failure it handles
+- **id**: mem_93337ed522
+- **source**: dream
+
+The failed recovery-intervention goal was over-specified ('inject a context message before hard abort'). Successful recovery should be the simplest possible escape hatch — a typed error and a catch block — not a complex intervention.
+
