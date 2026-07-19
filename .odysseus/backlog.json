@@ -37,13 +37,6 @@
       "createdAt": "2026-07-19T11:28:48.110Z"
     },
     {
-      "id": "bl_33fa234f8125",
-      "goal": "add goalValidator() unit tests in src/cerebellum/goalValidator.test.ts covering pure conversational input, goals with file paths, and edge cases like 'explain src/foo.ts'",
-      "origin": "dream",
-      "priority": 30,
-      "createdAt": "2026-07-19T11:45:53.973Z"
-    },
-    {
       "id": "bl_6769c7258c54",
       "goal": "log rejected goal descriptions and rejection reason in src/cerebellum/backlog.ts when goalValidator returns false, so abandoned goals are traceable in output",
       "origin": "dream",
