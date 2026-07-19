@@ -16,13 +16,6 @@
       "createdAt": "2026-07-19T12:09:18.864Z"
     },
     {
-      "id": "bl_7994068f4f6f",
-      "goal": "add unit tests for CompletedGoal map and isCompleted substring matching in tests/completedGoals.test.ts",
-      "origin": "dream",
-      "priority": 40,
-      "createdAt": "2026-07-19T12:12:34.919Z"
-    },
-    {
       "id": "bl_b44f8c80fb26",
       "goal": "add unit tests for repeatedToolCallDetector abort logic in tests/orchestrator.test.ts",
       "origin": "dream",
