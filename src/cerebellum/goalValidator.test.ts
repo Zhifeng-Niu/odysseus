@@ -110,6 +110,55 @@ describe("goalValidator — valid coding goals (accepted)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// goalValidator — edge cases (file-path pattern boundaries)
+// ---------------------------------------------------------------------------
+describe("goalValidator — edge cases", () => {
+  it("accepts 'explain <file>' — a file path makes it a code task", () => {
+    expect(goalValidator("explain src/foo.ts")).toBe(true);
+    expect(goalValidator("explain src/cerebellum/goalValidator.ts")).toBe(true);
+    expect(goalValidator("describe src/config.js")).toBe(true);
+    expect(goalValidator("walk me through src/index.ts")).toBe(true);
+  });
+
+  it("rejects 'explain <concept>' with no file path", () => {
+    expect(goalValidator("explain the architecture")).toBe(false);
+    expect(goalValidator("explain how the parser works")).toBe(false);
+  });
+
+  it("accepts .test.ts files", () => {
+    expect(goalValidator("explain src/foo.test.ts")).toBe(true);
+    expect(goalValidator("add a case to utils.test.ts")).toBe(true);
+  });
+
+  it("is case-insensitive on extensions and the src/ prefix", () => {
+    expect(goalValidator("update CONFIG.TS")).toBe(true);
+    expect(goalValidator("fix INDEX.JS")).toBe(true);
+    expect(goalValidator("refactor SRC/")).toBe(true);
+  });
+
+  it("rejects non-source file extensions", () => {
+    expect(goalValidator("update report.pdf")).toBe(false);
+    expect(goalValidator("fix image.png")).toBe(false);
+    expect(goalValidator("compress video.mp4")).toBe(false);
+  });
+
+  it("rejects .tsx (not in the source-extension set)", () => {
+    expect(goalValidator("refactor component.tsx")).toBe(false);
+  });
+
+  it("does not match source extensions inside larger tokens", () => {
+    // 'foots' has no leading dot; the \b after .ts also blocks mid-token hits
+    expect(goalValidator("add some foots to the list")).toBe(false);
+    expect(goalValidator("update the widgets config")).toBe(false);
+  });
+
+  it("rejects whitespace-only input", () => {
+    expect(goalValidator("   ")).toBe(false);
+    expect(goalValidator("\t\n")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // validateGoal (rich result) — greetings (rejected)
 // ---------------------------------------------------------------------------
 describe("validateGoal — greetings (rejected)", () => {
