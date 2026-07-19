@@ -68,7 +68,7 @@ export class GLMProvider implements LLMProvider {
   async complete(prompt: string, options?: LLMCompleteOptions): Promise<LLMCompletion> {
     const body = this.buildRequestBody(prompt, options, false);
     if (process.env.ODYSSEUS_DEBUG === 'true' || process.env.ODYSSEUS_DEBUG === '1') {
-      console.error('[glm] request messages:', JSON.stringify(body.messages, null, 2));
+      console.error('[glm] full request body:', JSON.stringify(body));
     }
     return withRetry(
       async () => {
