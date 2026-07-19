@@ -84,13 +84,6 @@
       "origin": "dream",
       "priority": 25,
       "createdAt": "2026-07-19T12:21:08.744Z"
-    },
-    {
-      "id": "bl_b48779980bd5",
-      "goal": "create goalValidator.test.ts in src/cerebellum/ with accept cases for test-file goals and reject cases for greetings and questions",
-      "origin": "dream",
-      "priority": 8,
-      "createdAt": "2026-07-19T12:21:08.745Z"
     }
   ]
 }

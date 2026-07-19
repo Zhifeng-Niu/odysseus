@@ -217,7 +217,11 @@ export class CerebellumOrchestrator extends EventEmitter {
 
     // ACT — LLM ↔ Tool loop
     const active = markActive({ ...waypoint, checkpointSha: checkpoint.sha });
-    const maxIter = this.config.maxIterations ?? strategy.maxIterations;
+    // maxIter is now optional — undefined means "run until DONE, interrupt,
+    // conversational stop, or repeated-tool-call detection". The loop body
+    // has explicit breaks on each of those conditions, so undefined is safe.
+    const maxIter: number | undefined =
+      this.config.maxIterations ?? strategy.maxIterations;
 
     // History always carries the goal as its first user message; the strategy
     // prompt is passed via options.systemPrompt on every call. We never use
@@ -238,7 +242,7 @@ export class CerebellumOrchestrator extends EventEmitter {
     const loopDetector = new RepeatedToolCallDetector(3);
 
     try {
-      for (let iter = 1; iter <= maxIter; iter++) {
+      for (let iter = 1; maxIter === undefined || iter <= maxIter; iter++) {
         if (this.interrupted) {
           throw new InterruptedError('user requested interrupt between iterations');
         }
@@ -428,13 +432,15 @@ export class CerebellumOrchestrator extends EventEmitter {
       };
     }
 
-    // If the loop exited by hitting maxIter (not via DONE), the agent has not
-    // declared success. Treat as failure — verify would otherwise pass on the
-    // empty diff and silently commit nothing. The orchestrator must never
-    // report success without an explicit DONE from the LLM.
+    // If the loop exited without DONE (only reachable when a strategy sets
+    // maxIterations — the default engineer strategy does not). The
+    // orchestrator must never report success without an explicit DONE.
     const reachedDone = lastAssistantContent.trim().toUpperCase() === 'DONE';
     if (!reachedDone) {
-      const failReason = `hit maxIterations (${maxIter}) without DONE — agent did not converge`;
+      const failReason =
+        maxIter !== undefined
+          ? `hit maxIterations (${maxIter}) without DONE — agent did not converge`
+          : 'loop exited without DONE and without an explicit stop — this should be unreachable for engineer strategy';
       const failed = markFailure(active, failReason, iterationsUsed);
       await this.trace(failed, checkpoint.sha, null);
       this.emitEvent({

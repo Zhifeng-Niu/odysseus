@@ -3,7 +3,17 @@ import type { Strategy } from './waypoint.js';
 export interface StrategyDefinition {
   name: Strategy;
   systemPrompt: string;
-  maxIterations: number;
+  /**
+   * Optional hard cap on iterations per waypoint. When undefined (the
+   * default for ENGINEER_STRATEGY), the loop runs until DONE, an interrupt,
+   * a conversational-stop, or the repeated-tool-call detector fires —
+   * whatever comes first. The loop has explicit breaks on each of those
+   * exit conditions, so leaving this unset is safe.
+   *
+   * Set this only when a strategy genuinely needs a budget ceiling (e.g.
+   * a "scout" strategy that should never spend more than 5 turns).
+   */
+  maxIterations?: number;
 }
 
 export const ENGINEER_STRATEGY: StrategyDefinition = {
@@ -50,7 +60,9 @@ Hard rules:
 - git is for status/log/commit only — do not use it for exploration.
 
 When you are confident the goal is achieved, respond with the single word: DONE`,
-  maxIterations: 16,
+  // No maxIterations — engineer runs until DONE, interrupt, conversational
+  // stop, or repeated-tool-call detection. Cuts off real work arbitrarily
+  // (see WP_mrrr81ip002: 1 edit short of DONE at iter 16).
 };
 
 export interface StrategySelectionInput {
