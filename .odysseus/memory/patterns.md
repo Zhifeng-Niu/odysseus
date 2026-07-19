@@ -58,3 +58,9 @@ Conversational goals, repeated-tool-call loops, and max-iteration exhaustion are
 
 Goals like 'reject non-coding inputs' can themselves be rejected as non-coding if the agent evaluates them before understanding intent. Structural placement (data layer vs control layer) determines survivability.
 
+## [2026-07-19T12:15:03.299Z] Substring matching for goal dedup risks false positives
+- **id**: mem_4d2283fc0c
+- **source**: dream
+
+Using substring matching in isCompleted() means a goal like 'fix bug in src/foo.ts' could falsely match 'fix bug in src/foo.ts.backup'. Consider exact hashing or normalized form for dedup keys.
+

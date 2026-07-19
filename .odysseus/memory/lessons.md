@@ -40,3 +40,9 @@ completedGoals.ts and goalValidator.ts both shipped without tests. Substring mat
 
 Attempting to wire goalValidator at orchestrator dispatch failed because the meta-goal itself appeared non-coding. Seeding-time validation in backlog.ts avoids this — the validator runs on concrete goals, not on meta-instructions.
 
+## [2026-07-19T12:15:03.299Z] Validator placement determines success
+- **id**: mem_4d22837a9f
+- **source**: dream
+
+Wiring goalValidator at the data entry point (enqueueBacklog) succeeded where wiring at the execution dispatch point failed. Entry-point validation prevents bad data from entering any pipeline stage.
+
