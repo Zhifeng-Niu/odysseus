@@ -2,13 +2,6 @@
   "version": 1,
   "items": [
     {
-      "id": "bl_ea13ef464bac",
-      "goal": "你知道你自己作为一个未来要成为AGI的agent的现在的不足吗",
-      "origin": "user",
-      "priority": 50,
-      "createdAt": "2026-07-19T14:04:23.146Z"
-    },
-    {
       "id": "bl_6f152701523c",
       "goal": "add console.warn when retry counter blocks re-seeding in src/cerebellum/backlog.ts",
       "origin": "dream",
