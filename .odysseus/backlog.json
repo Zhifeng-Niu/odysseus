@@ -93,13 +93,6 @@
       "createdAt": "2026-07-19T14:05:30.707Z"
     },
     {
-      "id": "bl_68027c309a30",
-      "goal": "add unit tests for retry counter blocking re-seed after 3 attempts in src/cerebellum/backlog.test.ts",
-      "origin": "dream",
-      "priority": 25,
-      "createdAt": "2026-07-19T14:12:27.737Z"
-    },
-    {
       "id": "bl_852441839df3",
       "goal": "add two test cases to src/cerebellum/completedGoals.test.ts: empty map returns false, exact match returns true",
       "origin": "dream",
