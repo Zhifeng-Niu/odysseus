@@ -44,13 +44,6 @@
       "createdAt": "2026-07-19T11:28:48.110Z"
     },
     {
-      "id": "bl_36a4d1804e9e",
-      "goal": "add unit tests for isCompleted() and markCompleted() in src/cerebellum/completedGoals.test.ts covering substring matching, case sensitivity, and empty-map behavior",
-      "origin": "dream",
-      "priority": 25,
-      "createdAt": "2026-07-19T11:45:53.972Z"
-    },
-    {
       "id": "bl_33fa234f8125",
       "goal": "add goalValidator() unit tests in src/cerebellum/goalValidator.test.ts covering pure conversational input, goals with file paths, and edge cases like 'explain src/foo.ts'",
       "origin": "dream",
