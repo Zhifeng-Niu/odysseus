@@ -34,3 +34,9 @@ Building a validator or gate function without wiring it into the call path creat
 
 completedGoals.ts and goalValidator.ts both shipped without tests. Substring matching and regex-based validation are especially fragile — tests should be seeded as backlog items the moment the feature lands.
 
+## [2026-07-19T12:12:34.920Z] Wire validators at the data entry point, not the execution dispatch point
+- **id**: mem_4adee819eb
+- **source**: dream
+
+Attempting to wire goalValidator at orchestrator dispatch failed because the meta-goal itself appeared non-coding. Seeding-time validation in backlog.ts avoids this — the validator runs on concrete goals, not on meta-instructions.
+

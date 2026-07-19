@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { BacklogOrigin } from '../orchestrator/events.js';
 import { isCompleted } from './completedGoals.js';
+import { isSeedExhausted, incrementSeedAttempt } from './seedAttempts.js';
 
 /**
  * Backlog queue — the agent's "short-term working memory".
@@ -112,6 +113,20 @@ export async function enqueueBacklog(
   if (trimmedGoal.length === 0) {
     throw new Error('backlog goal cannot be empty');
   }
+  // Block re-seeding when this goal has already been attempted
+  // MAX_SEED_ATTEMPTS times regardless of outcome (success/failure/abandon).
+  if (isSeedExhausted(trimmedGoal)) {
+    return {
+      id: options?.id ?? generateBacklogId(),
+      goal: trimmedGoal,
+      origin,
+      priority: options?.priority ?? defaultPriorityForOrigin(origin),
+      createdAt: options?.createdAt ?? new Date().toISOString(),
+      ...(options?.sourceWaypointId !== undefined
+        ? { sourceWaypointId: options.sourceWaypointId }
+        : {}),
+    };
+  }
   // Skip enqueueing when this goal has already been recorded as completed by
   // markCompleted — prevents the voyage loop from re-seeding done work.
   if (isCompleted(trimmedGoal)) {
@@ -171,6 +186,9 @@ export async function dequeueBacklog(rootDir: string): Promise<BacklogItem | nul
   if (file.items.length === 0) return null;
   const sorted = [...file.items].sort(byPriorityThenTime);
   const next = sorted[0]!;
+  // Count this dequeue as a seed attempt so the exhaustion counter
+  // tracks how many times the goal has been dispatched for execution.
+  incrementSeedAttempt(next.goal);
   const remaining = file.items.filter((it) => it.id !== next.id);
   await saveBacklogFile(rootDir, { version: 1, items: remaining });
   return next;

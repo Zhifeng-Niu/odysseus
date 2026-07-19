@@ -52,3 +52,9 @@ Both manifest as 'hit maxIterations without DONE'. The difference is only visibl
 
 Conversational goals, repeated-tool-call loops, and max-iteration exhaustion are three distinct failure modes that currently look identical in logs. Each needs its own detector and rejection path: pre-filter for conversational, loop detector for repetition, and a lower maxIterations or progress heuristic for general non-convergence.
 
+## [2026-07-19T12:12:34.920Z] Meta-goals about filtering are vulnerable to the filter they implement
+- **id**: mem_4adee8b22d
+- **source**: dream
+
+Goals like 'reject non-coding inputs' can themselves be rejected as non-coding if the agent evaluates them before understanding intent. Structural placement (data layer vs control layer) determines survivability.
+
