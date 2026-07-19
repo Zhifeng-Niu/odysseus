@@ -321,7 +321,12 @@ export class CerebellumOrchestrator extends EventEmitter {
                   message: nudge,
                   ts: Date.now(),
                 });
-                detection = { loopDetected: true };
+                // Skip dispatching the stuck tool call — continue to the
+                // next iteration so the LLM sees the nudge and picks a new
+                // approach. Guard flag `stuckLoopRetried` prevents a third
+                // attempt: the next StuckLoopError will fall through to the
+                // `else` branch and propagate, triggering rollback.
+                continue;
               } else {
                 throw err;
               }
