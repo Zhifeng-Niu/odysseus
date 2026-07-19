@@ -67,6 +67,9 @@ export class GLMProvider implements LLMProvider {
 
   async complete(prompt: string, options?: LLMCompleteOptions): Promise<LLMCompletion> {
     const body = this.buildRequestBody(prompt, options, false);
+    if (process.env.ODYSSEUS_DEBUG === 'true' || process.env.ODYSSEUS_DEBUG === '1') {
+      console.error('[glm] request messages:', JSON.stringify(body.messages, null, 2));
+    }
     return withRetry(
       async () => {
         const response = await this.fetchEndpoint('/chat/completions', body);
@@ -196,6 +199,9 @@ export class GLMProvider implements LLMProvider {
         console.error('[glm] non-ok response:', response.status, text.slice(0, 800));
       }
       throw new LLMError(`GLM API ${response.status}`, response.status, text);
+    }
+    if (process.env.ODYSSEUS_DEBUG === 'true' || process.env.ODYSSEUS_DEBUG === '1') {
+      console.error('[glm] ok response');
     }
 
     const data = (await response.json()) as OpenAIResponse;
