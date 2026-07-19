@@ -515,6 +515,54 @@ describe('CerebellumOrchestrator events + approval gate', () => {
     expect(failed?.error ?? '').toMatch(/abort/i);
   });
 
+  test('repeatedToolCallDetector appends recovery hint to messages on first loop detection', async () => {
+    // The detector uses a sliding window of size 3. Three identical tool
+    // calls fill the window → first loop detection → recovery hint injected
+    // into history + recovery-intervention event emitted. A subsequent DONE
+    // from the LLM exits the loop cleanly (no rollback).
+    const sameToolCall = fileWriteArgs(workdir, 'loop.ts', 'export const v = 1;');
+    const provider = makeMockProvider([
+      sameToolCall, // iter 1 — window: [sig]
+      sameToolCall, // iter 2 — window: [sig, sig]
+      sameToolCall, // iter 3 — window: [sig, sig, sig] → loop detected
+      'DONE',      // iter 4 — LLM heeds the hint and exits
+    ]);
+
+    const orch = new CerebellumOrchestrator({
+      cwd: workdir,
+      provider,
+      registry,
+      tracePath,
+      verifyLayers: ['syntax'],
+      autoApprove: true,
+    });
+    const events = subscribe(orch);
+
+    const result = await orch.runWaypoint({ goal: 'write a file' });
+
+    // The waypoint should succeed — the recovery hint gave the LLM a
+    // chance to break out of the loop and it responded with DONE.
+    expect(result.outcome).toBe('success');
+
+    // A recovery-intervention event must have been emitted.
+    const recoveryEvents = events.filter(
+      (e): e is Extract<OrchestratorEvent, { type: 'recovery-intervention' }> =>
+        e.type === 'recovery-intervention'
+    );
+    expect(recoveryEvents.length).toBe(1);
+
+    const recovery = recoveryEvents[0]!;
+    // The recovery message must reference the stuck tool name.
+    expect(recovery.tool).toBe('file-write');
+    // The message must contain the goal context injected by the orchestrator.
+    expect(recovery.message).toContain('write a file');
+    // The message must mention available alternative tools (at least file-write
+    // is in the registry, but the hint lists tools *other* than the stuck one).
+    expect(recovery.message).toContain('Other tools available');
+    // The message must include the detector's base recovery text.
+    expect(recovery.message).toContain('RECOVERY INTERVENTION');
+  });
+
   test('voyage survives an LLM error on one waypoint and continues', async () => {
     // The reason graceful degradation matters: a single bad LLM call must
     // not kill the entire voyage. After the failing waypoint returns
