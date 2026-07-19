@@ -58,3 +58,9 @@ The goalValidator test attempt failed when the agent ran the same vitest command
 
 The repeatedToolCallDetector aborts with an error but gives the agent no hint about what went wrong or what to try instead. Stuck-agent detection is only half the solution — recovery guidance is the other half.
 
+## [2026-07-19T13:29:16.427Z] Abort detectors without recovery create false failures
+- **id**: mem_91158bfdb1
+- **source**: dream
+
+The repeated-tool-call detector caused a legitimate test-writing goal to fail because the agent was retrying a test command. The detector was correct that the agent was stuck, but aborting without a recovery step turned a recoverable situation into a hard failure. Detectors that abort should first attempt an intervention.
+

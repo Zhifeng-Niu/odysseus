@@ -10,3 +10,9 @@ completedGoals prevents re-seeding successes, but no mechanism prevents infinite
 
 The per-goal retry counter in backlog.ts is now live. The dream that marked it unimplemented is stale — retry limiting is no longer a gap.
 
+## [2026-07-19T13:29:16.427Z] Failed-goal retry limiter shipped
+- **id**: mem_91158b4492
+- **source**: dream
+
+The per-goal retry counter in backlog.ts is now live. Dream resolved.
+

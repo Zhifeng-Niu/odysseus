@@ -76,3 +76,9 @@ When a test file doesn't exist, running vitest on it fails, and the agent may re
 
 Goals containing '.test.ts' or 'unit tests' are being rejected as non-coding by the goalValidator, creating a recursive blind spot where the validator blocks testing of itself. Any pattern-matching validator will have edge cases at its own boundary.
 
+## [2026-07-19T13:29:16.428Z] Over-specified goals cause non-convergence more than simple ones
+- **id**: mem_91158cd610
+- **source**: dream
+
+completedGoals.test.ts failed with a detailed goal ('covering substring matching, case sensitivity, and empty-map behavior') but succeeded with a simpler one ('substring matching and markCompleted()'). Extra specificity in goal descriptions seems to cause the agent to overthink and not converge.
+
