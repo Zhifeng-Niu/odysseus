@@ -8,6 +8,7 @@ import type { LLMProvider, LLMCompletion } from '../../src/llm/provider.js';
 import type { OrchestratorEvent } from '../../src/orchestrator/events.js';
 import { ToolRegistry } from '../../src/tools/registry.js';
 import { FileWriteTool } from '../../src/tools/file.js';
+import { enqueueBacklog } from '../../src/cerebellum/backlog.js';
 
 async function initRepo(dir: string): Promise<void> {
   await execFileNoThrow('git', ['init'], { cwd: dir });
@@ -337,11 +338,13 @@ describe('CerebellumOrchestrator events + approval gate', () => {
   test('conversational goal (no tool calls, no DONE) stops early as abandoned', async () => {
     // Simulates the "hi" scenario: LLM keeps replying with plain text and
     // never invokes tools. Without the consecutiveTextOnly guard, the loop
-    // would burn all 16 iterations and emit a failure. With the guard, the
-    // orchestrator stops after 2 conversational turns and marks abandoned.
+    // would burn all 16 iterations and emit a failure. With the guard at
+    // threshold=3, the orchestrator stops after 3 conversational turns and
+    // marks abandoned.
     const provider = makeMockProvider([
       'Hi! I am Odysseus, ready to help.',
       'Please give me a concrete task.',
+      'Still waiting for a real goal — try "add a file".',
     ]);
 
     const orch = new CerebellumOrchestrator({
@@ -358,7 +361,7 @@ describe('CerebellumOrchestrator events + approval gate', () => {
     const result = await orch.runWaypoint({ goal: 'hi' });
 
     expect(result.outcome).toBe('abandoned');
-    expect(result.iterationsUsed).toBe(2);
+    expect(result.iterationsUsed).toBe(3);
     expect(result.failReason ?? '').toMatch(/conversational/i);
 
     // The agent must NOT have committed or attempted verify.
@@ -366,12 +369,12 @@ describe('CerebellumOrchestrator events + approval gate', () => {
     expect(types).not.toContain('verify-started');
     expect(types).not.toContain('waypoint-committed');
 
-    // Both conversational replies should be surfaced to the UI.
+    // All three conversational replies should be surfaced to the UI.
     const assistantMessages = events.filter(
       (e): e is Extract<OrchestratorEvent, { type: 'assistant-message' }> =>
         e.type === 'assistant-message'
     );
-    expect(assistantMessages.length).toBe(2);
+    expect(assistantMessages.length).toBe(3);
   });
 
   test('single text reply followed by tool calls does NOT trip the conversational guard', async () => {
@@ -396,5 +399,168 @@ describe('CerebellumOrchestrator events + approval gate', () => {
 
     expect(result.outcome).toBe('success');
     expect(result.iterationsUsed).toBe(3);
+  });
+
+  test('two text replies (clarification flow) do NOT trip the conversational guard', async () => {
+    // Threshold = 3 means a legitimate "ask clarifying question → receive
+    // user reply → start working" two-text-turn flow must not be flagged
+    // as abandoned. The agent gets one more chance to invoke a tool.
+    const provider = makeMockProvider([
+      'Which file should I modify?', // text 1
+      'Got it, modifying now.',       // text 2
+      fileWriteArgs(workdir, 'ok.ts', 'export const v = 1;'), // tool activity
+      'DONE',
+    ]);
+
+    const orch = new CerebellumOrchestrator({
+      cwd: workdir,
+      provider,
+      registry,
+      tracePath,
+      verifyLayers: ['syntax'],
+      autoApprove: true,
+    });
+
+    const result = await orch.runWaypoint({ goal: 'add a file' });
+
+    expect(result.outcome).toBe('success');
+    expect(result.iterationsUsed).toBe(4);
+  });
+
+  test('LLM error (AbortError) degrades to waypoint failure, not process crash', async () => {
+    // Reproduces the production crash: GLM fetch times out after 60s, fetch
+    // throws DOMException[AbortError], withRetry exhausts 3 attempts, and
+    // the error bubbles to runWaypoint. Without graceful degradation this
+    // crashes the process via main.ts's top-level catch. With the fix, the
+    // waypoint is marked failure and the caller decides what to do next.
+    const err = new Error('This operation was aborted');
+    err.name = 'AbortError';
+    const provider: LLMProvider = {
+      async complete(): Promise<LLMCompletion> {
+        throw err;
+      },
+      async *stream() {
+        yield '';
+      },
+      getModel() {
+        return 'mock';
+      },
+    };
+
+    const orch = new CerebellumOrchestrator({
+      cwd: workdir,
+      provider,
+      registry,
+      tracePath,
+      verifyLayers: ['syntax'],
+      autoApprove: true,
+    });
+    const events = subscribe(orch);
+
+    // Must NOT throw — that's the entire point of the fix.
+    const result = await orch.runWaypoint({ goal: 'anything' });
+
+    expect(result.outcome).toBe('failure');
+    expect(result.failReason ?? '').toMatch(/abort/i);
+
+    // Events: started → iteration → failed. No verify, no commit, and
+    // crucially NOT waypoint-rolled-back (that's reserved for interrupts).
+    const types = events.map((e) => e.type);
+    expect(types).toContain('waypoint-started');
+    expect(types).toContain('waypoint-failed');
+    expect(types).not.toContain('verify-started');
+    expect(types).not.toContain('waypoint-committed');
+    expect(types).not.toContain('waypoint-rolled-back');
+
+    const failed = events.find(
+      (e): e is Extract<OrchestratorEvent, { type: 'waypoint-failed' }> =>
+        e.type === 'waypoint-failed'
+    );
+    expect(failed?.error ?? '').toMatch(/abort/i);
+  });
+
+  test('voyage survives an LLM error on one waypoint and continues', async () => {
+    // The reason graceful degradation matters: a single bad LLM call must
+    // not kill the entire voyage. After the failing waypoint returns
+    // outcome=failure, runVoyage proceeds to the dreaming phase and the
+    // next backlog item (if any).
+    const err = new Error('This operation was aborted');
+    err.name = 'AbortError';
+
+    // Sequence of LLM responses across the whole voyage:
+    //   call 1 = waypoint 1 iter 1 → throw AbortError
+    //   call 2 = dream 1 → empty (no items)
+    //   call 3 = waypoint 2 iter 1 → file-write tool call
+    //   call 4 = waypoint 2 iter 2 → DONE
+    //   call 5 = dream 2 → empty
+    const emptyDream = JSON.stringify({ backlogItems: [], memoryEntries: [] });
+    const responses: Array<Error | string> = [
+      err,
+      emptyDream,
+      fileWriteArgs(workdir, 'recovered.ts', 'export const r = 1;'),
+      'DONE',
+      emptyDream,
+    ];
+    let callIdx = 0;
+    const provider: LLMProvider = {
+      async complete(): Promise<LLMCompletion> {
+        const next = responses[Math.min(callIdx, responses.length - 1)];
+        callIdx += 1;
+        if (next instanceof Error) throw next;
+        // Reuse the makeMockProvider parsing logic: try to extract toolCalls
+        // from a JSON-shaped content string.
+        let toolCalls: unknown;
+        try {
+          const parsed = JSON.parse(next) as { toolCalls?: unknown };
+          toolCalls = parsed.toolCalls;
+        } catch {
+          toolCalls = undefined;
+        }
+        return {
+          content: next,
+          model: 'mock',
+          usage: { inputTokens: 1, outputTokens: 1 },
+          finishReason: 'stop',
+          ...(toolCalls !== undefined ? { toolCalls } : {}),
+        };
+      },
+      async *stream() {
+        yield '';
+      },
+      getModel() {
+        return 'mock';
+      },
+    };
+
+    // Use a tracePath under .odysseus/ so memoryRoot() matches the
+    // enqueueBacklog path. This is the production layout.
+    const voyageTracePath = join(workdir, '.odysseus', 'trace.jsonl');
+    await enqueueBacklog(join(workdir, '.odysseus'), 'crashing task', 'user', {
+      priority: 50,
+    });
+    await enqueueBacklog(join(workdir, '.odysseus'), 'recoverable task', 'user', {
+      priority: 60,
+    });
+
+    const orch = new CerebellumOrchestrator({
+      cwd: workdir,
+      provider,
+      registry,
+      tracePath: voyageTracePath,
+      verifyLayers: ['syntax'],
+      autoApprove: true,
+    });
+
+    const result = await orch.runVoyage();
+
+    // Both waypoints ran; first failed, second succeeded.
+    expect(result.waypoints.length).toBe(2);
+    expect(result.waypoints[0]!.outcome).toBe('failure');
+    expect(result.waypoints[1]!.outcome).toBe('success');
+    expect(result.outcome).toBe('completed');
+
+    // The recovered file actually landed.
+    const recovered = await readFile(join(workdir, 'recovered.ts'), 'utf8');
+    expect(recovered).toContain('r = 1');
   });
 });

@@ -3,7 +3,12 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { LLMProvider, LLMCompletion } from '../../src/llm/provider.js';
-import { dream } from '../../src/cerebellum/dreamer.js';
+import {
+  dream,
+  normalizeGoal,
+  isDuplicateGoal,
+  buildSucceededGoalSet,
+} from '../../src/cerebellum/dreamer.js';
 import { listBacklog } from '../../src/cerebellum/backlog.js';
 import { readMemory } from '../../src/cerebellum/memory.js';
 import type { TraceRecord } from '../../src/trace/jsonl.js';
@@ -300,5 +305,229 @@ describe('dreamer', () => {
     expect(out.parseOk).toBe(true);
     expect(out.backlogItemsAdded).toBe(0);
     expect(out.memoryEntriesAdded).toBe(0);
+  });
+
+  test('skips backlog items that duplicate a previously succeeded waypoint', async () => {
+    // recentTrace says "add retry to glm provider" already succeeded. The LLM
+    // proposes the same work again under a slightly different phrasing. The
+    // dreamer must skip it rather than enqueue a duplicate.
+    const trace: TraceRecord[] = [
+      {
+        ts: new Date().toISOString(),
+        waypoint_id: 'wp_abc',
+        goal: 'add retry to glm provider',
+        strategy: 'engineer',
+        parent: null,
+        outcome: 'success',
+        checkpoint_sha: null,
+        iterations_used: 3,
+        tokens_consumed: { input: 10, output: 20 },
+        verify_result: {},
+        fail_reason: null,
+        diff_summary: 'committed',
+      },
+    ];
+
+    const response = JSON.stringify({
+      backlogItems: [
+        { goal: 'add retry logic to the glm provider' }, // near-dup of succeeded
+        { goal: 'extract conversation detector into src/cerebellum/conversation.ts' }, // fresh
+      ],
+      memoryEntries: [],
+    });
+
+    const out = await dream({
+      rootDir,
+      provider: staticProvider(response),
+      recentTrace: trace,
+      memorySnapshot: [],
+    });
+
+    expect(out.backlogItemsAdded).toBe(1);
+    expect(out.backlogItemsSkipped).toBe(1);
+
+    const backlog = await listBacklog(rootDir);
+    expect(backlog.length).toBe(1);
+    expect(backlog[0]!.goal).toContain('conversation detector');
+  });
+
+  test('skips near-duplicate items within the same dream pass', async () => {
+    // LLM hallucinates two near-identical items in one response. The second
+    // must be skipped so we don't get duplicate backlog entries.
+    const response = JSON.stringify({
+      backlogItems: [
+        { goal: 'add dedup check to enqueueBacklog in src/cerebellum/backlog.ts' },
+        { goal: 'add deduplication to enqueueBacklog() in backlog.ts' },
+      ],
+      memoryEntries: [],
+    });
+
+    const out = await dream({
+      rootDir,
+      provider: staticProvider(response),
+      recentTrace: emptyTrace,
+      memorySnapshot: [],
+    });
+
+    expect(out.backlogItemsAdded).toBe(1);
+    expect(out.backlogItemsSkipped).toBe(1);
+  });
+
+  test('does not skip items that merely share a verb with succeeded goals', async () => {
+    // "add X" vs "add Y" — both start with "add" but target different files.
+    // The dedup must not over-fire and kill legitimately distinct work.
+    const trace: TraceRecord[] = [
+      {
+        ts: new Date().toISOString(),
+        waypoint_id: 'wp_x',
+        goal: 'add retry to glm provider in src/llm/glm-provider.ts',
+        strategy: 'engineer',
+        parent: null,
+        outcome: 'success',
+        checkpoint_sha: null,
+        iterations_used: 3,
+        tokens_consumed: { input: 10, output: 20 },
+        verify_result: {},
+        fail_reason: null,
+        diff_summary: 'committed',
+      },
+    ];
+
+    const response = JSON.stringify({
+      backlogItems: [
+        { goal: 'add trace rotation to src/trace/jsonl.ts' }, // shares verb, different target
+      ],
+      memoryEntries: [],
+    });
+
+    const out = await dream({
+      rootDir,
+      provider: staticProvider(response),
+      recentTrace: trace,
+      memorySnapshot: [],
+    });
+
+    expect(out.backlogItemsAdded).toBe(1);
+    expect(out.backlogItemsSkipped).toBe(0);
+  });
+
+  test('only success-outcome waypoints count as duplicates; failures do not', async () => {
+    // A previously failed attempt should not block re-proposing — the work
+    // was never actually shipped.
+    const trace: TraceRecord[] = [
+      {
+        ts: new Date().toISOString(),
+        waypoint_id: 'wp_fail',
+        goal: 'add dedup check to enqueueBacklog in src/cerebellum/backlog.ts',
+        strategy: 'engineer',
+        parent: null,
+        outcome: 'failure',
+        checkpoint_sha: null,
+        iterations_used: 3,
+        tokens_consumed: { input: 10, output: 20 },
+        verify_result: {},
+        fail_reason: 'verify failed',
+        diff_summary: null,
+      },
+    ];
+
+    const response = JSON.stringify({
+      backlogItems: [
+        { goal: 'add dedup check to enqueueBacklog in src/cerebellum/backlog.ts' },
+      ],
+      memoryEntries: [],
+    });
+
+    const out = await dream({
+      rootDir,
+      provider: staticProvider(response),
+      recentTrace: trace,
+      memorySnapshot: [],
+    });
+
+    expect(out.backlogItemsAdded).toBe(1);
+    expect(out.backlogItemsSkipped).toBe(0);
+  });
+});
+
+describe('dreamer dedup helpers', () => {
+  test('normalizeGoal strips punctuation and lowercases', () => {
+    expect(normalizeGoal('Add Retry to GLM!')).toBe('add retry to glm');
+    expect(normalizeGoal('  fix   bug  ')).toBe('fix bug');
+    expect(normalizeGoal('Update src/foo-bar.ts (urgent)')).toBe(
+      'update src foo bar ts urgent'
+    );
+  });
+
+  test('isDuplicateGoal detects exact normalized match', () => {
+    const existing = new Set(['add retry to glm']);
+    expect(isDuplicateGoal('Add Retry to GLM!', existing)).toBe(true);
+    expect(isDuplicateGoal('fix bug', existing)).toBe(false);
+  });
+
+  test('isDuplicateGoal detects Jaccard ≥ 0.5 overlap', () => {
+    const existing = new Set(['add retry to glm provider']);
+    // 4 of 5 content words overlap → similarity ≈ 0.8
+    expect(isDuplicateGoal('add retry logic to glm provider', existing)).toBe(true);
+    // 1 of 5 overlap → similarity ≈ 0.2
+    expect(isDuplicateGoal('fix caching in registry', existing)).toBe(false);
+  });
+
+  test('isDuplicateGoal handles empty/whitespace goals safely', () => {
+    const existing = new Set<string>();
+    expect(isDuplicateGoal('', existing)).toBe(false);
+    expect(isDuplicateGoal('   ', existing)).toBe(false);
+  });
+
+  test('buildSucceededGoalSet filters to outcome=success', () => {
+    const trace: TraceRecord[] = [
+      {
+        ts: 'a',
+        waypoint_id: 'wp1',
+        goal: 'g1',
+        strategy: 'engineer',
+        parent: null,
+        outcome: 'success',
+        checkpoint_sha: null,
+        iterations_used: 1,
+        tokens_consumed: { input: 0, output: 0 },
+        verify_result: {},
+        fail_reason: null,
+        diff_summary: null,
+      },
+      {
+        ts: 'b',
+        waypoint_id: 'wp2',
+        goal: 'g2',
+        strategy: 'engineer',
+        parent: null,
+        outcome: 'failure',
+        checkpoint_sha: null,
+        iterations_used: 1,
+        tokens_consumed: { input: 0, output: 0 },
+        verify_result: {},
+        fail_reason: 'oops',
+        diff_summary: null,
+      },
+      {
+        ts: 'c',
+        waypoint_id: 'wp3',
+        goal: 'g3',
+        strategy: 'engineer',
+        parent: null,
+        outcome: 'success',
+        checkpoint_sha: null,
+        iterations_used: 1,
+        tokens_consumed: { input: 0, output: 0 },
+        verify_result: {},
+        fail_reason: null,
+        diff_summary: null,
+      },
+    ];
+    const set = buildSucceededGoalSet(trace);
+    expect(set.size).toBe(2);
+    expect(set.has('g1')).toBe(true);
+    expect(set.has('g3')).toBe(true);
+    expect(set.has('g2')).toBe(false);
   });
 });

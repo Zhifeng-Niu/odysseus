@@ -34,7 +34,7 @@ Your output must be strict JSON:
 {
   "backlogItems": [
     {
-      "goal": "<concrete, actionable code change>",
+      "goal": "<verb + specific change + file/module path>",
       "priority": <number 0-100, lower=higher priority>,
       "rationale": "<1-2 sentences why this matters>"
     }
@@ -50,8 +50,19 @@ Your output must be strict JSON:
 \`\`\`
 
 Rules:
-- backlogItems must be CONCRETE code changes (e.g. "add retry to glm provider"), not philosophical observations.
-- Each backlogItem must have a goal that could be a waypoint seed.
+- backlogItems MUST be concrete, file-scoped code changes. The goal field MUST
+  include at least one specific file path or module name. Good examples:
+    GOOD: "add dedup check to enqueueBacklog() in src/cerebellum/backlog.ts"
+    GOOD: "extract conversation detector into src/cerebellum/conversation.ts"
+    GOOD: "raise consecutiveTextOnly threshold from 2 to 3 in orchestrator.ts"
+- FORBIDDEN: abstract goals with no file/module target. Bad examples:
+    BAD:  "add deduplication logic"          (where? how?)
+    BAD:  "improve error handling"           (which file? which error?)
+    BAD:  "make the agent more reliable"     (not actionable)
+- Each backlogItem must be a viable waypoint seed — a wakeful run must be able
+  to start, pick an anchor file, and make a diff without further clarification.
+- Goals already present in <recent> with outcome=success will be SKIPPED — do
+  not re-propose work that has already shipped.
 - memoryEntries should be reusable insights, not one-off notes.
 - If nothing useful surfaces, return {"backlogItems": [], "memoryEntries": []}.
 - Maximum 5 backlogItems and 3 memoryEntries per dream — quality over quantity.
@@ -99,6 +110,7 @@ export interface DreamAddedMemoryEntry {
 
 export interface DreamOutput {
   readonly backlogItemsAdded: number;
+  readonly backlogItemsSkipped: number;
   readonly memoryEntriesAdded: number;
   readonly addedBacklogItems: readonly DreamAddedBacklogItem[];
   readonly addedMemoryEntries: readonly DreamAddedMemoryEntry[];
@@ -115,6 +127,79 @@ interface ParsedDream {
 
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+/**
+ * Normalize a goal string for dedup comparison. Strips punctuation and case,
+ * collapses whitespace. Does NOT remove stop-words — verb choice ("add" vs
+ * "fix" vs "refactor") carries signal about intent.
+ */
+export function normalizeGoal(goal: string): string {
+  return goal
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function goalTokens(goal: string): Set<string> {
+  const tokens = normalizeGoal(goal)
+    .split(' ')
+    .filter((t) => t.length > 1);
+  return new Set(tokens);
+}
+
+/**
+ * Decide whether `newGoal` duplicates any goal in `existing`. Two strategies:
+ *
+ *   1. Exact match after normalization (catches whitespace/case variants).
+ *   2. Jaccard token similarity ≥ 0.5 (catches reworded variants like
+ *      "add retry to glm" vs "add retry logic to glm provider").
+ *
+ * Threshold of 0.5 is deliberately low — false positives are cheaper than
+ * false negatives in a self-evolution backlog (better to skip one good item
+ * than to enqueue five near-duplicates that all execute the same change).
+ */
+export function isDuplicateGoal(
+  newGoal: string,
+  existing: ReadonlySet<string>
+): boolean {
+  const normalized = normalizeGoal(newGoal);
+  if (normalized.length === 0) return false;
+  if (existing.has(normalized)) return true;
+
+  const newTokens = goalTokens(newGoal);
+  if (newTokens.size === 0) return false;
+
+  for (const raw of existing) {
+    const existingNorm = normalizeGoal(raw);
+    if (existingNorm === normalized) return true;
+    const existingTokens = goalTokens(raw);
+    if (existingTokens.size === 0) continue;
+    let intersection = 0;
+    for (const t of newTokens) {
+      if (existingTokens.has(t)) intersection += 1;
+    }
+    const union = new Set([...newTokens, ...existingTokens]).size;
+    if (union === 0) continue;
+    if (intersection / union >= 0.5) return true;
+  }
+  return false;
+}
+
+/**
+ * Build the set of goals already completed successfully. The dreamer refuses
+ * to re-enqueue anything in this set, so the backlog cannot accumulate
+ * "add retry", "add retry logic", "add a retry", ... variants across dreams.
+ */
+export function buildSucceededGoalSet(trace: readonly TraceRecord[]): Set<string> {
+  const set = new Set<string>();
+  for (const r of trace) {
+    if (r.outcome === 'success' && r.goal.trim().length > 0) {
+      set.add(r.goal);
+    }
+  }
+  return set;
 }
 
 function parsePriority(v: unknown): number | undefined {
@@ -223,9 +308,10 @@ Reflect. Surface what wants to be done next. Return JSON.`;
  * - LLM throws → rethrown (caller decides whether to abort voyage).
  * - LLM returns malformed JSON → returns { parseOk: false, parseError }, nothing persisted.
  * - LLM returns valid JSON with junk items → junk items silently dropped.
+ * - LLM returns items that duplicate already-succeeded waypoints → skipped, counted.
  *
- * Idempotent at the file level: calling dream() twice will produce two
- * independent sets of items. De-duplication is YAGNI for spike.
+ * Near-duplicates across dreams are also dropped (Jaccard ≥ 0.5 vs succeeded set
+ * or items already enqueued in this same pass).
  */
 export async function dream(input: DreamInput): Promise<DreamOutput> {
   const start = Date.now();
@@ -239,6 +325,7 @@ export async function dream(input: DreamInput): Promise<DreamOutput> {
   if (!extracted.ok) {
     return {
       backlogItemsAdded: 0,
+      backlogItemsSkipped: 0,
       memoryEntriesAdded: 0,
       addedBacklogItems: [],
       addedMemoryEntries: [],
@@ -270,9 +357,17 @@ export async function dream(input: DreamInput): Promise<DreamOutput> {
     if (entry) memoryEntries.push(entry);
   }
 
-  // Persist backlog items. Capture ids for the caller to emit events.
+  // Persist backlog items with dedup against the succeeded-goal set AND
+  // against items added earlier in this same pass. Both checks use the
+  // raw goal string (isDuplicateGoal normalizes internally).
+  const seenGoals = buildSucceededGoalSet(input.recentTrace);
   const addedBacklogItems: DreamAddedBacklogItem[] = [];
+  let backlogItemsSkipped = 0;
   for (const item of backlogItems) {
+    if (isDuplicateGoal(item.goal, seenGoals)) {
+      backlogItemsSkipped += 1;
+      continue;
+    }
     const options: EnqueueOptions =
       item.priority !== undefined ? { priority: item.priority } : {};
     try {
@@ -282,6 +377,9 @@ export async function dream(input: DreamInput): Promise<DreamOutput> {
         goal: item.goal,
         priority: enqueued.priority,
       });
+      // Register the goal so subsequent items in this same dream cannot
+      // sneak in a near-duplicate variant.
+      seenGoals.add(item.goal);
     } catch {
       // empty-goal validation etc — skip silently
     }
@@ -309,6 +407,7 @@ export async function dream(input: DreamInput): Promise<DreamOutput> {
 
   return {
     backlogItemsAdded: addedBacklogItems.length,
+    backlogItemsSkipped,
     memoryEntriesAdded: addedMemoryEntries.length,
     addedBacklogItems,
     addedMemoryEntries,

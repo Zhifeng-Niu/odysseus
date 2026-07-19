@@ -2,13 +2,6 @@
   "version": 1,
   "items": [
     {
-      "id": "bl_38315bea6961",
-      "goal": "Add a goal validator filter that rejects non-coding conversational goals before agent dispatch",
-      "origin": "dream",
-      "priority": 15,
-      "createdAt": "2026-07-19T10:58:08.965Z"
-    },
-    {
       "id": "bl_6a35c4e82688",
       "goal": "Add a convergence detector that interrupts the agent when it repeats the same tool call 3+ times without progress",
       "origin": "dream",
@@ -70,6 +63,13 @@
       "origin": "dream",
       "priority": 40,
       "createdAt": "2026-07-19T11:02:36.806Z"
+    },
+    {
+      "id": "bl_ae04dccd9912",
+      "goal": "请你给我预测今晚西班牙和阿根廷谁会赢",
+      "origin": "user",
+      "priority": 50,
+      "createdAt": "2026-07-19T11:28:48.110Z"
     }
   ]
 }

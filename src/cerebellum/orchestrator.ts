@@ -296,9 +296,13 @@ export class CerebellumOrchestrator extends EventEmitter {
         // task (e.g. "hi", "what can you do?"). Stop the loop so we don't
         // burn the entire iteration budget on echo-chamber replies.
         //
-        // Tolerating 2 turns gives the agent one chance to clarify before
-        // the user injects a real task via `injectMessage`.
-        if (consecutiveTextOnly >= 2) {
+        // Threshold = 3 (not 2): a legitimate "ask one clarifying question →
+        // receive user reply → start working" flow consumes two text-only
+        // turns before the first tool call. Killing at 2 would mark every
+        // valid clarification as abandoned. Genuine greetings/chat ("hi",
+        // "who are you") typically burn 3+ turns of "please give me a task"
+        // before the user gives up — that's the signal we want to catch.
+        if (consecutiveTextOnly >= 3) {
           conversationalStop = true;
           break;
         }
@@ -306,35 +310,50 @@ export class CerebellumOrchestrator extends EventEmitter {
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       const interrupted = err instanceof InterruptedError;
-      const rejected = err instanceof RejectedError;
-      if (interrupted || rejected) {
-        // Roll back to checkpoint so the workspace is clean for the next voyage.
-        await rollbackTo({
-          cwd: this.config.cwd,
-          sha: checkpoint.sha,
-          allowedShas: Array.from(this.state.allowedShas),
-        });
-        this.pendingApprovals.delete(waypoint.id);
-        const failed = markFailure(active, reason, iterationsUsed);
-        await this.trace(failed, checkpoint.sha, null);
+
+      // Graceful degradation: ANY error thrown during the LLM↔tool loop
+      // (AbortError from fetch timeout, LLMError 5xx, TypeError from a
+      // severed network socket, RejectedError from the approval gate, etc.)
+      // is converted to a waypoint failure — never allowed to bubble up and
+      // crash the process. The voyage layer decides whether to continue,
+      // idle, or stop based on the RunWaypointResult, not by catching throws.
+      //
+      // interrupted keeps its dedicated waypoint-rolled-back event so the TUI
+      // can distinguish "user pressed Ctrl+C" from "LLM blew up".
+      await rollbackTo({
+        cwd: this.config.cwd,
+        sha: checkpoint.sha,
+        allowedShas: Array.from(this.state.allowedShas),
+      });
+      this.pendingApprovals.delete(waypoint.id);
+      const failed = markFailure(active, reason, iterationsUsed);
+      await this.trace(failed, checkpoint.sha, null);
+
+      if (interrupted) {
         this.emitEvent({
-          type: interrupted ? 'waypoint-rolled-back' : 'waypoint-failed',
+          type: 'waypoint-rolled-back',
           waypointId: waypoint.id,
-          ...(interrupted ? {} : { error: reason }),
-          ...(interrupted ? { reason } : {}),
+          reason,
           iterationsUsed,
           ts: Date.now(),
-        } as OrchestratorEvent);
-        return {
-          waypoint: failed,
-          outcome: 'failure',
-          checkpointSha: checkpoint.sha,
-          failReason: reason,
-          iterationsUsed,
-          tokensConsumed: { input: this.state.totalInput, output: this.state.totalOutput },
-        };
+        });
+      } else {
+        this.emitEvent({
+          type: 'waypoint-failed',
+          waypointId: waypoint.id,
+          error: reason,
+          ts: Date.now(),
+        });
       }
-      throw err;
+
+      return {
+        waypoint: failed,
+        outcome: 'failure',
+        checkpointSha: checkpoint.sha,
+        failReason: reason,
+        iterationsUsed,
+        tokensConsumed: { input: this.state.totalInput, output: this.state.totalOutput },
+      };
     }
 
     // Conversational stop — agent replied with plain text multiple times
