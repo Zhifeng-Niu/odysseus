@@ -93,18 +93,18 @@
       "createdAt": "2026-07-19T14:04:23.146Z"
     },
     {
-      "id": "bl_30ac2bb8cceb",
-      "goal": "add unit tests for StuckLoopError catch-and-retry path in src/orchestrator.test.ts covering single retry and no-second-retry guard",
-      "origin": "dream",
-      "priority": 20,
-      "createdAt": "2026-07-19T14:05:30.706Z"
-    },
-    {
       "id": "bl_6f152701523c",
       "goal": "add console.warn when retry counter blocks re-seeding in src/cerebellum/backlog.ts",
       "origin": "dream",
       "priority": 50,
       "createdAt": "2026-07-19T14:05:30.707Z"
+    },
+    {
+      "id": "bl_68027c309a30",
+      "goal": "add unit tests for retry counter blocking re-seed after 3 attempts in src/cerebellum/backlog.test.ts",
+      "origin": "dream",
+      "priority": 25,
+      "createdAt": "2026-07-19T14:12:27.737Z"
     }
   ]
 }

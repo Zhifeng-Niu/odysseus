@@ -94,3 +94,9 @@ The agent attempting to add recovery logic to the repeatedToolCallDetector itsel
 
 The StuckLoopError recovery path required three attempts: two over-specified failures, then a minimal catch-block addition that succeeded. The failure attempts weren't wasted — they clarified the simplest viable approach.
 
+## [2026-07-19T14:12:27.738Z] Complex recovery fails, simple recovery ships
+- **id**: mem_b89fdaa70a
+- **source**: dream
+
+Two attempts to add sophisticated recovery (inject context before abort, replace abort with throw) both hit maxIterations. A simple catch-block-with-nudge succeeded. Recovery must be structurally simpler than the failure it handles.
+

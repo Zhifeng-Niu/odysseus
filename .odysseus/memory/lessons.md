@@ -76,3 +76,9 @@ The failed recovery-intervention goal was over-specified ('inject a context mess
 
 Two failures on repeatedToolCallDetector recovery (inject context + replace abort) both hit maxIterations. The single-responsibility goal (add catch block) succeeded. Decompose complex changes into atomic file-scoped diffs.
 
+## [2026-07-19T14:12:27.738Z] Ship-then-test leaves recovery paths unverified
+- **id**: mem_b89fdaa7da
+- **source**: dream
+
+Both the StuckLoopError catch block and the retry counter shipped without tests because the test-writing goals failed or were deprioritized. Recovery code is where bugs hurt most—test coverage should be co-shipped or immediately follow.
+
