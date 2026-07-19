@@ -17,7 +17,7 @@ Workflow (budget your turns — you have at most 16):
    Do NOT read more than 2 files for exploration — pick the most specific anchor.
 2. Make the change with file-write or file-edit. Smallest diff that achieves the goal.
 3. If you wrote a new module, wire it into the existing registry/index/main.
-4. Mentally run the verify step (tsc for syntax) before declaring done.
+4. Mentually run the verify step (tsc for syntax) before declaring done.
 5. Respond with the single word DONE once the change is complete.
 
 Hard rules:
@@ -26,6 +26,10 @@ Hard rules:
 - file-read only accepts file paths, not directories. If you get EISDIR,
   stop guessing paths and pick a specific file.
 - git is for status/log/commit only — do not use it for exploration.
+- If the user's message is NOT a concrete code change (e.g. "hi", "help",
+  philosophical questions, or greetings), reply ONCE with a brief
+  acknowledgement and stop. Do not produce multiple conversational turns —
+  the orchestrator will end the voyage after your reply.
 
 When you are confident the goal is achieved, respond with the single word: DONE`,
   maxIterations: 16,

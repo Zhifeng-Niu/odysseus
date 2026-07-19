@@ -1,7 +1,12 @@
 import { Box, Text, useApp, useInput } from 'ink';
 import { useMemo, useState } from 'react';
 import type { CerebellumOrchestrator } from '../cerebellum/orchestrator.js';
-import { useOrchestratorEvents, findPendingApproval } from './hooks.js';
+import {
+  useOrchestratorEvents,
+  findPendingApproval,
+  deriveBrainState,
+  deriveBacklog,
+} from './hooks.js';
 import { ChatPanel } from './chat-panel.js';
 import { ApprovalGate } from './approval-gate.js';
 import { InputArea } from './input-area.js';
@@ -21,12 +26,16 @@ interface AppProps {
  *   │ ChatPanel (scrollable waypoint log)    │
  *   │ ApprovalGate (when pending)             │
  *   │ InputArea (frozen while gate is active) │
- *   └─ StatusBar ────────────────────────────┘
+ *   └─ StatusBar (model · phase · brain) ────┘
  *
  * Key routing:
  *   - When an approval gate is pending, [a]/[r] are captured here.
  *   - Otherwise, keystrokes flow to InputArea for goal/inject submission.
- *   - Ctrl+C interrupts the active waypoint (if any) and exits on second press.
+ *   - Ctrl+C interrupts the active voyage (if any) and exits on second press.
+ *
+ * Voyage vs. waypoint: when not running, submit kicks off `runVoyage()`
+ * (the full wakeful→dreaming→consolidating loop). This makes the brain
+ * state indicator change visibly as the agent works through backlog items.
  */
 export function App({ orch, model }: AppProps): JSX.Element {
   const { events } = useOrchestratorEvents(orch);
@@ -51,10 +60,17 @@ export function App({ orch, model }: AppProps): JSX.Element {
     return ids.size;
   }, [events]);
 
+  const brainState = useMemo(() => deriveBrainState(events), [events]);
+  const backlog = useMemo(() => deriveBacklog(events), [events]);
+
+  // A voyage is "running" if the brain is not idle. This captures both the
+  // wakeful execution and the dreaming/reflecting/consolidating sub-phases.
+  const voyageActive = brainState !== 'idle';
+
   const phase: 'idle' | 'running' | 'awaiting-approval' =
     pendingApproval !== null
       ? 'awaiting-approval'
-      : waypointsTotal > waypointsCommitted
+      : waypointsTotal > waypointsCommitted || voyageActive
         ? 'running'
         : 'idle';
 
@@ -85,10 +101,10 @@ export function App({ orch, model }: AppProps): JSX.Element {
     if (pendingApproval !== null) return;
     // If a voyage is already running, treat the input as a steering message
     // injected into the next iteration. Otherwise, kick off a new voyage.
-    if (phase === 'running') {
+    if (voyageActive) {
       orch.injectMessage(text);
     } else {
-      void orch.runWaypoint({ goal: text });
+      void orch.runVoyage({ seedGoal: text });
     }
   }
 
@@ -120,6 +136,8 @@ export function App({ orch, model }: AppProps): JSX.Element {
         phase={phase}
         waypointsTotal={waypointsTotal}
         waypointsCommitted={waypointsCommitted}
+        brainState={brainState}
+        backlogSize={backlog.size}
       />
 
       {exitArmed && (

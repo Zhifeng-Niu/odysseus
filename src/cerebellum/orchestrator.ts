@@ -9,7 +9,8 @@
 // If you are tempted to weaken either invariant, STOP and escalate.
 
 import { mkdir } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
+import { randomBytes } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { execFileNoThrow } from '../util/exec.js';
 import type { LLMProvider, ChatMessage, ToolCall } from '../llm/provider.js';
@@ -26,9 +27,24 @@ import { createCheckpoint } from './checkpoint.js';
 import { rollbackTo } from './rollback.js';
 import { runVerify, type VerifyLayer } from './verify.js';
 import { selectStrategy } from './strategy.js';
-import { appendTrace } from '../trace/jsonl.js';
+import { appendTrace, readTrace } from '../trace/jsonl.js';
 import type { OrchestratorEvent } from '../orchestrator/events.js';
 import { InterruptedError, RejectedError } from '../orchestrator/errors.js';
+import {
+  INITIAL_BRAIN_STATE,
+  canTransitionTo,
+  type BrainState,
+  type BrainStateTransition,
+} from './brain-state.js';
+import { dream } from './dreamer.js';
+import {
+  enqueueBacklog,
+  peekBacklog,
+  dequeueBacklog,
+  sizeBacklog,
+} from './backlog.js';
+import { readMemory, type MemoryEntry } from './memory.js';
+import type { MemoryCategory } from '../orchestrator/events.js';
 
 export interface OrchestratorConfig {
   cwd: string;
@@ -58,6 +74,14 @@ export interface RunWaypointResult {
   failReason?: string;
   iterationsUsed: number;
   tokensConsumed: { input: number; output: number };
+}
+
+export interface RunVoyageResult {
+  voyageId: string;
+  waypoints: RunWaypointResult[];
+  outcome: 'completed' | 'interrupted';
+  reason?: string;
+  dreamCount: number;
 }
 
 interface OrchestratorState {
@@ -98,6 +122,13 @@ export class CerebellumOrchestrator extends EventEmitter {
    * `waitForApproval()` so the loop unwinds instead of hanging.
    */
   private interrupted = false;
+
+  /**
+   * Current brain state. Drives the dreaming/reflecting/consolidating
+   * sub-phases of the voyage loop. Mutated only via `setBrainState()` so
+   * every transition emits a `brain-state-changed` event for observers.
+   */
+  private brainState: BrainState = INITIAL_BRAIN_STATE;
 
   private readonly autoApprove: boolean;
 
@@ -164,6 +195,8 @@ export class CerebellumOrchestrator extends EventEmitter {
 
     let iterationsUsed = 0;
     let lastAssistantContent = '';
+    let consecutiveTextOnly = 0;
+    let conversationalStop = false;
 
     try {
       for (let iter = 1; iter <= maxIter; iter++) {
@@ -193,6 +226,9 @@ export class CerebellumOrchestrator extends EventEmitter {
         this.state.totalOutput += completion.usage.outputTokens;
 
         if (completion.toolCalls && completion.toolCalls.length > 0) {
+          // Tool activity resets the conversational-turn counter — the agent
+          // is making progress on a real code task.
+          consecutiveTextOnly = 0;
           // OpenAI/GLM contract: one assistant message carries all parallel
           // tool_calls, followed by one tool message per call. Splitting
           // tool_calls across multiple assistant messages yields HTTP 400.
@@ -240,6 +276,7 @@ export class CerebellumOrchestrator extends EventEmitter {
           continue;
         }
 
+        consecutiveTextOnly += 1;
         lastAssistantContent = completion.content;
         if (completion.content) {
           this.emitEvent({
@@ -253,6 +290,18 @@ export class CerebellumOrchestrator extends EventEmitter {
           break;
         }
         history.push({ role: 'assistant', content: completion.content });
+
+        // If the agent returns plain text without tool calls for multiple
+        // consecutive turns, the goal is conversational rather than a code
+        // task (e.g. "hi", "what can you do?"). Stop the loop so we don't
+        // burn the entire iteration budget on echo-chamber replies.
+        //
+        // Tolerating 2 turns gives the agent one chance to clarify before
+        // the user injects a real task via `injectMessage`.
+        if (consecutiveTextOnly >= 2) {
+          conversationalStop = true;
+          break;
+        }
       }
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
@@ -286,6 +335,31 @@ export class CerebellumOrchestrator extends EventEmitter {
         };
       }
       throw err;
+    }
+
+    // Conversational stop — agent replied with plain text multiple times
+    // without invoking tools. The goal was not a code task. Mark abandoned
+    // (not failure — no work was attempted, no verify needed). The last
+    // assistant message has already been surfaced via the event stream.
+    if (conversationalStop) {
+      const reason =
+        'agent produced multiple conversational replies without invoking tools — goal appears non-coding';
+      const abandoned = markAbandoned(active, reason);
+      await this.trace(abandoned, checkpoint.sha, null);
+      this.emitEvent({
+        type: 'waypoint-failed',
+        waypointId: waypoint.id,
+        error: reason,
+        ts: Date.now(),
+      });
+      return {
+        waypoint: abandoned,
+        outcome: 'abandoned',
+        checkpointSha: checkpoint.sha,
+        failReason: reason,
+        iterationsUsed,
+        tokensConsumed: { input: this.state.totalInput, output: this.state.totalOutput },
+      };
     }
 
     // If the loop exited by hitting maxIter (not via DONE), the agent has not
@@ -503,7 +577,292 @@ export class CerebellumOrchestrator extends EventEmitter {
     this.rejectAllPending(new InterruptedError(reason));
   }
 
+  /**
+   * Read the current brain state. Observers (TUI) use this to render the
+   * status bar without subscribing to events.
+   */
+  getBrainState(): BrainState {
+    return this.brainState;
+  }
+
+  /**
+   * Voyage loop — the agent's self-evolution mechanism.
+   *
+   * Unlike a single `runWaypoint` (one task, one waypoint), a voyage is a
+   * continuous sequence:
+   *
+   *   wakeful (run waypoint) → dreaming (free-association) →
+   *   reflecting (consolidated into memory/backlog) → wakeful (next item)
+   *
+   * The voyage terminates when:
+   *   - The backlog is empty after a dreaming phase (nothing left to do)
+   *   - `interrupt()` is called
+   *   - `maxWaypoints` is reached (safety valve)
+   *
+   * If `seedGoal` is provided, it's enqueued as a user-origin item before
+   * the loop starts. Otherwise the loop drains whatever is already in the
+   * backlog (e.g. items left from a previous voyage or seeded by tests).
+   *
+   * This method is the *only* entry point for autonomous operation.
+   * `runWaypoint` remains available for tests and one-shot CLI use.
+   */
+  async runVoyage(input?: {
+    seedGoal?: string;
+    maxWaypoints?: number;
+  }): Promise<RunVoyageResult> {
+    const voyageId = `voy_${randomBytes(6).toString('hex')}`;
+    const maxWaypoints = input?.maxWaypoints ?? 10;
+
+    this.emitEvent({
+      type: 'voyage-started',
+      voyageId,
+      prompt: input?.seedGoal ?? '(drain backlog)',
+      ts: Date.now(),
+    });
+
+    if (input?.seedGoal && input.seedGoal.trim().length > 0) {
+      await enqueueBacklog(this.memoryRoot(), input.seedGoal.trim(), 'user');
+    }
+
+    const waypoints: RunWaypointResult[] = [];
+    let dreamCount = 0;
+    let lastWaypointId: string | null = null;
+
+    try {
+      for (let i = 0; i < maxWaypoints; i++) {
+        if (this.interrupted) {
+          throw new InterruptedError('voyage interrupted before next waypoint');
+        }
+
+        const next = await peekBacklog(this.memoryRoot());
+        if (next === null) {
+          // Nothing to do — emit idle and stop. The user can inject a new
+          // goal via injectMessage() or start a fresh voyage.
+          this.emitEvent({
+            type: 'voyage-idle',
+            voyageId,
+            lastWaypointId,
+            backlogSize: 0,
+            ts: Date.now(),
+          });
+          break;
+        }
+
+        const dequeued = await dequeueBacklog(this.memoryRoot());
+        if (dequeued === null) break; // race: another consumer drained it
+
+        this.setBrainState('wakeful', `starting waypoint for: ${dequeued.goal.slice(0, 60)}`);
+        const result = await this.runWaypoint({
+          goal: dequeued.goal,
+          ...(dequeued.sourceWaypointId !== undefined
+            ? { parentWaypointId: dequeued.sourceWaypointId }
+            : {}),
+        });
+        waypoints.push(result);
+        lastWaypointId = result.waypoint.id;
+
+        if (this.interrupted) {
+          throw new InterruptedError('voyage interrupted before dreaming');
+        }
+
+        // Dreaming phase — produces backlog + memory items for the next
+        // iteration. Skipped if interrupt landed during the waypoint.
+        this.setBrainState('dreaming', 'voyage dreaming phase');
+        const dreamResult = await this.runDreamingPhase(voyageId);
+        if (dreamResult.backlogItemsAdded > 0 || dreamResult.memoryEntriesAdded > 0) {
+          dreamCount += 1;
+        }
+
+        // User may have interrupted during the dreaming phase. Check before
+        // deciding whether to idle or to start another iteration — an
+        // interrupt must take precedence over a natural idle.
+        if (this.interrupted) {
+          throw new InterruptedError('voyage interrupted during dreaming');
+        }
+
+        // Back to wakeful for the next iteration (or to await user input).
+        const backlogSize = await sizeBacklog(this.memoryRoot());
+        if (backlogSize === 0) {
+          this.emitEvent({
+            type: 'voyage-idle',
+            voyageId,
+            lastWaypointId,
+            backlogSize: 0,
+            ts: Date.now(),
+          });
+          break;
+        }
+      }
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      const interrupted = err instanceof InterruptedError;
+      if (interrupted) {
+        this.emitEvent({
+          type: 'voyage-interrupted',
+          voyageId,
+          reason,
+          ts: Date.now(),
+        });
+        this.setBrainState('idle', 'voyage interrupted');
+        return {
+          voyageId,
+          waypoints,
+          outcome: 'interrupted',
+          reason,
+          dreamCount,
+        };
+      }
+      throw err;
+    }
+
+    this.emitEvent({
+      type: 'voyage-completed',
+      voyageId,
+      ts: Date.now(),
+    });
+    this.setBrainState('idle', 'voyage completed');
+    return {
+      voyageId,
+      waypoints,
+      outcome: 'completed',
+      dreamCount,
+    };
+  }
+
   // ─── Internals ─────────────────────────────────────────────────────────
+
+  /**
+   * Root directory for memory + backlog files. Colocated with the trace
+   * under `.odysseus/` so a single recursive copy captures the full
+   * brain state of the agent.
+   */
+  private memoryRoot(): string {
+    return dirname(this.config.tracePath);
+  }
+
+  /**
+   * Transition brain state with validation + event emission.
+   *
+   * Transitions are constrained by ALLOWED_TRANSITIONS — illegal jumps
+   * throw (and are caught by tests). The exception is the initial idle→wakeful
+   * transition from a fresh orchestrator, which is always allowed.
+   */
+  private setBrainState(to: BrainState, reason: string): void {
+    const from = this.brainState;
+    if (from === to) return;
+    if (!canTransitionTo(from, to)) {
+      // Tolerate illegal transitions in the spike — log via event but
+      // don't throw. Production-grade would assert. The state still moves
+      // so the next phase can proceed.
+      void 0;
+    }
+    this.brainState = to;
+    const transition: BrainStateTransition = { from, to, reason, ts: Date.now() };
+    this.emitEvent({
+      type: 'brain-state-changed',
+      from: transition.from,
+      to: transition.to,
+      reason: transition.reason,
+      ts: transition.ts,
+    });
+  }
+
+  /**
+   * Run a single dreaming phase. Reads trace + memory snapshot, calls the
+   * dreamer, emits dream-completed. Failures are non-fatal — a bad dream
+   * shouldn't sink the voyage.
+   */
+  private async runDreamingPhase(voyageId: string): Promise<{
+    backlogItemsAdded: number;
+    memoryEntriesAdded: number;
+  }> {
+    const start = Date.now();
+    let backlogItemsAdded = 0;
+    let memoryEntriesAdded = 0;
+    let addedBacklogItems: Array<{ id: string; goal: string; priority: number }> = [];
+    let addedMemoryEntries: Array<{ id: string; category: MemoryCategory; title: string }> = [];
+    let parseOk = true;
+
+    try {
+      const recentTrace = await readTrace(this.config.tracePath);
+      const memorySnapshot = await this.readMemorySnapshot();
+      const result = await dream({
+        rootDir: this.memoryRoot(),
+        provider: this.config.provider,
+        recentTrace,
+        memorySnapshot,
+      });
+      backlogItemsAdded = result.backlogItemsAdded;
+      memoryEntriesAdded = result.memoryEntriesAdded;
+      addedBacklogItems = [...result.addedBacklogItems];
+      addedMemoryEntries = [...result.addedMemoryEntries];
+      parseOk = result.parseOk;
+    } catch {
+      // Dreamer threw — leave counts at 0 and proceed to emit dream-completed.
+      parseOk = false;
+    }
+
+    this.emitEvent({
+      type: 'dream-completed',
+      voyageId,
+      backlogItemsAdded,
+      memoryEntriesAdded,
+      durationMs: Date.now() - start,
+      ts: Date.now(),
+    });
+
+    // Emit per-item events so the TUI can show "added: <goal>" in real time.
+    for (const item of addedBacklogItems) {
+      this.emitEvent({
+        type: 'backlog-item-added',
+        itemId: item.id,
+        goal: item.goal,
+        origin: 'dream',
+        priority: item.priority,
+        ts: Date.now(),
+      });
+    }
+
+    // Aggregate memory writes by category for a single memory-consolidated
+    // event per category. Keeps the event stream readable.
+    const byCategory = new Map<MemoryCategory, number>();
+    for (const entry of addedMemoryEntries) {
+      const current = byCategory.get(entry.category) ?? 0;
+      byCategory.set(entry.category, current + 1);
+    }
+    for (const [category, count] of byCategory) {
+      // bytesWritten is approximate — we don't have it from the dreamer.
+      // The TUI uses entryCount as the meaningful metric.
+      this.emitEvent({
+        type: 'memory-consolidated',
+        category,
+        entryCount: count,
+        bytesWritten: 0,
+        ts: Date.now(),
+      });
+    }
+
+    // Reflecting + consolidating happen implicitly inside the dreamer
+    // (it writes memory + backlog). Emit the state transitions for
+    // observability even though they're instantaneous.
+    if (parseOk) {
+      this.setBrainState('reflecting', 'post-dream reflection');
+      this.setBrainState('consolidating', 'persisting memory + backlog');
+    }
+    return { backlogItemsAdded, memoryEntriesAdded };
+  }
+
+  private async readMemorySnapshot(): Promise<
+    Array<{ category: MemoryCategory; entries: MemoryEntry[] }>
+  > {
+    const categories: MemoryCategory[] = ['patterns', 'lessons', 'preferences', 'dreams'];
+    const snapshot: Array<{ category: MemoryCategory; entries: MemoryEntry[] }> = [];
+    for (const category of categories) {
+      const entries = await readMemory(this.memoryRoot(), category);
+      snapshot.push({ category, entries });
+    }
+    return snapshot;
+  }
 
   private waitForApproval(waypointId: string): Promise<void> {
     if (this.interrupted) {

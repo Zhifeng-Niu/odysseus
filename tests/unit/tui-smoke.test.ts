@@ -99,4 +99,25 @@ describe('TUI smoke', () => {
     expect(frame).toContain('phase: idle');
     instance.unmount();
   });
+
+  test('App shows brain state indicator + backlog size in status bar', () => {
+    const registry = new ToolRegistry();
+    registry.register(new FileWriteTool());
+    const orch = new CerebellumOrchestrator({
+      cwd: workdir,
+      provider: staticProvider('DONE'),
+      registry,
+      tracePath: join(workdir, 'trace.jsonl'),
+      verifyLayers: ['syntax'],
+      autoApprove: true,
+    });
+
+    const instance = render(React.createElement(App, { orch, model: 'mock' }));
+    const frame = instance.lastFrame() ?? '';
+    // Brain state glyph + label for 'idle' must render.
+    expect(frame).toContain('idle');
+    // Backlog counter must render even at 0.
+    expect(frame).toContain('backlog: 0');
+    instance.unmount();
+  });
 });

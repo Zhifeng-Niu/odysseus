@@ -333,4 +333,68 @@ describe('CerebellumOrchestrator events + approval gate', () => {
     const flat = seenHistories.flat();
     expect(flat.some((m) => m.role === 'user' && m.content.includes('keep diffs small'))).toBe(true);
   });
+
+  test('conversational goal (no tool calls, no DONE) stops early as abandoned', async () => {
+    // Simulates the "hi" scenario: LLM keeps replying with plain text and
+    // never invokes tools. Without the consecutiveTextOnly guard, the loop
+    // would burn all 16 iterations and emit a failure. With the guard, the
+    // orchestrator stops after 2 conversational turns and marks abandoned.
+    const provider = makeMockProvider([
+      'Hi! I am Odysseus, ready to help.',
+      'Please give me a concrete task.',
+    ]);
+
+    const orch = new CerebellumOrchestrator({
+      cwd: workdir,
+      provider,
+      registry,
+      tracePath,
+      verifyLayers: ['syntax'],
+      autoApprove: true,
+      maxIterations: 16,
+    });
+    const events = subscribe(orch);
+
+    const result = await orch.runWaypoint({ goal: 'hi' });
+
+    expect(result.outcome).toBe('abandoned');
+    expect(result.iterationsUsed).toBe(2);
+    expect(result.failReason ?? '').toMatch(/conversational/i);
+
+    // The agent must NOT have committed or attempted verify.
+    const types = events.map((e) => e.type);
+    expect(types).not.toContain('verify-started');
+    expect(types).not.toContain('waypoint-committed');
+
+    // Both conversational replies should be surfaced to the UI.
+    const assistantMessages = events.filter(
+      (e): e is Extract<OrchestratorEvent, { type: 'assistant-message' }> =>
+        e.type === 'assistant-message'
+    );
+    expect(assistantMessages.length).toBe(2);
+  });
+
+  test('single text reply followed by tool calls does NOT trip the conversational guard', async () => {
+    // LLM may legitimately say "sure, on it" before invoking a tool — that
+    // one conversational turn must not stop the loop.
+    const provider = makeMockProvider([
+      'Sure, on it.',
+      fileWriteArgs(workdir, 'ok.ts', 'export const v = 1;'),
+      'DONE',
+    ]);
+
+    const orch = new CerebellumOrchestrator({
+      cwd: workdir,
+      provider,
+      registry,
+      tracePath,
+      verifyLayers: ['syntax'],
+      autoApprove: true,
+    });
+
+    const result = await orch.runWaypoint({ goal: 'add a file' });
+
+    expect(result.outcome).toBe('success');
+    expect(result.iterationsUsed).toBe(3);
+  });
 });

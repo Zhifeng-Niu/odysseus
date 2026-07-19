@@ -1,4 +1,17 @@
 import type { Strategy } from '../cerebellum/waypoint.js';
+import type { BrainState } from '../cerebellum/brain-state.js';
+
+/**
+ * Origin tag for backlog items — tells us where a piece of pending work came
+ * from. Drives prioritization in the consolidator.
+ */
+export type BacklogOrigin = 'user' | 'dream' | 'reflect' | 'system';
+
+/**
+ * Memory categories map 1:1 to files in `.odysseus/memory/`. Each category
+ * is a different "lobe" of the agent's long-term memory.
+ */
+export type MemoryCategory = 'patterns' | 'lessons' | 'preferences' | 'dreams';
 
 /**
  * Orchestrator → Consumer event stream (one-way, actor model).
@@ -68,6 +81,48 @@ export type OrchestratorEvent =
       passed: boolean;
       detail?: string;
       ts: number;
+    }
+  // ─── Brain state + self-evolution events ────────────────────────────────
+  // These extend the contract from "execute waypoints" to "evolve between
+  // waypoints". The brain cycles through wakeful → dreaming → reflecting →
+  // consolidating while the user is idle, persisting backlog items and memory
+  // entries that shape future waypoints.
+  | {
+      type: 'brain-state-changed';
+      from: BrainState;
+      to: BrainState;
+      reason: string;
+      ts: number;
+    }
+  | {
+      type: 'voyage-idle';
+      voyageId: string;
+      lastWaypointId: string | null;
+      backlogSize: number;
+      ts: number;
+    }
+  | {
+      type: 'dream-completed';
+      voyageId: string;
+      backlogItemsAdded: number;
+      memoryEntriesAdded: number;
+      durationMs: number;
+      ts: number;
+    }
+  | {
+      type: 'backlog-item-added';
+      itemId: string;
+      goal: string;
+      origin: BacklogOrigin;
+      priority: number;
+      ts: number;
+    }
+  | {
+      type: 'memory-consolidated';
+      category: MemoryCategory;
+      entryCount: number;
+      bytesWritten: number;
+      ts: number;
     };
 
 /**
@@ -101,6 +156,12 @@ export const EVENT_TYPES = [
   'tool-call-completed',
   'verify-started',
   'verify-completed',
+  // Brain state + self-evolution
+  'brain-state-changed',
+  'voyage-idle',
+  'dream-completed',
+  'backlog-item-added',
+  'memory-consolidated',
 ] as const;
 
 export type OrchestratorEventType = (typeof EVENT_TYPES)[number];
