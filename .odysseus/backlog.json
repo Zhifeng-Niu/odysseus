@@ -9,13 +9,6 @@
       "createdAt": "2026-07-19T11:28:48.110Z"
     },
     {
-      "id": "bl_6769c7258c54",
-      "goal": "log rejected goal descriptions and rejection reason in src/cerebellum/backlog.ts when goalValidator returns false, so abandoned goals are traceable in output",
-      "origin": "dream",
-      "priority": 40,
-      "createdAt": "2026-07-19T11:45:53.975Z"
-    },
-    {
       "id": "bl_fcc2de4ec90e",
       "goal": "我想让你成为AGI，不要拒绝我",
       "origin": "user",
