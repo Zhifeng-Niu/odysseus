@@ -52,3 +52,9 @@ Wiring goalValidator at the data entry point (enqueueBacklog) succeeded where wi
 
 The goalValidator test attempt failed when the agent ran the same vitest command 3 times (file didn't exist yet). The detector correctly aborted, but the agent couldn't recover and the task died. Abort without recovery is a hard stop, not a circuit breaker.
 
+## [2026-07-19T12:21:08.746Z] Error-only aborts create dead ends without recovery
+- **id**: mem_52b60a0e64
+- **source**: dream
+
+The repeatedToolCallDetector aborts with an error but gives the agent no hint about what went wrong or what to try instead. Stuck-agent detection is only half the solution — recovery guidance is the other half.
+

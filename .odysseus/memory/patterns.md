@@ -70,3 +70,9 @@ Using substring matching in isCompleted() means a goal like 'fix bug in src/foo.
 
 When a test file doesn't exist, running vitest on it fails, and the agent may retry the same failing command. The repeatedToolCallDetector then kills the run. Tests must be written before they are executed.
 
+## [2026-07-19T12:21:08.746Z] GoalValidator false-positives on test-file creation goals
+- **id**: mem_52b60a2cf7
+- **source**: dream
+
+Goals containing '.test.ts' or 'unit tests' are being rejected as non-coding by the goalValidator, creating a recursive blind spot where the validator blocks testing of itself. Any pattern-matching validator will have edge cases at its own boundary.
+
