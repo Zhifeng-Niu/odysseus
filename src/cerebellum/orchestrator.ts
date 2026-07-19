@@ -120,12 +120,15 @@ export class CerebellumOrchestrator {
       this.state.totalOutput += completion.usage.outputTokens;
 
       if (completion.toolCalls && completion.toolCalls.length > 0) {
+        // OpenAI/GLM contract: one assistant message carries all parallel
+        // tool_calls, followed by one tool message per call. Splitting
+        // tool_calls across multiple assistant messages yields HTTP 400.
+        history.push({
+          role: 'assistant',
+          content: completion.content,
+          toolCalls: completion.toolCalls,
+        });
         for (const call of completion.toolCalls) {
-          history.push({
-            role: 'assistant',
-            content: '',
-            toolCalls: [call],
-          });
           const args = this.parseToolArgs(call);
           const result = await this.config.registry.dispatch(call.function.name, args, {
             cwd: this.config.cwd,
