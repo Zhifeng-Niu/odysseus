@@ -8,6 +8,7 @@ import {
   normalizeGoal,
   isDuplicateGoal,
   buildSucceededGoalSet,
+  buildUserPrompt,
 } from '../../src/cerebellum/dreamer.js';
 import { listBacklog } from '../../src/cerebellum/backlog.js';
 import { listPendingReview } from '../../src/cerebellum/pending-review.js';
@@ -530,5 +531,150 @@ describe('dreamer dedup helpers', () => {
     expect(set.has('g1')).toBe(true);
     expect(set.has('g3')).toBe(true);
     expect(set.has('g2')).toBe(false);
+  });
+});
+
+describe('dreamer.buildUserPrompt reflection split', () => {
+  // buildUserPrompt now splits memory into two layers by source:
+  //   - non-reflect entries → title-only index in <memory>
+  //   - reflect entries     → full body injection in <reflection>
+  // The split is what lets the dreamer act on deep diagnostic entries
+  // (e.g. AGI-gap analyses) instead of seeing only their titles.
+
+  test('reflect entries are injected with full body under <reflection>', () => {
+    const reflectBody =
+      'The agent cannot convert diagnosis into backlog items. ' +
+      'Modify src/cerebellum/dreamer.ts to read reflect bodies.';
+    const prompt = buildUserPrompt({
+      rootDir: '/tmp/unused-by-buildUserPrompt',
+      provider: staticProvider('{}'),
+      recentTrace: [],
+      memorySnapshot: [
+        {
+          category: 'patterns',
+          entries: [
+            {
+              id: 'mem_reflect1',
+              category: 'patterns',
+              title: 'Self-improvement loop is broken',
+              source: 'reflect',
+              body: reflectBody,
+              ts: '2026-07-19T20:00:00.000Z',
+              relatedWaypointId: 'wp_mrs855ke007',
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(prompt).toContain('<reflection>');
+    expect(prompt).toContain(reflectBody);
+    expect(prompt).toContain('wp_mrs855ke007');
+    expect(prompt).toContain('Self-improvement loop is broken');
+  });
+
+  test('non-reflect entries are injected as title-only under <memory>', () => {
+    const dreamBody = 'this body should NOT appear in the prompt';
+    const prompt = buildUserPrompt({
+      rootDir: '/tmp/unused-by-buildUserPrompt',
+      provider: staticProvider('{}'),
+      recentTrace: [],
+      memorySnapshot: [
+        {
+          category: 'patterns',
+          entries: [
+            {
+              id: 'mem_dream1',
+              category: 'patterns',
+              title: 'Some dream insight',
+              source: 'dream',
+              body: dreamBody,
+              ts: '2026-07-19T20:00:00.000Z',
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(prompt).toContain('Some dream insight');
+    expect(prompt).not.toContain(dreamBody);
+    expect(prompt).toContain('(no reflection entries');
+  });
+
+  test('mixed sources split correctly across <memory> and <reflection>', () => {
+    const prompt = buildUserPrompt({
+      rootDir: '/tmp/unused-by-buildUserPrompt',
+      provider: staticProvider('{}'),
+      recentTrace: [],
+      memorySnapshot: [
+        {
+          category: 'patterns',
+          entries: [
+            {
+              id: 'mem_a',
+              category: 'patterns',
+              title: 'Dream-derived pattern',
+              source: 'dream',
+              body: 'should-not-leak',
+              ts: 't1',
+            },
+            {
+              id: 'mem_b',
+              category: 'patterns',
+              title: 'Reflective diagnosis',
+              source: 'reflect',
+              body: 'deep diagnostic body content',
+              ts: 't2',
+            },
+          ],
+        },
+      ],
+    });
+
+    // Non-reflect title appears under <memory>; body does not leak.
+    expect(prompt).toContain('Dream-derived pattern');
+    expect(prompt).not.toContain('should-not-leak');
+    // Reflect title and body both appear under <reflection>.
+    expect(prompt).toContain('Reflective diagnosis');
+    expect(prompt).toContain('deep diagnostic body content');
+  });
+
+  test('empty memory renders a fresh-agent placeholder', () => {
+    const prompt = buildUserPrompt({
+      rootDir: '/tmp/unused-by-buildUserPrompt',
+      provider: staticProvider('{}'),
+      recentTrace: [],
+      memorySnapshot: [],
+    });
+
+    expect(prompt).toContain('(memory empty');
+    expect(prompt).toContain('(no reflection entries');
+  });
+
+  test('tags are surfaced alongside reflection titles', () => {
+    const prompt = buildUserPrompt({
+      rootDir: '/tmp/unused-by-buildUserPrompt',
+      provider: staticProvider('{}'),
+      recentTrace: [],
+      memorySnapshot: [
+        {
+          category: 'lessons',
+          entries: [
+            {
+              id: 'mem_tagged',
+              category: 'lessons',
+              title: 'Tagged reflection',
+              source: 'reflect',
+              body: 'body with tags',
+              ts: 't',
+              tags: ['agi', 'self-evolution'],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(prompt).toContain('[agi, self-evolution]');
+    expect(prompt).toContain('body with tags');
   });
 });

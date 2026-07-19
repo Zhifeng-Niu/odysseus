@@ -26,7 +26,7 @@ import {
 import { createCheckpoint } from './checkpoint.js';
 import { rollbackTo } from './rollback.js';
 import { runVerify, type VerifyLayer } from './verify.js';
-import { selectStrategy } from './strategy.js';
+import { selectStrategy, setStrategyCwd } from './strategy.js';
 import { validateGoal } from './goal-validator.js';
 import { appendTrace, readTrace } from '../trace/jsonl.js';
 import type { OrchestratorEvent } from '../orchestrator/events.js';
@@ -140,6 +140,10 @@ export class CerebellumOrchestrator extends EventEmitter {
     super();
     this.config = config;
     this.autoApprove = config.autoApprove ?? DEFAULT_AUTO_APPROVE;
+    // Publish cwd to the strategy layer so the engineer system prompt can
+    // resolve `.odysseus/self-model.md` and inject it at every waypoint
+    // start (closes the "no continuous self" gap from wp_mrs855ke007).
+    setStrategyCwd(config.cwd);
   }
 
   private readonly config: OrchestratorConfig;

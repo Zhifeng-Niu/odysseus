@@ -32,6 +32,22 @@
       "priority": 90,
       "createdAt": "2026-07-19T20:28:06.223Z",
       "sourceWaypointId": "wp_mrs855ke007"
+    },
+    {
+      "id": "bl_30b043ce5fde",
+      "goal": "implement Stage 1.1 of the AGI roadmap (mem_140dd4953e): internalized self-critique loop. In `src/cerebellum/strategy.ts`, add a `critic` strategy variant that wraps the existing ENGINEER_STRATEGY flow with draft→critique→revise. Before emitting a final tool call or DONE marker, the agent generates a hidden draft of its next action, switches to a critic perspective (separate systemPrompt section) that attempts to falsify the draft against the goal and existing code, then either emits the revised action or loops back for another draft. Max 2 critique rounds per turn to bound latency. This is the foundation for Stage 1 (system-2 thinking) and unblocks deeper planning capabilities.",
+      "origin": "reflect",
+      "priority": 65,
+      "createdAt": "2026-07-19T20:32:00.000Z",
+      "sourceWaypointId": "wp_mrs855ke007"
+    },
+    {
+      "id": "bl_4ffece5de579",
+      "goal": "implement Stage 2.1 of the AGI roadmap (mem_140dd4953e): hippocampus-style active recall. Currently memory is only bulk-injected during the dream phase. Add a recall step at runWaypoint startup in `src/cerebellum/orchestrator.ts` that takes the current goal, tokenizes it, and retrieves the top 3 most relevant entries (by Jaccard or keyword overlap) from `.odysseus/memory/patterns.md` + `lessons.md` + `self-model.md` (once it exists). Inject these as a <recalled-memory> block in the strategy systemPrompt, so the agent sees contextually-relevant priors before working. Sacred-file change — requires manual review. Depends on: bl_7479ecd9da25 (self-model) landing first.",
+      "origin": "reflect",
+      "priority": 80,
+      "createdAt": "2026-07-19T20:32:00.000Z",
+      "sourceWaypointId": "wp_mrs855ke007"
     }
   ]
 }

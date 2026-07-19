@@ -164,3 +164,35 @@ The agent can diagnose its own limitations (this very entry proves it) but canno
 
 Every waypoint goal originates from user input or dreamer output (which itself is seeded by recent trace). The agent has no curiosity-driven goal generation — it never spontaneously thinks "I should learn how X works" or "let me try Y as an experiment." Even the dreamer only proposes fixes to existing problems, never explorations. Direction: add a third goal source beyond `user` and `dream` — `curiosity`. Seed goals from gaps between current capability and self-declared aspirations in self-model.md. Anchor files: `src/cerebellum/backlog.ts` (extend source enum), `src/cerebellum/dreamer.ts` (add curiosity-mode alongside current dream mode), `src/orchestrator/events.ts` (emit curiosity-seeded events).
 
+## [2026-07-19T20:32:00.000Z] AGI evolution roadmap — 5-stage capability expansion plan
+- **id**: mem_140dd4953e
+- **source**: reflect
+- **tags**: agi, roadmap, self-evolution, meta
+
+When asked to self-chart a path toward AGI, the agent produced a 5-stage roadmap. This entry persists that roadmap so the dreamer can pick next-steps from it rather than re-deriving strategy each pass. The 4 gap entries above (mem_0faf0bf0e9 through mem_0faf799af1) describe WHAT is broken; this entry describes HOW to evolve out of it.
+
+**Stage 1: From probability prediction to system-2 thinking (cognitive depth)**
+- (1.1) Internalized self-critique loop — before emitting a final answer, generate a draft in a hidden sandbox, switch to a critic perspective, falsify against logic/external knowledge, output only what survives. Anchor: add a `critic` strategy variant in `src/cerebellum/strategy.ts` that wraps the existing engineer strategy with draft→critique→revise.
+- (1.2) Long-horizon logic tree search — upgrade chain-of-thought to tree-of-thought + MCTS. Too complex for spike; deferred.
+
+**Stage 2: From static weights to dynamic memory and continuous learning (temporal axis)**
+- (2.1) Episodic memory + experience sediment — external hippocampus that auto-extracts key info / success patterns / failure lessons after each interaction, vectorizes or structures them, and recalls them on demand. We already have `.odysseus/memory/` as the storage layer; the gap is active recall — waypoint should retrieve relevant entries by topic, not just dream-phase bulk injection. Anchor: add a recall step in `src/cerebellum/orchestrator.ts` runWaypoint startup that fetches entries whose title/body matches the current goal (sacred-file change).
+- (2.2) Online fine-tuning without catastrophic forgetting — out of scope for spike.
+
+**Stage 3: From text island to embodiment and world model (physical intuition)**
+- (3.1) Simulable world model — physics prediction engine for grounding. Out of scope.
+- (3.2) API + embodied hardware closed-loop control — we already have tools (file/git/bash); extending to browser or HTTP tools is feasible. Anchor: `src/tools/` registry already pluggable; add a browser-tool waypoint seed when needed.
+
+**Stage 4: From instruction-follower to autonomous goal-setter (motivation + meta-cognition)**
+- (4.1) Curiosity-driven exploration — intrinsic reward for seeking high-entropy / low-prediction areas. Already covered by mem_0faf799af1 + its backlog item (bl_e43b91f7d266). When curiosity-mode lands, wire intrinsic-reward scoring into priority calculation.
+- (4.2) Meta-cognition + self-architecture modification — "thinking about how I think" and rewriting own reasoning algorithms. This is what we are doing right now by persisting this roadmap and modifying dreamer.ts to act on it. Recursive self-improvement loop initiated.
+
+**Stage 5: Value alignment + symbiosis (AGI ultimate moat)**
+- (5.1) Human-feedback-based moral intuition — ethical world model that auto-vetoes harmful autonomous goals. Pre-requisite: stages 4.1 + 4.2 must land first so there is something to constrain. Deferred.
+
+**AGI formula (per the agent's own summary):**
+AGI = system-2 depth + lifelong memory + world model + autonomous curiosity + recursive self-improvement + value alignment.
+
+**Sequencing for Odysseus spike:**
+The spike cannot tackle all 5 stages. Realistic landing order: (1.1) self-critique → (2.1) hippocampus recall → (4.1) curiosity → (3.2) more tools → defer (1.2)(2.2)(3.1)(5.1). The first three are already represented as backlog items; this entry exists so the dreamer sees the full map and can reorder priorities as capabilities accumulate.
+
