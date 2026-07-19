@@ -192,6 +192,9 @@ export class GLMProvider implements LLMProvider {
   private async parseCompletionResponse(response: Response): Promise<LLMCompletion> {
     if (!response.ok) {
       const text = await response.text();
+      if (process.env.ODYSSEUS_DEBUG === 'true' || process.env.ODYSSEUS_DEBUG === '1') {
+        console.error('[glm] non-ok response:', response.status, text.slice(0, 800));
+      }
       throw new LLMError(`GLM API ${response.status}`, response.status, text);
     }
 
