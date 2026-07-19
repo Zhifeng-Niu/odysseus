@@ -65,13 +65,6 @@
       "createdAt": "2026-07-19T12:09:18.864Z"
     },
     {
-      "id": "bl_a512a9724645",
-      "goal": "add per-goal retry counter Map in src/cerebellum/backlog.ts that blocks re-seeding after 3 attempts using goal description hash as key",
-      "origin": "dream",
-      "priority": 25,
-      "createdAt": "2026-07-19T12:12:34.918Z"
-    },
-    {
       "id": "bl_7994068f4f6f",
       "goal": "add unit tests for CompletedGoal map and isCompleted substring matching in tests/completedGoals.test.ts",
       "origin": "dream",

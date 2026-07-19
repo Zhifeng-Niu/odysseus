@@ -24,6 +24,15 @@ describe('isCompleted', () => {
     expect(isCompleted('')).toBe(false);
   });
 
+  test('returns false for empty string when the map is empty', () => {
+    expect(isCompleted('')).toBe(false);
+  });
+
+  test('returns false for whitespace-only string', () => {
+    markCompleted('something', 'done');
+    expect(isCompleted('   ')).toBe(false);
+  });
+
   test('returns true for an exact match', () => {
     markCompleted('fix the login bug', 'patched auth flow');
     expect(isCompleted('fix the login bug')).toBe(true);
@@ -46,9 +55,23 @@ describe('isCompleted', () => {
     expect(isCompleted('update the readme')).toBe(false);
   });
 
-  test('is case-sensitive', () => {
+  test('is case-sensitive — different casing does not match', () => {
     markCompleted('Fix Login Bug', 'patched');
     expect(isCompleted('fix login bug')).toBe(false);
+    expect(isCompleted('FIX LOGIN BUG')).toBe(false);
+    expect(isCompleted('Fix The Login Bug')).toBe(false);
+  });
+
+  test('is case-sensitive — case-exact substring matches', () => {
+    markCompleted('Fix Login Bug', 'patched');
+    expect(isCompleted('Login')).toBe(true);
+    expect(isCompleted('Fix')).toBe(true);
+  });
+
+  test('is case-sensitive — case-different substring does not match', () => {
+    markCompleted('Fix Login Bug', 'patched');
+    expect(isCompleted('login')).toBe(false);
+    expect(isCompleted('LOGIN')).toBe(false);
   });
 
   test('matches against multiple stored goals', () => {
