@@ -1,12 +1,4 @@
 {
   "version": 1,
-  "items": [
-    {
-      "id": "bl_9b6eef5be534",
-      "goal": "add edge case test to src/cerebellum/goalValidator.test.ts rejecting goals that mention .test.ts in non-coding context like 'explain what .test.ts files are'",
-      "origin": "dream",
-      "priority": 55,
-      "createdAt": "2026-07-19T14:18:31.754Z"
-    }
-  ]
+  "items": []
 }
