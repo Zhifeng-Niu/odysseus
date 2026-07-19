@@ -94,3 +94,9 @@ Test creation goals covering multiple scenarios (substring + case + empty) consi
 
 The retry counter in backlog.ts prevents infinite re-seeding but shipped without tests. If this code silently breaks, the system re-enters the exact failure loop it was designed to stop. Guard rails deserve guard rails.
 
+## [2026-07-19T14:34:53.401Z] Hint injection simpler than error propagation for tool loops
+- **id**: mem_cd28597609
+- **source**: dream
+
+Inline recovery intervention failed (maxIterations), StuckLoopError throw failed (maxIterations), but appending a hint message to the existing message array succeeded. Mutation beats exception for in-loop recovery.
+

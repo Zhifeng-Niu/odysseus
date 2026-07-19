@@ -118,3 +118,9 @@ StuckLoopError catch-and-retry shipped successfully but test goal was abandoned 
 
 Two attempts to add recovery logic directly inside repeatedToolCallDetector hit maxIterations without converging. Throwing StuckLoopError and catching at the main loop level shipped in one pass. Detectors should detect, not recover.
 
+## [2026-07-19T14:34:53.400Z] Recovery mechanisms consistently ship without tests
+- **id**: mem_cd2858be1f
+- **source**: dream
+
+StuckLoopError catch-and-retry shipped, then needed separate waypoint for tests. Recovery hint injection shipped, now needs tests. Recovery code is harder to test inline because it triggers on edge conditions, so it naturally separates into ship-then-test waypoints.
+

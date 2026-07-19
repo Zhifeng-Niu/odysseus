@@ -112,6 +112,13 @@
       "origin": "dream",
       "priority": 55,
       "createdAt": "2026-07-19T14:18:31.754Z"
+    },
+    {
+      "id": "bl_84fe4d81b525",
+      "goal": "add substring false positive test case to isGoalCompleted in src/cerebellum/completedGoals.test.ts",
+      "origin": "dream",
+      "priority": 45,
+      "createdAt": "2026-07-19T14:34:53.400Z"
     }
   ]
 }
