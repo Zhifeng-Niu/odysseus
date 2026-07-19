@@ -5,8 +5,58 @@ import { FileReadTool, FileWriteTool, FileEditTool } from './tools/file.js';
 import { GitTool } from './tools/git.js';
 import { BashTool } from './tools/bash.js';
 import { runAgentTurn } from './agent/loop.js';
+import { CerebellumOrchestrator } from './cerebellum/orchestrator.js';
+import { startTui } from './tui/index.js';
 import { loadDotenv } from './util/dotenv.js';
 import { join } from 'node:path';
+
+function isInteractive(): boolean {
+  return process.stdout.isTTY === true && process.stdin.isTTY === true;
+}
+
+async function runCli(
+  cwd: string,
+  provider: GLMProvider,
+  registry: ToolRegistry,
+  tracePath: string
+): Promise<void> {
+  const userInput = process.argv.slice(2).join(' ').trim();
+  if (!userInput) {
+    console.error('Usage: odysseus <your request>');
+    console.error('Example: odysseus add a bash tool to the tools registry');
+    console.error('       (in a TTY, run with no args to launch the voyage console)');
+    process.exit(1);
+  }
+
+  const result = await runAgentTurn(userInput, {
+    cwd,
+    provider,
+    registry,
+    tracePath,
+    verifyLayers: ['syntax'],
+    mission: 'Iterate on the Odysseus spike codebase (Iteration 0 seed → co-evolution)',
+  });
+
+  console.log(result.response);
+}
+
+function runVoyageConsole(
+  cwd: string,
+  provider: GLMProvider,
+  registry: ToolRegistry,
+  tracePath: string,
+  model: string
+): void {
+  const orch = new CerebellumOrchestrator({
+    cwd,
+    provider,
+    registry,
+    tracePath,
+    verifyLayers: ['syntax'],
+    // autoApprove defaults to false in TTY contexts — see orchestrator.ts.
+  });
+  startTui({ orch, model });
+}
 
 async function main(): Promise<void> {
   const cwd = process.cwd();
@@ -27,24 +77,12 @@ async function main(): Promise<void> {
 
   const tracePath = join(cwd, '.odysseus', 'trace.jsonl');
 
-  // Iteration 0 ships argv-only; REPL is a candidate for a later iteration
-  const userInput = process.argv.slice(2).join(' ').trim();
-  if (!userInput) {
-    console.error('Usage: odysseus <your request>');
-    console.error('Example: odysseus add a bash tool to the tools registry');
-    process.exit(1);
+  if (isInteractive() && process.argv.slice(2).length === 0) {
+    runVoyageConsole(cwd, provider, registry, tracePath, config.model);
+    return;
   }
 
-  const result = await runAgentTurn(userInput, {
-    cwd,
-    provider,
-    registry,
-    tracePath,
-    verifyLayers: ['syntax'],
-    mission: 'Iterate on the Odysseus spike codebase (Iteration 0 seed → co-evolution)',
-  });
-
-  console.log(result.response);
+  await runCli(cwd, provider, registry, tracePath);
 }
 
 main().catch((err: unknown) => {
