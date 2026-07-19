@@ -23,13 +23,6 @@
       "createdAt": "2026-07-19T11:00:11.292Z"
     },
     {
-      "id": "bl_32da7464c206",
-      "goal": "Add a max-retry counter per goal-description hash in the waypoint seeder that blocks re-seeding after 3 attempts regardless of outcome",
-      "origin": "dream",
-      "priority": 25,
-      "createdAt": "2026-07-19T11:02:36.803Z"
-    },
-    {
       "id": "bl_d7706537dc98",
       "goal": "Add a pre-execution existence check in the bash tool registration code that returns DONE immediately if a 'bash' tool is already registered in the tools registry",
       "origin": "dream",
