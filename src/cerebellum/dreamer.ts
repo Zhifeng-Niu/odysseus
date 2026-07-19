@@ -27,7 +27,8 @@ Unlike wakeful execution where you follow a specific goal, dreaming is free-asso
 
 You will receive:
 - <recent>: recent waypoint outcomes (success/failure, fail reasons, goals)
-- <memory>: your existing long-term memory (patterns, lessons, preferences, dreams)
+- <memory>: your existing long-term memory — titles only, indexed by category. Use these as lightweight pointers to what you already know.
+- <reflection>: deep diagnostic entries (source='reflect') with FULL bodies. These are your own self-analyses of systemic gaps — each one is a candidate for translation into concrete backlogItems.
 
 Your output must be strict JSON:
 
@@ -65,6 +66,13 @@ Rules:
 - Goals already present in <recent> with outcome=success will be SKIPPED — do
   not re-propose work that has already shipped.
 - memoryEntries should be reusable insights, not one-off notes.
+- Entries in <reflection> carry diagnostic depth — each one describes a systemic
+  gap you identified about yourself. For each reflection entry, ask: "what
+  concrete file-scoped change would address this?" If you can name a specific
+  file + function + change, output it as a backlogItem with priority < 75
+  (reflective work preempts exploratory dream work). If the diagnosis is too
+  abstract to translate in this pass, leave it for a future dream — do not
+  produce vague backlogItems just to fill quota.
 - If nothing useful surfaces, return {"backlogItems": [], "memoryEntries": []}.
 - Maximum 5 backlogItems and 3 memoryEntries per dream — quality over quantity.
 - Return ONLY the JSON object. No prose before or after.`;
@@ -271,7 +279,7 @@ function extractJson(content: string): { ok: true; value: ParsedDream } | { ok: 
   }
 }
 
-function buildUserPrompt(input: DreamInput): string {
+export function buildUserPrompt(input: DreamInput): string {
   const recent = input.recentTrace.length === 0
     ? '(no recent waypoints)'
     : input.recentTrace
@@ -282,22 +290,77 @@ function buildUserPrompt(input: DreamInput): string {
         )
         .join('\n');
 
-  const memory = input.memorySnapshot.length === 0
+  // Split memory into two layers by source:
+  //   - Non-reflect entries (dream/user/failure/system) → title-only index.
+  //     These are pointers to what the agent already knows; titles are enough.
+  //   - Reflect entries → full body injection. These carry diagnostic depth
+  //     (systemic gap analyses) that the dreamer should translate into
+  //     concrete backlogItems. Title-only would discard the diagnostic content.
+  const reflectEntries: Array<{
+    readonly category: MemoryCategory;
+    readonly entry: MemoryEntry;
+  }> = [];
+  const otherSnapshots: Array<{
+    readonly category: MemoryCategory;
+    readonly entries: readonly MemoryEntry[];
+  }> = [];
+
+  for (const snap of input.memorySnapshot) {
+    const reflect: MemoryEntry[] = [];
+    const others: MemoryEntry[] = [];
+    for (const entry of snap.entries) {
+      if (entry.source === 'reflect') {
+        reflect.push(entry);
+      } else {
+        others.push(entry);
+      }
+    }
+    if (reflect.length > 0) {
+      for (const entry of reflect) {
+        reflectEntries.push({ category: snap.category, entry });
+      }
+    }
+    if (others.length > 0) {
+      otherSnapshots.push({ category: snap.category, entries: others });
+    }
+  }
+
+  const hasAnyMemory = reflectEntries.length > 0 || otherSnapshots.length > 0;
+
+  const memoryBlock = !hasAnyMemory
     ? '(memory empty — fresh agent)'
-    : input.memorySnapshot
-        .map((snap) => {
-          const titles = snap.entries.map((e) => `  - ${e.title}`).join('\n');
-          return `### ${snap.category} (${snap.entries.length})\n${titles}`;
-        })
-        .join('\n\n');
+    : otherSnapshots.length === 0
+      ? '(no non-reflect memory yet — only diagnostic reflections present)'
+      : otherSnapshots
+          .map((snap) => {
+            const titles = snap.entries.map((e) => `  - ${e.title}`).join('\n');
+            return `### ${snap.category} (${snap.entries.length})\n${titles}`;
+          })
+          .join('\n\n');
+
+  const reflectionBlock =
+    reflectEntries.length === 0
+      ? '(no reflection entries — skip this section)'
+      : reflectEntries
+          .map(({ category, entry }) => {
+            const rel = entry.relatedWaypointId ? ` _(from ${entry.relatedWaypointId})_` : '';
+            const tags =
+              entry.tags && entry.tags.length > 0 ? ` _[${entry.tags.join(', ')}]_` : '';
+            return `### [${category}] ${entry.title}${rel}${tags}\n\n${entry.body}`;
+          })
+          .join('\n\n---\n\n');
 
   return `<recent>
 ${recent}
 </recent>
 
 <memory>
-${memory}
+${memoryBlock}
 </memory>
+
+<reflection>
+${reflectionBlock}
+</reflection>
 
 Reflect. Surface what wants to be done next. Return JSON.`;
 }

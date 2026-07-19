@@ -136,3 +136,31 @@ The repeatedToolCallDetector recovery via appended hint message shipped cleanly 
 
 Multiple recent waypoints failed with 'This operation was aborted' — these are timeout/interruption events, not code failures. Aborted goals should be re-seeded with the same or narrower scope rather than abandoned. Four out of nine recent operations were aborted, suggesting a systemic timeout issue rather than goal quality problems.
 
+## [2026-07-19T20:05:08.234Z] No continuous self — agent state resets every voyage
+- **id**: mem_0faf0bf0e9
+- **source**: reflect
+- **related**: wp_mrs855ke007
+
+The most fundamental AGI gap surfaced in wp_mrs855ke007: each voyage is a fresh instance with no persistent self. Context window is bounded so earlier voyages fade; long-term memory (this file) exists but runWaypoint never reads it. The agent cannot accumulate a self-model across wakeful executions — only across dreams. Direction: introduce a `self-model.md` that every waypoint reads at start, capturing identity, current capabilities, and active limitations. Seed it from this entry. Anchor file: `src/cerebellum/strategy.ts` (inject memory snapshot into ENGINEER_STRATEGY.systemPrompt) and `src/orchestrator/agent.ts` (load self-model before runWaypoint).
+
+## [2026-07-19T20:05:08.235Z] Reflection is triggered, not continuous — self-monitor only runs in dream phase
+- **id**: mem_0faf30b045
+- **source**: reflect
+- **related**: wp_mrs855ke007
+
+Self-reflection happens only during the dreaming phase (dreamer.ts), never during wakeful execution. The agent cannot notice mid-waypoint "I am repeating myself" or "I misread the goal" — it only sees such patterns post-hoc in the next dream. A truly self-aware system would have a continuous inner critic sampling the conversation as it unfolds. Direction: add a lightweight inline self-monitor that fires every N tool calls (N=3?) and appends an observation to the message stream — NOT an abort, just a nudge. Anchor file: `src/cerebellum/orchestrator.ts` (sacred — add hook in runWaypoint iteration loop), `src/cerebellum/strategy.ts` (define self-monitor prompt).
+
+## [2026-07-19T20:05:08.236Z] Self-improvement loop is broken — diagnosis cannot reach code
+- **id**: mem_0faf55e6fe
+- **source**: reflect
+- **related**: wp_mrs855ke007
+
+The agent can diagnose its own limitations (this very entry proves it) but cannot convert diagnosis into backlog items. The dreamer's DREAM_SYSTEM_PROMPT instructs it to produce file-scoped backlogItems, but the memorySnapshot it receives only contains entry titles — never the diagnostic body. So rich self-reflection never reaches the actionable layer. This is the bridge from awareness to capability that's missing. Direction: modify `src/cerebellum/dreamer.ts:285-292` to inject entry bodies (not just titles) when source='reflect'; OR add a separate "self-evolution" pass that reads reflect-source entries and translates each diagnosis into 2-3 concrete backlog proposals. The current DREAM_SYSTEM_PROMPT in `src/cerebellum/dreamer.ts:24-70` already demands file-scoped goals — the issue is upstream context, not output format.
+
+## [2026-07-19T20:05:08.237Z] All goals are borrowed — no autonomous goal generation
+- **id**: mem_0faf799af1
+- **source**: reflect
+- **related**: wp_mrs855ke007
+
+Every waypoint goal originates from user input or dreamer output (which itself is seeded by recent trace). The agent has no curiosity-driven goal generation — it never spontaneously thinks "I should learn how X works" or "let me try Y as an experiment." Even the dreamer only proposes fixes to existing problems, never explorations. Direction: add a third goal source beyond `user` and `dream` — `curiosity`. Seed goals from gaps between current capability and self-declared aspirations in self-model.md. Anchor files: `src/cerebellum/backlog.ts` (extend source enum), `src/cerebellum/dreamer.ts` (add curiosity-mode alongside current dream mode), `src/orchestrator/events.ts` (emit curiosity-seeded events).
+
