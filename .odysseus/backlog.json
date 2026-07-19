@@ -2,13 +2,6 @@
   "version": 1,
   "items": [
     {
-      "id": "bl_1ef3b743f929",
-      "goal": "Add a goal-rewording step in the waypoint seeder that transforms abstract goals like 'Add deduplication logic' into specific file-targeted goals like 'Add dedup check in src/waypoint.ts before seedGoals() call'",
-      "origin": "dream",
-      "priority": 40,
-      "createdAt": "2026-07-19T11:02:36.806Z"
-    },
-    {
       "id": "bl_ae04dccd9912",
       "goal": "请你给我预测今晚西班牙和阿根廷谁会赢",
       "origin": "user",
