@@ -93,6 +93,15 @@ describe("isCompleted – substring matching", () => {
   it("does not match a single character absent from all stored descriptions", () => {
     expect(isCompleted("Z")).toBe(false);
   });
+
+  it("produces a false positive when an unrelated query is a substring of a stored description", () => {
+    // "user" is a substring of the seeded
+    // "implement user authentication with OAuth2 and JWT tokens", so the
+    // substring matcher reports it as completed even though "user" is a
+    // semantically different (and far less specific) goal. This documents
+    // the known false-positive weakness of substring matching.
+    expect(isCompleted("user")).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
