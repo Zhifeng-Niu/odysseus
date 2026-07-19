@@ -45,6 +45,7 @@ import {
   sizeBacklog,
 } from './backlog.js';
 import { readMemory, type MemoryEntry } from './memory.js';
+import { markCompleted } from './completedGoals.js';
 import type { MemoryCategory } from '../orchestrator/events.js';
 
 export interface OrchestratorConfig {
@@ -534,6 +535,7 @@ export class CerebellumOrchestrator extends EventEmitter {
         };
       }
       const succeeded = markSuccess(active, commit.sha, iterationsUsed);
+      markCompleted(waypoint.goal, commit.sha);
       await this.trace(succeeded, checkpoint.sha, commit.sha);
       this.emitEvent({
         type: 'waypoint-committed',
