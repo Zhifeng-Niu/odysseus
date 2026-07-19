@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import { RepeatedToolCallDetector } from '../../src/cerebellum/repeated-tool-call-detector.js';
+import { StuckLoopError } from '../../src/orchestrator/errors.js';
 
 describe('RepeatedToolCallDetector', () => {
   // ─── Constructor validation ────────────────────────────────────────────
@@ -49,7 +50,7 @@ describe('RepeatedToolCallDetector', () => {
     expect(result.recoveryMessage).toContain('3 times');
   });
 
-  test('second loop detection after recovery throws (hard abort)', () => {
+  test('second loop detection after recovery throws StuckLoopError', () => {
     const det = new RepeatedToolCallDetector(3);
     const args = { path: '/tmp/a' };
 
@@ -64,13 +65,11 @@ describe('RepeatedToolCallDetector', () => {
     det.record('file-read', args);
     det.record('file-read', args);
 
-    // Second loop — hard abort
-    expect(() => det.record('file-read', args)).toThrow(
-      /repeated-tool-call detector.*file-read.*loop persisted after recovery intervention/
-    );
+    // Second loop — throws StuckLoopError
+    expect(() => det.record('file-read', args)).toThrow(StuckLoopError);
   });
 
-  test('hard abort error message includes tool name and serialized arguments', () => {
+  test('StuckLoopError message includes tool name and serialized arguments', () => {
     const det = new RepeatedToolCallDetector(3);
     const args = { path: '/etc/passwd', encoding: 'utf-8' };
 
@@ -85,12 +84,13 @@ describe('RepeatedToolCallDetector', () => {
       det.record('file-read', args);
       expect.unreachable('should have thrown');
     } catch (err) {
-      const msg = (err as Error).message;
-      expect(msg).toContain('file-read');
-      expect(msg).toContain('/etc/passwd');
-      expect(msg).toContain('utf-8');
-      expect(msg).toContain('loop persisted after recovery intervention');
-      expect(msg).toContain('aborting waypoint');
+      expect(err).toBeInstanceOf(StuckLoopError);
+      const stuck = err as StuckLoopError;
+      expect(stuck.toolName).toBe('file-read');
+      expect(stuck.count).toBe(3);
+      expect(stuck.args).toContain('/etc/passwd');
+      expect(stuck.args).toContain('utf-8');
+      expect(stuck.message).toContain('loop persisted after recovery intervention');
     }
   });
 

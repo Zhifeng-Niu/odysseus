@@ -29,6 +29,9 @@ describe('selectStrategy (Iteration 0: engineer only)', () => {
   test('ENGINEER_STRATEGY has expected shape', () => {
     expect(ENGINEER_STRATEGY.name).toBe('engineer');
     expect(typeof ENGINEER_STRATEGY.systemPrompt).toBe('string');
-    expect(typeof ENGINEER_STRATEGY.maxIterations).toBe('number');
+    // maxIterations is optional — engineer strategy leaves it undefined so
+    // the loop runs until DONE / interrupt / conversational stop / loop
+    // detector, not an arbitrary iter cap.
+    expect(ENGINEER_STRATEGY.maxIterations).toBeUndefined();
   });
 });

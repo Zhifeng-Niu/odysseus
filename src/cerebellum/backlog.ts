@@ -4,7 +4,6 @@ import { randomBytes } from 'node:crypto';
 import type { BacklogOrigin } from '../orchestrator/events.js';
 import { isCompleted } from './completedGoals.js';
 import { isSeedExhausted, incrementSeedAttempt } from './seedAttempts.js';
-import { goalValidator } from './goalValidator.js';
 
 /**
  * Backlog queue — the agent's "short-term working memory".
@@ -157,12 +156,6 @@ export async function enqueueBacklog(
   const trimmedGoal = goal.trim();
   if (trimmedGoal.length === 0) {
     throw new Error('backlog goal cannot be empty');
-  }
-  // Reject non-coding goals before they enter the backlog.
-  if (!goalValidator(trimmedGoal)) {
-    throw new Error(
-      `backlog rejected non-coding goal: "${trimmedGoal}" — goals must reference a source file (e.g. src/foo.ts)`,
-    );
   }
   // Block re-seeding when this goal has already been attempted
   // MAX_SEED_ATTEMPTS times regardless of outcome (success/failure/abandon).

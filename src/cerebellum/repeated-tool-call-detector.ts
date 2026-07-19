@@ -8,11 +8,13 @@
  * throw — instead it returns a recovery context message for the orchestrator
  * to inject into the LLM history, giving the agent one more chance to break
  * out of the loop. If the same pattern recurs after the recovery injection,
- * the detector throws and the orchestrator aborts + rolls back.
+ * the detector throws a `StuckLoopError` and the orchestrator aborts + rolls back.
  *
  * Scoped per waypoint: a fresh detector is created at the start of each
  * `runWaypoint` call so a new task starts with an empty window.
  */
+
+import { StuckLoopError } from '../orchestrator/errors.js';
 
 export interface RecordResult {
   /** True when a loop was detected. */
@@ -75,12 +77,8 @@ export class RepeatedToolCallDetector {
         return { loopDetected: true, recoveryMessage };
       }
 
-      // Second loop detection after recovery — hard abort.
-      throw new Error(
-        `repeated-tool-call detector: "${toolName}" invoked ${this.maxSize} times in a row ` +
-          `with identical arguments (${JSON.stringify(args)}) — loop persisted after ` +
-          `recovery intervention; aborting waypoint`
-      );
+      // Second loop detection after recovery — throw StuckLoopError.
+      throw new StuckLoopError(toolName, this.maxSize, JSON.stringify(args));
     }
 
     return { loopDetected: false };
