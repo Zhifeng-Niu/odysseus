@@ -7,6 +7,10 @@ import { CerebellumOrchestrator } from '../../src/cerebellum/orchestrator.js';
 import type { LLMProvider, LLMCompletion, LLMCompleteOptions } from '../../src/llm/provider.js';
 import { ToolRegistry } from '../../src/tools/registry.js';
 import { FileWriteTool } from '../../src/tools/file.js';
+import {
+  listRejectedGoals,
+  clearRejectedGoals,
+} from '../../src/cerebellum/backlog.js';
 
 async function initRepo(dir: string): Promise<void> {
   await execFileNoThrow('git', ['init'], { cwd: dir });
@@ -81,6 +85,7 @@ describe('CerebellumOrchestrator', () => {
     await initRepo(workdir);
     registry = new ToolRegistry();
     registry.register(new FileWriteTool());
+    clearRejectedGoals();
     await writeFile(
       join(workdir, 'tsconfig.json'),
       JSON.stringify({
@@ -397,5 +402,50 @@ describe('CerebellumOrchestrator', () => {
     expect(result.outcome).toBe('failure');
     expect(result.iterationsUsed).toBe(3);
     expect(result.failReason ?? '').toMatch(/maxIterations.*DONE/);
+  });
+
+  test('rejected conversational goal is recorded for traceability and abandoned', async () => {
+    // Provider should never be called — the validator short-circuits before
+    // any LLM work. An empty response array enforces that.
+    const provider = makeMockProvider([]);
+
+    const orch = new CerebellumOrchestrator({
+      cwd: workdir,
+      provider,
+      registry,
+      tracePath,
+      verifyLayers: ['syntax'],
+    });
+
+    const result = await orch.runWaypoint({ goal: 'hello' });
+
+    // Waypoint is abandoned before dispatch — no checkpoint, no LLM turns.
+    expect(result.outcome).toBe('abandoned');
+    expect(result.iterationsUsed).toBe(0);
+    expect(result.failReason ?? '').toMatch(/conversational|validator|rejected/i);
+
+    // The rejected goal + reason are now traceable in output.
+    const rejected = listRejectedGoals();
+    expect(rejected.length).toBe(1);
+    expect(rejected[0]!.goal).toBe('hello');
+    expect(rejected[0]!.reason).toMatch(/conversational|rejected/i);
+    expect(rejected[0]!.rejectedAt).toBeGreaterThan(0);
+  });
+
+  test('rejected goal is not re-recorded when the same goal+reason recurs', async () => {
+    const provider = makeMockProvider([]);
+    const orch = new CerebellumOrchestrator({
+      cwd: workdir,
+      provider,
+      registry,
+      tracePath,
+      verifyLayers: ['syntax'],
+    });
+
+    await orch.runWaypoint({ goal: 'hi' });
+    await orch.runWaypoint({ goal: 'hi' });
+
+    // Deduped — identical (goal, reason) rejections don't spam the registry.
+    expect(listRejectedGoals().length).toBe(1);
   });
 });

@@ -43,6 +43,7 @@ import {
   peekBacklog,
   dequeueBacklog,
   sizeBacklog,
+  recordRejectedGoal,
 } from './backlog.js';
 import { readMemory, type MemoryEntry } from './memory.js';
 import { markCompleted } from './completedGoals.js';
@@ -170,6 +171,9 @@ export class CerebellumOrchestrator extends EventEmitter {
     const validation = validateGoal(input.goal);
     if (!validation.valid) {
       const reason = validation.reason ?? 'goal rejected by validator';
+      // Record the rejection so abandoned goals are traceable in output
+      // (voyage summary, TUI, tests). See backlog.recordRejectedGoal.
+      recordRejectedGoal(input.goal, reason);
       const abandoned = markAbandoned(waypoint, reason);
       await this.trace(abandoned, null, null);
       this.emitEvent({
