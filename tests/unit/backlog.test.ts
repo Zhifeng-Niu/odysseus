@@ -9,6 +9,10 @@ import {
   sizeBacklog,
   listBacklog,
   removeBacklogItem,
+  getRetryCount,
+  incrementRetryCounter,
+  isRetryExhausted,
+  clearRetryCounters,
 } from '../../src/cerebellum/backlog.js';
 
 describe('backlog queue', () => {
@@ -146,5 +150,148 @@ describe('backlog queue', () => {
     // Subsequent enqueue should work (overwrites the corrupt file).
     const item = await enqueueBacklog(rootDir, 'fresh start', 'user');
     expect(item.id).toMatch(/^bl_/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Retry counter — pure unit tests
+// ---------------------------------------------------------------------------
+describe('retry counter', () => {
+  beforeEach(() => {
+    clearRetryCounters();
+  });
+
+  test('starts at zero for an unseen goal', () => {
+    expect(getRetryCount('add login page')).toBe(0);
+  });
+
+  test('increments and returns the new count', () => {
+    expect(incrementRetryCounter('add login page')).toBe(1);
+    expect(incrementRetryCounter('add login page')).toBe(2);
+    expect(incrementRetryCounter('add login page')).toBe(3);
+  });
+
+  test('tracks different goals independently', () => {
+    incrementRetryCounter('goal A');
+    incrementRetryCounter('goal A');
+    incrementRetryCounter('goal B');
+    expect(getRetryCount('goal A')).toBe(2);
+    expect(getRetryCount('goal B')).toBe(1);
+  });
+
+  test('clearRetryCounters resets all counters to zero', () => {
+    incrementRetryCounter('goal A');
+    incrementRetryCounter('goal B');
+    clearRetryCounters();
+    expect(getRetryCount('goal A')).toBe(0);
+    expect(getRetryCount('goal B')).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isRetryExhausted
+// ---------------------------------------------------------------------------
+describe('isRetryExhausted', () => {
+  beforeEach(() => {
+    clearRetryCounters();
+  });
+
+  test('returns false when count is below the threshold', () => {
+    incrementRetryCounter('fix bug');
+    expect(isRetryExhausted('fix bug')).toBe(false);
+  });
+
+  test('returns false when count equals the threshold (3)', () => {
+    incrementRetryCounter('fix bug');
+    incrementRetryCounter('fix bug');
+    incrementRetryCounter('fix bug');
+    expect(isRetryExhausted('fix bug')).toBe(false);
+  });
+
+  test('returns true when count exceeds the threshold (4)', () => {
+    incrementRetryCounter('fix bug');
+    incrementRetryCounter('fix bug');
+    incrementRetryCounter('fix bug');
+    incrementRetryCounter('fix bug');
+    expect(isRetryExhausted('fix bug')).toBe(true);
+  });
+
+  test('normalises goal text — punctuation and casing are ignored', () => {
+    incrementRetryCounter('Add Retry Logic!');
+    incrementRetryCounter('add retry logic');
+    incrementRetryCounter('ADD-RETRY-LOGIC');
+    incrementRetryCounter('addretrylogic');
+    // All four map to the same key, so count is 4 → exhausted
+    expect(isRetryExhausted('add retry logic')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Integration: enqueue blocks re-seed after 3 attempts
+// ---------------------------------------------------------------------------
+describe('enqueueBacklog – retry counter blocks re-seed after 3 attempts', () => {
+  let rootDir: string;
+
+  beforeEach(async () => {
+    clearRetryCounters();
+    rootDir = await mkdtemp(join(tmpdir(), 'ody-bl-'));
+  });
+
+  afterEach(async () => {
+    await rm(rootDir, { recursive: true, force: true });
+  });
+
+  test('enqueues a goal successfully on the first 4 attempts', async () => {
+    for (let i = 0; i < 4; i++) {
+      await enqueueBacklog(rootDir, 'fix the login bug', 'dream');
+    }
+    expect(await sizeBacklog(rootDir)).toBe(4);
+  });
+
+  test('does not enqueue on the 5th attempt — returns item but backlog stays at 4', async () => {
+    for (let i = 0; i < 4; i++) {
+      await enqueueBacklog(rootDir, 'fix the login bug', 'dream');
+    }
+    const item = await enqueueBacklog(rootDir, 'fix the login bug', 'dream');
+    // The function still returns a BacklogItem (silent drop), but the file
+    // should not have grown.
+    expect(item).toBeDefined();
+    expect(item.goal).toBe('fix the login bug');
+    expect(await sizeBacklog(rootDir)).toBe(4);
+  });
+
+  test('counts enqueue calls across different wordings of the same goal', async () => {
+    await enqueueBacklog(rootDir, 'Fix the login bug!', 'dream');
+    await enqueueBacklog(rootDir, 'fix the login bug', 'dream');
+    await enqueueBacklog(rootDir, 'FIX-THE-LOGIN-BUG', 'dream');
+    await enqueueBacklog(rootDir, 'fixthe loginbug', 'dream');
+    // All four normalise to the same key, so count is 4 — still allowed.
+    expect(await sizeBacklog(rootDir)).toBe(4);
+
+    // Fifth enqueue (different wording, same normalised key) → blocked.
+    const item = await enqueueBacklog(rootDir, 'fix the login Bug', 'dream');
+    expect(item).toBeDefined();
+    expect(await sizeBacklog(rootDir)).toBe(4);
+  });
+
+  test('allows a different goal to be enqueued after the first goal is exhausted', async () => {
+    // Exhaust "goal A" (5 attempts: 4 succeed, 5th blocked)
+    for (let i = 0; i < 5; i++) {
+      await enqueueBacklog(rootDir, 'goal A', 'dream');
+    }
+    expect(await sizeBacklog(rootDir)).toBe(4); // only 4 enqueued
+
+    // "goal B" should still work
+    await enqueueBacklog(rootDir, 'goal B', 'dream');
+    expect(await sizeBacklog(rootDir)).toBe(5);
+  });
+
+  test('retry counter is incremented by enqueue, not by dequeue', async () => {
+    await enqueueBacklog(rootDir, 'track dequeue', 'dream');
+    expect(getRetryCount('track dequeue')).toBe(1);
+
+    await dequeueBacklog(rootDir);
+    // Dequeue does NOT touch the retry counter (it touches seedAttempts).
+    expect(getRetryCount('track dequeue')).toBe(1);
   });
 });
