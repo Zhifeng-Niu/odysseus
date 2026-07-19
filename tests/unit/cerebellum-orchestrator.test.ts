@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileNoThrow } from '../../src/util/exec.js';
 import { CerebellumOrchestrator } from '../../src/cerebellum/orchestrator.js';
-import type { LLMProvider, LLMCompletion } from '../../src/llm/provider.js';
+import type { LLMProvider, LLMCompletion, LLMCompleteOptions } from '../../src/llm/provider.js';
 import { ToolRegistry } from '../../src/tools/registry.js';
 import { FileWriteTool } from '../../src/tools/file.js';
 
@@ -27,6 +27,30 @@ function makeMockProvider(responses: string[]): LLMProvider {
   let call = 0;
   return {
     async complete(): Promise<LLMCompletion> {
+      const content = responses[Math.min(call, responses.length - 1)] ?? '';
+      call += 1;
+      return {
+        content,
+        model: 'mock',
+        usage: { inputTokens: 10, outputTokens: 5 },
+        finishReason: 'stop',
+        toolCalls: content.startsWith('{') ? extractToolCalls(content) : undefined,
+      };
+    },
+    async *stream() {
+      yield '';
+    },
+    getModel() {
+      return 'mock';
+    },
+  };
+}
+
+function makeRecordingProvider(responses: string[], recorded: LLMCompleteOptions[]): LLMProvider {
+  let call = 0;
+  return {
+    async complete(_prompt: string, options?: LLMCompleteOptions): Promise<LLMCompletion> {
+      if (options) recorded.push(options);
       const content = responses[Math.min(call, responses.length - 1)] ?? '';
       call += 1;
       return {
@@ -144,5 +168,86 @@ describe('CerebellumOrchestrator', () => {
     expect(result.outcome).toBe('failure');
     expect(result.failReason ?? '').toMatch(/syntax|tsc|verify/i);
     await expect(readFile(join(workdir, 'bad.ts'), 'utf8')).rejects.toThrow();
+  });
+
+  test('passes registered tool specs to the LLM on every complete() call', async () => {
+    const recorded: LLMCompleteOptions[] = [];
+    const provider = makeRecordingProvider(
+      [
+        JSON.stringify({
+          toolCalls: [
+            {
+              id: 'call_1',
+              type: 'function',
+              function: {
+                name: 'file-write',
+                arguments: JSON.stringify({
+                  path: join(workdir, 'ok.ts'),
+                  content: 'export const v = 1;',
+                }),
+              },
+            },
+          ],
+        }),
+        'DONE',
+      ],
+      recorded
+    );
+
+    const orch = new CerebellumOrchestrator({
+      cwd: workdir,
+      provider,
+      registry,
+      tracePath,
+      verifyLayers: ['syntax'],
+    });
+
+    const result = await orch.runWaypoint({ goal: 'add a file' });
+
+    expect(result.outcome).toBe('success');
+    expect(recorded.length).toBeGreaterThan(0);
+    for (const opt of recorded) {
+      expect(opt.tools).toBeDefined();
+      expect(opt.tools?.length).toBeGreaterThan(0);
+      expect(opt.tools?.some((t) => t.function.name === 'file-write')).toBe(true);
+    }
+  });
+
+  test('trace records iterations_used from the actual loop count', async () => {
+    const provider = makeMockProvider([
+      JSON.stringify({
+        toolCalls: [
+          {
+            id: 'call_1',
+            type: 'function',
+            function: {
+              name: 'file-write',
+              arguments: JSON.stringify({
+                path: join(workdir, 'iter.ts'),
+                content: 'export const v = 1;',
+              }),
+            },
+          },
+        ],
+      }),
+      'DONE',
+    ]);
+
+    const orch = new CerebellumOrchestrator({
+      cwd: workdir,
+      provider,
+      registry,
+      tracePath,
+      verifyLayers: ['syntax'],
+    });
+
+    const result = await orch.runWaypoint({ goal: 'add a file' });
+
+    expect(result.outcome).toBe('success');
+    expect(result.iterationsUsed).toBe(2);
+
+    const traceLines = (await readFile(tracePath, 'utf8')).trim().split('\n');
+    const last = JSON.parse(traceLines[traceLines.length - 1]!) as { iterations_used: number };
+    expect(last.iterations_used).toBe(2);
   });
 });

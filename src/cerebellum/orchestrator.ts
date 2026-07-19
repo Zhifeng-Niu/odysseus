@@ -111,6 +111,7 @@ export class CerebellumOrchestrator {
       const completion = await this.config.provider.complete(lastUserText, {
         systemPrompt: strategy.systemPrompt,
         history,
+        tools: this.config.registry.listSpecs(),
       });
       this.state.totalInput += completion.usage.inputTokens;
       this.state.totalOutput += completion.usage.outputTokens;
@@ -151,7 +152,11 @@ export class CerebellumOrchestrator {
     if (verify.passed) {
       const commit = await this.commitWaypoint(waypoint.id);
       if (!commit.ok) {
-        const failed = markFailure(active, `verify passed but commit failed: ${commit.error}`);
+        const failed = markFailure(
+          active,
+          `verify passed but commit failed: ${commit.error}`,
+          iterationsUsed
+        );
         await this.trace(failed, checkpoint.sha, null);
         return {
           waypoint: failed,
@@ -164,7 +169,7 @@ export class CerebellumOrchestrator {
           tokensConsumed: { input: this.state.totalInput, output: this.state.totalOutput },
         };
       }
-      const succeeded = markSuccess(active, commit.sha);
+      const succeeded = markSuccess(active, commit.sha, iterationsUsed);
       await this.trace(succeeded, checkpoint.sha, commit.sha);
       return {
         waypoint: succeeded,
@@ -188,7 +193,7 @@ export class CerebellumOrchestrator {
     if (lastAssistantContent && failReason.includes('syntax')) {
       failReason = `${failReason}\nLast assistant message: ${lastAssistantContent.slice(0, 200)}`;
     }
-    const failed = markFailure(active, failReason);
+    const failed = markFailure(active, failReason, iterationsUsed);
     await this.trace(failed, checkpoint.sha, null);
     return {
       waypoint: failed,

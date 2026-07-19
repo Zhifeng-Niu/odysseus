@@ -47,20 +47,30 @@ export function markActive(waypoint: Waypoint): Waypoint {
   return { ...waypoint, status: 'active' };
 }
 
-export function markSuccess(waypoint: Waypoint, checkpointSha: string): Waypoint {
+export function markSuccess(
+  waypoint: Waypoint,
+  checkpointSha: string,
+  iterationsUsed: number
+): Waypoint {
   return {
     ...waypoint,
     status: 'success',
     checkpointSha,
+    iterationsUsed,
     endedAt: Date.now(),
   };
 }
 
-export function markFailure(waypoint: Waypoint, reason: string): Waypoint {
+export function markFailure(
+  waypoint: Waypoint,
+  reason: string,
+  iterationsUsed: number
+): Waypoint {
   return {
     ...waypoint,
     status: 'failure',
     failureReason: reason,
+    iterationsUsed,
     endedAt: Date.now(),
   };
 }
