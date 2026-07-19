@@ -65,13 +65,6 @@
       "createdAt": "2026-07-19T11:28:48.110Z"
     },
     {
-      "id": "bl_3518df3ce45a",
-      "goal": "add a goalValidator(goal: string): boolean function in src/cerebellum/goalValidator.ts that rejects goals missing a file path pattern (e.g., no .ts/.js/.py extension or src/ prefix) and returns false for pure conversational input",
-      "origin": "dream",
-      "priority": 15,
-      "createdAt": "2026-07-19T11:36:50.126Z"
-    },
-    {
       "id": "bl_d0ff22a3273e",
       "goal": "add a repeatedToolCallDetector in src/orchestrator.ts that tracks the last 3 tool call signatures and aborts with an error if all 3 are identical, breaking the convergence failure loop",
       "origin": "dream",
