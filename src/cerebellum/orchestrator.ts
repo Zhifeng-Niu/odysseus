@@ -46,6 +46,7 @@ import {
 } from './backlog.js';
 import { readMemory, type MemoryEntry } from './memory.js';
 import { markCompleted } from './completedGoals.js';
+import { RepeatedToolCallDetector } from './repeated-tool-call-detector.js';
 import type { MemoryCategory } from '../orchestrator/events.js';
 
 export interface OrchestratorConfig {
@@ -234,7 +235,7 @@ export class CerebellumOrchestrator extends EventEmitter {
     // the agent is stuck in a loop; we throw and the surrounding try/catch
     // rolls back to the checkpoint. Scoped per waypoint so a fresh task
     // starts with an empty window.
-    const recentToolCalls: string[] = [];
+    const loopDetector = new RepeatedToolCallDetector(3);
 
     try {
       for (let iter = 1; iter <= maxIter; iter++) {
@@ -292,19 +293,7 @@ export class CerebellumOrchestrator extends EventEmitter {
             // check fires on the 3rd identical attempt, so the redundant call
             // is never executed. Throwing here unwinds into the catch below,
             // which rolls back to the checkpoint and reports a clear failure.
-            recentToolCalls.push(`${call.function.name}:${JSON.stringify(args)}`);
-            if (recentToolCalls.length > 3) recentToolCalls.shift();
-            if (
-              recentToolCalls.length === 3 &&
-              recentToolCalls[0] === recentToolCalls[1] &&
-              recentToolCalls[1] === recentToolCalls[2]
-            ) {
-              throw new Error(
-                `repeated-tool-call detector: "${call.function.name}" invoked 3 times in a row with identical arguments (${JSON.stringify(
-                  args
-                )}) — agent appears stuck in a loop; aborting waypoint`
-              );
-            }
+            loopDetector.record(call.function.name, args);
 
             this.emitEvent({
               type: 'tool-call-started',
