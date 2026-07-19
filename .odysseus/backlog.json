@@ -65,13 +65,6 @@
       "createdAt": "2026-07-19T14:05:30.707Z"
     },
     {
-      "id": "bl_38b8d5f5feba",
-      "goal": "add substring false-positive test to src/cerebellum/completedGoals.test.ts verifying 'add login' does not match 'add login page'",
-      "origin": "dream",
-      "priority": 35,
-      "createdAt": "2026-07-19T14:14:34.538Z"
-    },
-    {
       "id": "bl_9b6eef5be534",
       "goal": "add edge case test to src/cerebellum/goalValidator.test.ts rejecting goals that mention .test.ts in non-coding context like 'explain what .test.ts files are'",
       "origin": "dream",
