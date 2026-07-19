@@ -30,7 +30,7 @@ import { selectStrategy } from './strategy.js';
 import { validateGoal } from './goal-validator.js';
 import { appendTrace, readTrace } from '../trace/jsonl.js';
 import type { OrchestratorEvent } from '../orchestrator/events.js';
-import { InterruptedError, RejectedError } from '../orchestrator/errors.js';
+import { InterruptedError, RejectedError, StuckLoopError } from '../orchestrator/errors.js';
 import {
   INITIAL_BRAIN_STATE,
   canTransitionTo,
@@ -233,6 +233,7 @@ export class CerebellumOrchestrator extends EventEmitter {
     let lastAssistantContent = '';
     let consecutiveTextOnly = 0;
     let conversationalStop = false;
+    let stuckLoopRetried = false;
 
     // REPEATED-TOOL-CALL DETECTOR — sliding window of the last 3 tool-call
     // signatures (name + serialized args). When all 3 entries are identical
@@ -295,9 +296,36 @@ export class CerebellumOrchestrator extends EventEmitter {
             // REPEATED-TOOL-CALL DETECTOR — record this call's signature and
             // check for a loop. On first detection a recovery context message
             // is injected into the history so the LLM can try a different
-            // approach. On second detection the detector throws, unwinding
-            // into the catch below for rollback + failure.
-            const detection = loopDetector.record(call.function.name, args);
+            // approach. On second detection the detector throws StuckLoopError.
+            // The orchestrator catches it, injects a stronger context nudge,
+            // and retries once before letting it propagate to the outer catch
+            // for rollback + failure.
+            let detection;
+            try {
+              detection = loopDetector.record(call.function.name, args);
+            } catch (err) {
+              if (err instanceof StuckLoopError && !stuckLoopRetried) {
+                stuckLoopRetried = true;
+                const nudge =
+                  `[STUCK LOOP — FINAL RETRY] The tool "${call.function.name}" has been ` +
+                  `called repeatedly with identical arguments and a prior recovery ` +
+                  `intervention was ignored. This is your last attempt. You MUST ` +
+                  `choose a fundamentally different approach or a different tool. ` +
+                  `If the task cannot be accomplished, respond with DONE and explain ` +
+                  `what you tried and why it failed.`;
+                history.push({ role: 'user', content: nudge });
+                this.emitEvent({
+                  type: 'recovery-intervention',
+                  waypointId: waypoint.id,
+                  tool: call.function.name,
+                  message: nudge,
+                  ts: Date.now(),
+                });
+                detection = { loopDetected: true };
+              } else {
+                throw err;
+              }
+            }
             if (detection.loopDetected && detection.recoveryMessage) {
               history.push({ role: 'user', content: detection.recoveryMessage });
               this.emitEvent({
