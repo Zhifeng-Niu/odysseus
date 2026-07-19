@@ -174,6 +174,9 @@ export async function enqueueBacklog(
   // Block re-seeding when the per-goal retry counter (tracked in this
   // module) has exceeded MAX_RETRY_ATTEMPTS enqueues.
   if (isRetryExhausted(trimmedGoal)) {
+    console.warn(
+      `[backlog] blocking re-seed: retry counter exhausted (${getRetryCount(trimmedGoal)}/${MAX_RETRY_ATTEMPTS}) for goal: "${trimmedGoal}"`
+    );
     return {
       id: options?.id ?? generateBacklogId(),
       goal: trimmedGoal,
