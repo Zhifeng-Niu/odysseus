@@ -2,13 +2,6 @@
   "version": 1,
   "items": [
     {
-      "id": "bl_6f152701523c",
-      "goal": "add console.warn when retry counter blocks re-seeding in src/cerebellum/backlog.ts",
-      "origin": "dream",
-      "priority": 50,
-      "createdAt": "2026-07-19T14:05:30.707Z"
-    },
-    {
       "id": "bl_9b6eef5be534",
       "goal": "add edge case test to src/cerebellum/goalValidator.test.ts rejecting goals that mention .test.ts in non-coding context like 'explain what .test.ts files are'",
       "origin": "dream",
