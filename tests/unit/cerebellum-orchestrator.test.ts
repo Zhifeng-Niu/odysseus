@@ -250,4 +250,45 @@ describe('CerebellumOrchestrator', () => {
     const last = JSON.parse(traceLines[traceLines.length - 1]!) as { iterations_used: number };
     expect(last.iterations_used).toBe(2);
   });
+
+  test('reports failure when maxIterations is reached without DONE', async () => {
+    // Provider emits tool calls every turn and never says DONE — loop will
+    // run up to maxIter and the orchestrator must not declare success.
+    const responses: string[] = [];
+    for (let i = 0; i < 10; i++) {
+      responses.push(
+        JSON.stringify({
+          toolCalls: [
+            {
+              id: `call_${i}`,
+              type: 'function',
+              function: {
+                name: 'file-write',
+                arguments: JSON.stringify({
+                  path: join(workdir, `noop_${i}.ts`),
+                  content: `export const x${i} = ${i};`,
+                }),
+              },
+            },
+          ],
+        })
+      );
+    }
+    const provider = makeMockProvider(responses);
+
+    const orch = new CerebellumOrchestrator({
+      cwd: workdir,
+      provider,
+      registry,
+      tracePath,
+      verifyLayers: ['syntax'],
+      maxIterations: 3,
+    });
+
+    const result = await orch.runWaypoint({ goal: 'loop forever without DONE' });
+
+    expect(result.outcome).toBe('failure');
+    expect(result.iterationsUsed).toBe(3);
+    expect(result.failReason ?? '').toMatch(/maxIterations.*DONE/);
+  });
 });
