@@ -229,6 +229,13 @@ export class CerebellumOrchestrator extends EventEmitter {
     let consecutiveTextOnly = 0;
     let conversationalStop = false;
 
+    // REPEATED-TOOL-CALL DETECTOR — sliding window of the last 3 tool-call
+    // signatures (name + serialized args). When all 3 entries are identical
+    // the agent is stuck in a loop; we throw and the surrounding try/catch
+    // rolls back to the checkpoint. Scoped per waypoint so a fresh task
+    // starts with an empty window.
+    const recentToolCalls: string[] = [];
+
     try {
       for (let iter = 1; iter <= maxIter; iter++) {
         if (this.interrupted) {
@@ -279,6 +286,26 @@ export class CerebellumOrchestrator extends EventEmitter {
           for (const call of completion.toolCalls) {
             const args = this.parseToolArgs(call);
             const callId = call.id;
+
+            // REPEATED-TOOL-CALL DETECTOR — record this call's signature and
+            // abort before dispatching if the last 3 are byte-identical. The
+            // check fires on the 3rd identical attempt, so the redundant call
+            // is never executed. Throwing here unwinds into the catch below,
+            // which rolls back to the checkpoint and reports a clear failure.
+            recentToolCalls.push(`${call.function.name}:${JSON.stringify(args)}`);
+            if (recentToolCalls.length > 3) recentToolCalls.shift();
+            if (
+              recentToolCalls.length === 3 &&
+              recentToolCalls[0] === recentToolCalls[1] &&
+              recentToolCalls[1] === recentToolCalls[2]
+            ) {
+              throw new Error(
+                `repeated-tool-call detector: "${call.function.name}" invoked 3 times in a row with identical arguments (${JSON.stringify(
+                  args
+                )}) — agent appears stuck in a loop; aborting waypoint`
+              );
+            }
+
             this.emitEvent({
               type: 'tool-call-started',
               waypointId: waypoint.id,

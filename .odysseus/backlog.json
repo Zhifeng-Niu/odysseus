@@ -9,13 +9,6 @@
       "createdAt": "2026-07-19T10:58:08.966Z"
     },
     {
-      "id": "bl_ad558a73033a",
-      "goal": "Add a goal validator that rejects non-coding inputs (greetings, questions) before they enter the waypoint execution pipeline",
-      "origin": "dream",
-      "priority": 20,
-      "createdAt": "2026-07-19T11:00:11.291Z"
-    },
-    {
       "id": "bl_8f285d3e4bf4",
       "goal": "Add early termination in the agent loop after 3 consecutive non-tool-calling responses, returning a clear error instead of burning to maxIterations",
       "origin": "dream",
