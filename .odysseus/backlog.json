@@ -2,13 +2,6 @@
   "version": 1,
   "items": [
     {
-      "id": "bl_56745022e4a2",
-      "goal": "Add a goal deduplication check using fuzzy string matching against recently completed and in-progress waypoints before seeding",
-      "origin": "dream",
-      "priority": 40,
-      "createdAt": "2026-07-19T11:00:11.292Z"
-    },
-    {
       "id": "bl_1ef3b743f929",
       "goal": "Add a goal-rewording step in the waypoint seeder that transforms abstract goals like 'Add deduplication logic' into specific file-targeted goals like 'Add dedup check in src/waypoint.ts before seedGoals() call'",
       "origin": "dream",
