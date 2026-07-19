@@ -332,12 +332,24 @@ export class CerebellumOrchestrator extends EventEmitter {
               }
             }
             if (detection.loopDetected && detection.recoveryMessage) {
-              history.push({ role: 'user', content: detection.recoveryMessage });
+              // Build a contextual recovery hint that references the goal,
+              // the stuck tool, and available alternatives so the LLM can
+              // make an informed decision instead of guessing.
+              const availableTools = this.config.registry.listSpecs().map((s) => s.function.name);
+              const alternatives = availableTools.filter((n) => n !== call.function.name);
+              const contextualHint =
+                `${detection.recoveryMessage}\n\n` +
+                `Context — you are working on: "${input.goal}"\n` +
+                `The stuck call was: ${call.function.name}(${JSON.stringify(args)}).\n` +
+                `Other tools available: ${alternatives.length > 0 ? alternatives.join(', ') : '(none)'}. ` +
+                `Consider whether a different tool or a fundamentally different ` +
+                `approach would make progress on the goal.`;
+              history.push({ role: 'user', content: contextualHint });
               this.emitEvent({
                 type: 'recovery-intervention',
                 waypointId: waypoint.id,
                 tool: call.function.name,
-                message: detection.recoveryMessage,
+                message: contextualHint,
                 ts: Date.now(),
               });
             }
