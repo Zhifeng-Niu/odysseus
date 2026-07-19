@@ -3,6 +3,7 @@ import { GLMProvider } from './llm/glm.js';
 import { ToolRegistry } from './tools/registry.js';
 import { FileReadTool, FileWriteTool, FileEditTool } from './tools/file.js';
 import { GitTool } from './tools/git.js';
+import { BashTool } from './tools/bash.js';
 import { runAgentTurn } from './agent/loop.js';
 import { loadDotenv } from './util/dotenv.js';
 import { join } from 'node:path';
@@ -22,6 +23,7 @@ async function main(): Promise<void> {
   registry.register(new FileWriteTool());
   registry.register(new FileEditTool());
   registry.register(new GitTool());
+  registry.register(new BashTool());
 
   const tracePath = join(cwd, '.odysseus', 'trace.jsonl');
 
