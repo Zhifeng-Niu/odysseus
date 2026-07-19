@@ -106,3 +106,9 @@ Inline recovery intervention failed (maxIterations), StuckLoopError throw failed
 
 Recent sprints show tests being added immediately after recovery features ship (StuckLoopError retry, repeatedToolCallDetector hint, retry counter). The discipline is forming but the consecutive-text-early-termination still slipped through.
 
+## [2026-07-19T19:48:29.968Z] Test debt accumulates fastest on loop-prevention code
+- **id**: mem_ec46904f1e
+- **source**: dream
+
+Early termination, retry limiters, and dedup checks all shipped without tests because they were urgent fixes. Each untested loop-prevention mechanism is a latent infinite-loop risk. Priority for test-follows-ship should be highest for code that exists to prevent runaway loops.
+

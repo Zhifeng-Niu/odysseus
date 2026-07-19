@@ -130,3 +130,9 @@ StuckLoopError catch-and-retry shipped, then needed separate waypoint for tests.
 
 The repeatedToolCallDetector recovery via appended hint message shipped cleanly with tests, confirming that injecting a contextual nudge into the message stream is more reliable than error-based abort-and-retry patterns.
 
+## [2026-07-19T19:48:29.968Z] Aborted operations are retryable, not failed
+- **id**: mem_ec469001bb
+- **source**: dream
+
+Multiple recent waypoints failed with 'This operation was aborted' — these are timeout/interruption events, not code failures. Aborted goals should be re-seeded with the same or narrower scope rather than abandoned. Four out of nine recent operations were aborted, suggesting a systemic timeout issue rather than goal quality problems.
+

@@ -16,13 +16,6 @@
       "createdAt": "2026-07-19T12:09:18.864Z"
     },
     {
-      "id": "bl_b44f8c80fb26",
-      "goal": "add unit tests for repeatedToolCallDetector abort logic in tests/orchestrator.test.ts",
-      "origin": "dream",
-      "priority": 45,
-      "createdAt": "2026-07-19T12:12:34.920Z"
-    },
-    {
       "id": "bl_ea13ef464bac",
       "goal": "你知道你自己作为一个未来要成为AGI的agent的现在的不足吗",
       "origin": "user",

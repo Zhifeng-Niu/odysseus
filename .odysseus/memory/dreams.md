@@ -28,3 +28,9 @@ The StuckLoopError catch retries once, but nothing prevents the retry from re-tr
 
 Three consecutive non-tool responses triggers abort, but legitimate multi-step reasoning could hit this. The threshold was raised from 2 to 3 already — may need to be 4 or context-aware (e.g., token length of responses) to avoid false positives on complex but valid reasoning chains.
 
+## [2026-07-19T19:48:29.968Z] Memory consistency needs self-correction mechanism
+- **id**: mem_ec4690238b
+- **source**: dream
+
+Three contradictory dream entries exist about retry limiter status (unimplemented vs shipped vs shipped). Memory entries should be reconciled or deprecated when new evidence arrives. Consider adding a memory-cleanup step that marks older entries as superseded when newer ones contradict them.
+
