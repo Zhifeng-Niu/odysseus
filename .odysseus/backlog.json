@@ -2,13 +2,6 @@
   "version": 1,
   "items": [
     {
-      "id": "bl_6785802de268",
-      "goal": "Track per-goal iteration counts in the waypoint outcome log to identify goals that consistently need high iterations",
-      "origin": "dream",
-      "priority": 35,
-      "createdAt": "2026-07-19T10:58:08.966Z"
-    },
-    {
       "id": "bl_56745022e4a2",
       "goal": "Add a goal deduplication check using fuzzy string matching against recently completed and in-progress waypoints before seeding",
       "origin": "dream",
