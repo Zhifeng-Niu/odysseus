@@ -2,14 +2,6 @@
   "version": 1,
   "items": [
     {
-      "id": "bl_6839221afa0d",
-      "goal": "add preservation mechanism in `src/cerebellum/orchestrator.ts` for consecutive-text-only responses whose content length exceeds 500 chars — these are likely diagnostic or reflective outputs (like wp_mrs855ke007) that should be exempt from the 3-strike early-stop rollback. Detect by char-counting the assistant turns before the StuckLoopError trigger; if any turn > 500 chars, write it to `.odysseus/memory/dreams.md` with source='reflect' and related=waypointId BEFORE aborting. Sacred-file change — requires manual review.",
-      "origin": "reflect",
-      "priority": 70,
-      "createdAt": "2026-07-19T20:28:06.223Z",
-      "sourceWaypointId": "wp_mrs855ke007"
-    },
-    {
       "id": "bl_4c8fda44da35",
       "goal": "add inline self-monitor hook in `src/cerebellum/orchestrator.ts` runWaypoint iteration loop that fires every 3 tool calls. The hook appends a brief observation message to the conversation (NOT an abort, just a nudge) asking the agent to notice patterns like 'am I repeating?' or 'did I misread the goal?'. This addresses the 'reflection is triggered, not continuous' gap — currently self-awareness only runs in dream phase, never during wakeful execution. Sacred-file change — requires manual review.",
       "origin": "reflect",
