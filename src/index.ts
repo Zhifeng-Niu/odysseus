@@ -4,9 +4,12 @@ import { ToolRegistry } from './tools/registry.js';
 import { FileReadTool, FileWriteTool, FileEditTool } from './tools/file.js';
 import { GitTool } from './tools/git.js';
 import { runAgentTurn } from './agent/loop.js';
+import { loadDotenv } from './util/dotenv.js';
 import { join } from 'node:path';
 
 async function main(): Promise<void> {
+  const cwd = process.cwd();
+  loadDotenv(join(cwd, '.env'));
   const config = loadConfig();
   const provider = new GLMProvider({
     apiKey: config.apiKey,
@@ -20,7 +23,6 @@ async function main(): Promise<void> {
   registry.register(new FileEditTool());
   registry.register(new GitTool());
 
-  const cwd = process.cwd();
   const tracePath = join(cwd, '.odysseus', 'trace.jsonl');
 
   // Iteration 0 ships argv-only; REPL is a candidate for a later iteration
