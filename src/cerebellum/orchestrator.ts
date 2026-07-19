@@ -260,6 +260,18 @@ export class CerebellumOrchestrator extends EventEmitter {
     // starts with an empty window.
     const loopDetector = new RepeatedToolCallDetector(3);
 
+    // SELF-MONITOR HOOK — continuous self-awareness during wakeful execution.
+    // Currently self-reflection only runs in the dream phase (between
+    // waypoints), never during the LLM↔tool loop itself. This hook closes
+    // that gap: every SELF_MONITOR_INTERVAL tool calls it injects a brief
+    // observation nudge into the conversation as a user message, prompting
+    // the agent to notice its own patterns ("am I repeating?", "did I
+    // misread the goal?") and self-correct before burning the rest of its
+    // iteration budget. It is NOT an abort — the loop continues normally;
+    // the nudge merely gives the LLM a chance to reflect mid-waypoint.
+    const SELF_MONITOR_INTERVAL = 3;
+    let toolCallCount = 0;
+
     try {
       for (let iter = 1; maxIter === undefined || iter <= maxIter; iter++) {
         if (this.interrupted) {
@@ -397,6 +409,31 @@ export class CerebellumOrchestrator extends EventEmitter {
               content: result.ok ? result.value : `ERROR: ${result.error}`,
               toolCallId: call.id,
             });
+
+            // SELF-MONITOR HOOK — fires every SELF_MONITOR_INTERVAL tool
+            // calls. Injects a brief observation nudge into the conversation
+            // as a user message (NOT an abort) so the agent can notice its
+            // own patterns mid-waypoint and self-correct before burning the
+            // rest of its iteration budget. Closes the "reflection is
+            // triggered, not continuous" gap: self-awareness now runs during
+            // wakeful execution, not only in the dream phase.
+            toolCallCount += 1;
+            if (toolCallCount % SELF_MONITOR_INTERVAL === 0) {
+              const observation =
+                `[self-monitor] You've made ${toolCallCount} tool calls so far on this ` +
+                `waypoint. Briefly check yourself before continuing: am I repeating ` +
+                `the same action expecting a different result? Did I misread the goal ` +
+                `or skip a constraint? Is there a simpler path I'm overlooking? ` +
+                `Resume your work — this is a nudge, not an interruption.`;
+              history.push({ role: 'user', content: observation });
+              this.emitEvent({
+                type: 'self-monitor',
+                waypointId: waypoint.id,
+                toolCallCount,
+                message: observation,
+                ts: Date.now(),
+              });
+            }
           }
           continue;
         }

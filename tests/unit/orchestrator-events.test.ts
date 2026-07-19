@@ -75,6 +75,9 @@ describe('CerebellumOrchestrator events + approval gate', () => {
   let registry: ToolRegistry;
 
   beforeEach(async () => {
+    // Default: auto-approve OFF. Tests in this suite assert the consent-gate
+    // behavior. Tests that need auto-approve ON set the env var explicitly.
+    process.env.ODYSSEUS_AUTO_APPROVE = '0';
     workdir = await mkdtemp(join(tmpdir(), 'ody-orch-evt-'));
     tracePath = join(workdir, 'trace.jsonl');
     await initRepo(workdir);
@@ -96,6 +99,7 @@ describe('CerebellumOrchestrator events + approval gate', () => {
   });
 
   afterEach(async () => {
+    delete process.env.ODYSSEUS_AUTO_APPROVE;
     await rm(workdir, { recursive: true, force: true });
   });
 

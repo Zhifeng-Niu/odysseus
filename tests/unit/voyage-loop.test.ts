@@ -107,6 +107,11 @@ describe('CerebellumOrchestrator voyage loop', () => {
   let registry: ToolRegistry;
 
   beforeEach(async () => {
+    // Default: auto-approve OFF. Most tests in this suite assert the
+    // consent-gate behavior (dream output parks in pending-review, no
+    // auto-iteration). Tests that need auto-approve ON set the env var
+    // explicitly inside the test body.
+    process.env.ODYSSEUS_AUTO_APPROVE = '0';
     workdir = await mkdtemp(join(tmpdir(), 'ody-voyage-'));
     tracePath = join(workdir, '.odysseus', 'trace.jsonl');
     await initRepo(workdir);
@@ -128,6 +133,7 @@ describe('CerebellumOrchestrator voyage loop', () => {
   });
 
   afterEach(async () => {
+    delete process.env.ODYSSEUS_AUTO_APPROVE;
     await rm(workdir, { recursive: true, force: true });
   });
 
@@ -460,5 +466,71 @@ describe('CerebellumOrchestrator voyage loop', () => {
     expect(idle).toBeDefined();
     expect(idle?.lastWaypointId).toBe(result.waypoints[0]!.waypoint.id);
     expect(idle?.backlogSize).toBe(0);
+  });
+
+  test('auto-approve ON routes dream output into backlog and triggers next iteration', async () => {
+    // New autonomous-evolution behavior: when ODYSSEUS_AUTO_APPROVE is on
+    // (default for production), dreamer output bypasses pending-review and
+    // lands directly in the backlog. The voyage loop then iterates and
+    // picks up the dreamed item as the next waypoint.
+    process.env.ODYSSEUS_AUTO_APPROVE = '1';
+
+    const followupGoal = 'followup task from dream';
+    const provider = makeMockProvider([
+      // Waypoint 1 (seed): write a file, then DONE.
+      fileWriteArgs(workdir, 'seed.ts', 'export const s = 0;'),
+      'DONE',
+      // Dream 1: emits one backlog item + no memory entries.
+      JSON.stringify({
+        backlogItems: [{ goal: followupGoal, priority: 80 }],
+        memoryEntries: [],
+      }),
+      // Waypoint 2 (auto-approved dream item): write another file, DONE.
+      fileWriteArgs(workdir, 'followup.ts', 'export const f = 1;'),
+      'DONE',
+      // Dream 2: empty — voyage drains.
+      JSON.stringify({ backlogItems: [], memoryEntries: [] }),
+    ]);
+
+    const orch = new CerebellumOrchestrator({
+      cwd: workdir,
+      provider,
+      registry,
+      tracePath,
+      verifyLayers: ['syntax'],
+      autoApprove: true,
+    });
+    const events = subscribe(orch);
+
+    const result = await orch.runVoyage({ seedGoal: 'seed task' });
+
+    // Debug: surface what actually happened.
+    if (result.waypoints.length !== 2) {
+      const types = events.map((e) => e.type);
+      // eslint-disable-next-line no-console
+      console.error('DEBUG events:', types);
+      // eslint-disable-next-line no-console
+      console.error('DEBUG outcome:', result.outcome);
+      // eslint-disable-next-line no-console
+      console.error('DEBUG waypoint goals:', result.waypoints.map((w) => w.waypoint.goal));
+    }
+
+    // Two waypoints ran — the second one was auto-approved from the dream.
+    expect(result.waypoints.length).toBe(2);
+    expect(result.waypoints[0]!.waypoint.goal).toBe('seed task');
+    expect(result.waypoints[1]!.waypoint.goal).toBe(followupGoal);
+
+    // The dreamed item moved through pending-review (audit trail) but the
+    // queue is now empty because auto-approve drained it.
+    const pending = await listPendingReview(join(workdir, '.odysseus'));
+    expect(pending.length).toBe(0);
+
+    // Backlog is also empty — the item was dequeued and executed.
+    const backlog = await listBacklog(join(workdir, '.odysseus'));
+    expect(backlog.length).toBe(0);
+
+    // Both files exist on disk.
+    await expect(readFile(join(workdir, 'seed.ts'), 'utf8')).resolves.toContain('s = 0');
+    await expect(readFile(join(workdir, 'followup.ts'), 'utf8')).resolves.toContain('f = 1');
   });
 });

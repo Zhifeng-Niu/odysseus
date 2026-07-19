@@ -131,6 +131,19 @@ export type OrchestratorEvent =
       tool: string;
       message: string;
       ts: number;
+    }
+  // ─── Self-monitor events ────────────────────────────────────────────────
+  // Closes the "reflection is triggered, not continuous" gap: self-awareness
+  // previously ran only in the dream phase (between waypoints), never during
+  // wakeful execution. This event fires every N tool calls inside the
+  // runWaypoint loop when a non-abortive observation nudge is injected into
+  // the conversation, giving observers visibility into continuous self-monitor.
+  | {
+      type: 'self-monitor';
+      waypointId: string;
+      toolCallCount: number;
+      message: string;
+      ts: number;
     };
 
 /**
@@ -172,6 +185,8 @@ export const EVENT_TYPES = [
   'memory-consolidated',
   // Recovery intervention
   'recovery-intervention',
+  // Self-monitor (continuous self-awareness during wakeful execution)
+  'self-monitor',
 ] as const;
 
 export type OrchestratorEventType = (typeof EVENT_TYPES)[number];
