@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { BacklogOrigin } from '../orchestrator/events.js';
+import { isCompleted } from './completedGoals.js';
 
 /**
  * Backlog queue — the agent's "short-term working memory".
@@ -110,6 +111,20 @@ export async function enqueueBacklog(
   const trimmedGoal = goal.trim();
   if (trimmedGoal.length === 0) {
     throw new Error('backlog goal cannot be empty');
+  }
+  // Skip enqueueing when this goal has already been recorded as completed by
+  // markCompleted — prevents the voyage loop from re-seeding done work.
+  if (isCompleted(trimmedGoal)) {
+    return {
+      id: options?.id ?? generateBacklogId(),
+      goal: trimmedGoal,
+      origin,
+      priority: options?.priority ?? defaultPriorityForOrigin(origin),
+      createdAt: options?.createdAt ?? new Date().toISOString(),
+      ...(options?.sourceWaypointId !== undefined
+        ? { sourceWaypointId: options.sourceWaypointId }
+        : {}),
+    };
   }
   const file = await loadBacklogFile(rootDir);
   const item: BacklogItem = {
