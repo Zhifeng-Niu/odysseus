@@ -93,13 +93,6 @@
       "createdAt": "2026-07-19T14:05:30.707Z"
     },
     {
-      "id": "bl_852441839df3",
-      "goal": "add two test cases to src/cerebellum/completedGoals.test.ts: empty map returns false, exact match returns true",
-      "origin": "dream",
-      "priority": 25,
-      "createdAt": "2026-07-19T14:14:34.537Z"
-    },
-    {
       "id": "bl_38b8d5f5feba",
       "goal": "add substring false-positive test to src/cerebellum/completedGoals.test.ts verifying 'add login' does not match 'add login page'",
       "origin": "dream",
