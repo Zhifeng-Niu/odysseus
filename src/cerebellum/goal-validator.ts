@@ -52,6 +52,26 @@ const CONVERSATIONAL_PATTERNS_EN =
 const CONVERSATIONAL_PATTERNS_CJK =
   /你好|嗨|哈喽|你叫什么|你是谁|晚安|再见|谢谢/;
 
+// English interrogative question patterns — "what can you do?", "how does X
+// work?", "why does Y happen?", "explain Z". These are informational queries,
+// not code tasks: the agent would only reply with text (triggering the
+// reactive conversational-stop heuristic after 3 wasted turns). Catching them
+// here short-circuits before any checkpoint or LLM work.
+//
+// Safe because the action-verb guard above already returned: any question
+// that also names a code action ("how to add a file", "explain how to fix
+// the parser") carries an action verb and passes BEFORE this check runs. So
+// these patterns only fire on purely informational questions.
+const QUESTION_PATTERNS_EN =
+  /\b(what\s+can\s+you\s+do|how\s+(to|do|does|did|can|long|many|much)|why\s+(is|are|was|were|do|does|did|can|don'?t|doesn'?t|isn'?t|aren'?t)|explain|what\s+(is|are|was|were|does|do|can)|when\s+(is|are|do|does|did|will)|where\s+(is|are|do|does|did|can))\b/i;
+
+// CJK interrogative patterns. "如何" (how), "为什么" (why), "是什么" (what is),
+// "怎么做" (how to do), "你能做什么" (what can you do). As with English, the
+// action-verb guard has already returned, so these only match purely
+// informational CJK questions.
+const QUESTION_PATTERNS_CJK =
+  /如何|为什么|是什么|怎么做|怎么办|你能做什么|是什么意思|请问/;
+
 export function validateGoal(goal: string): GoalValidationResult {
   const trimmed = goal.trim();
   if (trimmed.length === 0) {
@@ -59,7 +79,7 @@ export function validateGoal(goal: string): GoalValidationResult {
   }
 
   // Any coding-action verb present → treat as a real code task, even if the
-  // message opens with a greeting. Mixed goals are code tasks.
+  // message opens with a greeting or question. Mixed goals are code tasks.
   if (hasActionVerb(trimmed)) {
     return { valid: true };
   }
@@ -71,6 +91,16 @@ export function validateGoal(goal: string): GoalValidationResult {
       valid: false,
       reason:
         'goal appears conversational (greeting/identity/chat) with no coding-action verb — rejected before agent dispatch',
+    };
+  }
+
+  // No action verb, but an interrogative question → non-coding informational
+  // query. Reject before dispatch for the same reason as conversational input.
+  if (QUESTION_PATTERNS_EN.test(trimmed) || QUESTION_PATTERNS_CJK.test(trimmed)) {
+    return {
+      valid: false,
+      reason:
+        'goal appears to be an informational question with no coding-action verb — rejected before agent dispatch',
     };
   }
 

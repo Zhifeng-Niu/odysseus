@@ -32,6 +32,31 @@ describe('goal-validator', () => {
     }
   });
 
+  describe('rejects informational questions', () => {
+    const questions = [
+      'what can you do?',
+      'how does the orchestrator work?',
+      'how to use this program?',
+      'why is this happening?',
+      'explain how the verify gate works',
+      'what is a waypoint?',
+      'when does the voyage stop?',
+      'where is the config file?',
+      '如何使用这个工具',
+      '为什么会这样',
+      '是什么意思',
+      '你能做什么',
+      '请问怎么用',
+    ];
+    for (const goal of questions) {
+      test(`rejects question: ${JSON.stringify(goal)}`, () => {
+        const result = validateGoal(goal);
+        expect(result.valid).toBe(false);
+        expect(result.reason).toBeDefined();
+      });
+    }
+  });
+
   describe('accepts coding goals', () => {
     const coding = [
       'add a file with const v = 1',

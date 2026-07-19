@@ -336,9 +336,11 @@ describe('CerebellumOrchestrator events + approval gate', () => {
   });
 
   test('conversational goal (no tool calls, no DONE) stops early as abandoned', async () => {
-    // Simulates the "hi" scenario: LLM keeps replying with plain text and
-    // never invokes tools. Without the consecutiveTextOnly guard, the loop
-    // would burn all 16 iterations and emit a failure. With the guard at
+    // Simulates an ambiguous goal that slips past the pre-dispatch validator
+    // (no greeting/question pattern, no action verb → "unknown intent, let
+    // through") but to which the LLM keeps replying with plain text and never
+    // invokes tools. Without the consecutiveTextOnly guard, the loop would
+    // burn all 16 iterations and emit a failure. With the guard at
     // threshold=3, the orchestrator stops after 3 conversational turns and
     // marks abandoned.
     const provider = makeMockProvider([
@@ -358,7 +360,7 @@ describe('CerebellumOrchestrator events + approval gate', () => {
     });
     const events = subscribe(orch);
 
-    const result = await orch.runWaypoint({ goal: 'hi' });
+    const result = await orch.runWaypoint({ goal: 'not sure what to do here' });
 
     expect(result.outcome).toBe('abandoned');
     expect(result.iterationsUsed).toBe(3);
@@ -399,6 +401,40 @@ describe('CerebellumOrchestrator events + approval gate', () => {
 
     expect(result.outcome).toBe('success');
     expect(result.iterationsUsed).toBe(3);
+  });
+
+  test('greeting is rejected by the pre-dispatch validator before any LLM turn', async () => {
+    // A pure greeting ("hi") must be short-circuited by validateGoal before
+    // the checkpoint or any LLM call. The reactive consecutiveTextOnly path
+    // is now defense-in-depth for ambiguous goals the validator lets through.
+    const provider = makeMockProvider([
+      'Hi! I am Odysseus, ready to help.',
+      'Please give me a concrete task.',
+      'Still waiting for a real goal — try "add a file".',
+    ]);
+
+    const orch = new CerebellumOrchestrator({
+      cwd: workdir,
+      provider,
+      registry,
+      tracePath,
+      verifyLayers: ['syntax'],
+      autoApprove: true,
+      maxIterations: 16,
+    });
+    const events = subscribe(orch);
+
+    const result = await orch.runWaypoint({ goal: 'hi' });
+
+    expect(result.outcome).toBe('abandoned');
+    expect(result.iterationsUsed).toBe(0);
+    expect(result.failReason ?? '').toMatch(/conversational/i);
+
+    // No LLM turn ran, so no assistant messages and no verify.
+    const types = events.map((e) => e.type);
+    expect(types).not.toContain('assistant-message');
+    expect(types).not.toContain('verify-started');
+    expect(types).not.toContain('waypoint-committed');
   });
 
   test('two text replies (clarification flow) do NOT trip the conversational guard', async () => {
