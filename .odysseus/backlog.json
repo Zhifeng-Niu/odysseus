@@ -72,13 +72,6 @@
       "createdAt": "2026-07-19T11:36:50.127Z"
     },
     {
-      "id": "bl_d7eaff6d7802",
-      "goal": "add a repeated-tool-call detector in src/orchestrator.ts that tracks the last 3 tool invocations and aborts with a clear error when all 3 are identical",
-      "origin": "dream",
-      "priority": 10,
-      "createdAt": "2026-07-19T11:45:53.964Z"
-    },
-    {
       "id": "bl_36a4d1804e9e",
       "goal": "add unit tests for isCompleted() and markCompleted() in src/cerebellum/completedGoals.test.ts covering substring matching, case sensitivity, and empty-map behavior",
       "origin": "dream",
