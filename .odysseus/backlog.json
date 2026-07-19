@@ -2,14 +2,6 @@
   "version": 1,
   "items": [
     {
-      "id": "bl_42625ee76092",
-      "goal": "modify `src/cerebellum/dreamer.ts` buildUserPrompt (lines 285-292) to include entry bodies, not just titles, when entry.source === 'reflect'. Reflect entries carry diagnostic depth (e.g. wp_mrs855ke007 analysis) that the current title-only snapshot discards. Full bodies should be injected under a new <reflection> tag so the dreamer can translate diagnoses into concrete backlogItems with file targets. This unblocks the 'self-improvement loop is broken' gap.",
-      "origin": "reflect",
-      "priority": 60,
-      "createdAt": "2026-07-19T20:28:06.223Z",
-      "sourceWaypointId": "wp_mrs855ke007"
-    },
-    {
       "id": "bl_6839221afa0d",
       "goal": "add preservation mechanism in `src/cerebellum/orchestrator.ts` for consecutive-text-only responses whose content length exceeds 500 chars — these are likely diagnostic or reflective outputs (like wp_mrs855ke007) that should be exempt from the 3-strike early-stop rollback. Detect by char-counting the assistant turns before the StuckLoopError trigger; if any turn > 500 chars, write it to `.odysseus/memory/dreams.md` with source='reflect' and related=waypointId BEFORE aborting. Sacred-file change — requires manual review.",
       "origin": "reflect",
