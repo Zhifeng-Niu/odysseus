@@ -137,12 +137,23 @@ export class GLMProvider implements LLMProvider {
     options: LLMCompleteOptions | undefined,
     stream: boolean
   ): Record<string, unknown> {
-    const messages: ChatMessage[] = [];
+    const messages: Array<Record<string, unknown>> = [];
     if (options?.systemPrompt) {
       messages.push({ role: 'system', content: options.systemPrompt });
     }
     if (options?.history?.length) {
-      messages.push(...options.history);
+      for (const msg of options.history) {
+        // Wire format is snake_case (tool_calls, tool_call_id). Internal
+        // ChatMessage uses camelCase; convert here so GLM accepts the request.
+        const wire: Record<string, unknown> = { role: msg.role, content: msg.content };
+        if (msg.toolCalls) {
+          wire.tool_calls = msg.toolCalls;
+        }
+        if (msg.toolCallId) {
+          wire.tool_call_id = msg.toolCallId;
+        }
+        messages.push(wire);
+      }
     }
     // An empty prompt signals "continue from history" — common when the last
     // history entry is a tool result. Skip the user message entirely; pushing
