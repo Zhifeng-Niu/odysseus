@@ -91,13 +91,6 @@
       "origin": "dream",
       "priority": 45,
       "createdAt": "2026-07-19T12:12:34.920Z"
-    },
-    {
-      "id": "bl_842d5d030214",
-      "goal": "add unit tests for repeatedToolCallDetector abort logic in src/orchestrator.test.ts",
-      "origin": "dream",
-      "priority": 20,
-      "createdAt": "2026-07-19T12:15:03.298Z"
     }
   ]
 }
