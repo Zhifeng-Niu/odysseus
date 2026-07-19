@@ -96,6 +96,13 @@ describe("goalValidator — valid coding goals (accepted)", () => {
     expect(goalValidator("rename src/lib/old to src/lib/new")).toBe(true);
   });
 
+  it("accepts goals naming a .test.ts file", () => {
+    expect(goalValidator("add tests for the parser in parser.test.ts")).toBe(true);
+    expect(goalValidator("create goalValidator.test.ts in src/cerebellum/")).toBe(true);
+    expect(goalValidator("update src/cerebellum/goalValidator.test.ts")).toBe(true);
+    expect(goalValidator("add edge-case tests to utils.test.ts")).toBe(true);
+  });
+
   it("accepts mixed goals — greeting + file path", () => {
     expect(goalValidator("hello, please update src/config.js")).toBe(true);
     expect(goalValidator("hey can you fix src/app.ts")).toBe(true);
