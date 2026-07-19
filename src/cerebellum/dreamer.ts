@@ -2,7 +2,8 @@ import type { LLMProvider } from '../llm/provider.js';
 import type { TraceRecord } from '../trace/jsonl.js';
 import type { MemoryCategory } from '../orchestrator/events.js';
 import type { MemoryEntry } from './memory.js';
-import { enqueueBacklog, type EnqueueOptions } from './backlog.js';
+import { type EnqueueOptions } from './backlog.js';
+import { enqueuePendingReview } from './pending-review.js';
 import { writeMemory as writeMemoryEntry } from './memory.js';
 
 /**
@@ -371,7 +372,15 @@ export async function dream(input: DreamInput): Promise<DreamOutput> {
     const options: EnqueueOptions =
       item.priority !== undefined ? { priority: item.priority } : {};
     try {
-      const enqueued = await enqueueBacklog(input.rootDir, item.goal, 'dream', options);
+      // Dreams go to the pending-review queue, NOT directly to the backlog.
+      // The user reviews proposals and approves the ones worth pursuing —
+      // this stops the dreamer from autonomously driving the voyage loop.
+      const enqueued = await enqueuePendingReview(
+        input.rootDir,
+        item.goal,
+        'dream',
+        options
+      );
       addedBacklogItems.push({
         id: enqueued.id,
         goal: item.goal,

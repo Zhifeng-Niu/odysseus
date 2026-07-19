@@ -10,6 +10,7 @@ import {
   buildSucceededGoalSet,
 } from '../../src/cerebellum/dreamer.js';
 import { listBacklog } from '../../src/cerebellum/backlog.js';
+import { listPendingReview } from '../../src/cerebellum/pending-review.js';
 import { readMemory } from '../../src/cerebellum/memory.js';
 import type { TraceRecord } from '../../src/trace/jsonl.js';
 
@@ -94,7 +95,7 @@ describe('dreamer', () => {
     expect(out.backlogItemsAdded).toBe(2);
     expect(out.memoryEntriesAdded).toBe(2);
 
-    const backlog = await listBacklog(rootDir);
+    const backlog = await listPendingReview(rootDir);
     expect(backlog.length).toBe(2);
     expect(backlog[0]!.goal).toBe('add retry to glm provider');
     expect(backlog[0]!.priority).toBe(75);
@@ -132,7 +133,7 @@ describe('dreamer', () => {
     expect(out.parseOk).toBe(true);
     expect(out.backlogItemsAdded).toBe(1);
 
-    const backlog = await listBacklog(rootDir);
+    const backlog = await listPendingReview(rootDir);
     expect(backlog[0]!.goal).toBe('fenced goal');
   });
 
@@ -149,7 +150,7 @@ describe('dreamer', () => {
     expect(out.backlogItemsAdded).toBe(0);
     expect(out.memoryEntriesAdded).toBe(0);
 
-    const backlog = await listBacklog(rootDir);
+    const backlog = await listPendingReview(rootDir);
     expect(backlog.length).toBe(0);
   });
 
@@ -169,7 +170,7 @@ describe('dreamer', () => {
       memorySnapshot: [],
     });
 
-    const backlog = await listBacklog(rootDir);
+    const backlog = await listPendingReview(rootDir);
     expect(backlog.length).toBe(2);
     const priorities = backlog.map((b) => b.priority).sort((a, b) => a - b);
     expect(priorities).toEqual([0, 100]);
@@ -193,7 +194,7 @@ describe('dreamer', () => {
     });
 
     expect(out.backlogItemsAdded).toBe(1);
-    const backlog = await listBacklog(rootDir);
+    const backlog = await listPendingReview(rootDir);
     expect(backlog[0]!.goal).toBe('valid goal');
   });
 
@@ -239,7 +240,7 @@ describe('dreamer', () => {
     });
 
     expect(out.backlogItemsAdded).toBe(2);
-    const backlog = await listBacklog(rootDir);
+    const backlog = await listPendingReview(rootDir);
     expect(backlog.length).toBe(2);
   });
 
@@ -275,7 +276,7 @@ describe('dreamer', () => {
     ).rejects.toThrow(/rate limited/);
 
     // Nothing persisted despite the throw.
-    const backlog = await listBacklog(rootDir);
+    const backlog = await listPendingReview(rootDir);
     expect(backlog.length).toBe(0);
   });
 
@@ -346,7 +347,7 @@ describe('dreamer', () => {
     expect(out.backlogItemsAdded).toBe(1);
     expect(out.backlogItemsSkipped).toBe(1);
 
-    const backlog = await listBacklog(rootDir);
+    const backlog = await listPendingReview(rootDir);
     expect(backlog.length).toBe(1);
     expect(backlog[0]!.goal).toContain('conversation detector');
   });

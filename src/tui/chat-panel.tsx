@@ -2,9 +2,12 @@ import { Box, Text } from 'ink';
 import type { OrchestratorEvent } from '../orchestrator/events.js';
 import { WaypointCard } from './waypoint-card.js';
 import { theme } from './theme.js';
+import type { ConversationMessage } from './conversation.js';
 
 interface ChatPanelProps {
   events: readonly OrchestratorEvent[];
+  conversation: readonly ConversationMessage[];
+  chatPending: boolean;
 }
 
 interface WaypointGroup {
@@ -44,23 +47,51 @@ function groupByWaypoint(events: readonly OrchestratorEvent[]): WaypointGroup[] 
   return Array.from(groups.values());
 }
 
-export function ChatPanel({ events }: ChatPanelProps): JSX.Element {
+export function ChatPanel({ events, conversation, chatPending }: ChatPanelProps): JSX.Element {
   const groups = groupByWaypoint(events);
+  const hasConversation = conversation.length > 0;
+  const hasWaypoints = groups.length > 0;
 
   return (
     <Box flexDirection="column">
-      {groups.length === 0 && (
-        <Text color={theme.text.muted}>No waypoints yet — submit a goal below.</Text>
+      {!hasConversation && !hasWaypoints && (
+        <Text color={theme.text.muted}>
+          Chat with the agent, or describe a code change to start a voyage.
+        </Text>
       )}
-      {groups.map((g) => (
-        <WaypointCard
-          key={g.waypointId}
-          waypointId={g.waypointId}
-          goal={g.goal}
-          strategy={g.strategy}
-          events={g.events}
-        />
-      ))}
+
+      {hasConversation && (
+        <Box flexDirection="column" marginBottom={1}>
+          {conversation.map((m) => (
+            <Box key={m.id} flexDirection="row" gap={1}>
+              <Text color={m.role === 'user' ? theme.chrome.prompt : theme.text.secondary} bold>
+                {m.role === 'user' ? 'you' : 'agent'}
+              </Text>
+              <Text color={theme.text.primary}>{m.content}</Text>
+            </Box>
+          ))}
+          {chatPending && (
+            <Box flexDirection="row" gap={1}>
+              <Text color={theme.text.secondary} bold>agent</Text>
+              <Text color={theme.text.muted} italic>…</Text>
+            </Box>
+          )}
+        </Box>
+      )}
+
+      {hasWaypoints && (
+        <Box flexDirection="column">
+          {groups.map((g) => (
+            <WaypointCard
+              key={g.waypointId}
+              waypointId={g.waypointId}
+              goal={g.goal}
+              strategy={g.strategy}
+              events={g.events}
+            />
+          ))}
+        </Box>
+      )}
     </Box>
   );
 }

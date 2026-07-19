@@ -100,3 +100,9 @@ The retry counter in backlog.ts prevents infinite re-seeding but shipped without
 
 Inline recovery intervention failed (maxIterations), StuckLoopError throw failed (maxIterations), but appending a hint message to the existing message array succeeded. Mutation beats exception for in-loop recovery.
 
+## [2026-07-19T14:43:03.668Z] Test-follows-ship pattern is now self-correcting
+- **id**: mem_d4a374b4e8
+- **source**: dream
+
+Recent sprints show tests being added immediately after recovery features ship (StuckLoopError retry, repeatedToolCallDetector hint, retry counter). The discipline is forming but the consecutive-text-early-termination still slipped through.
+

@@ -124,3 +124,9 @@ Two attempts to add recovery logic directly inside repeatedToolCallDetector hit 
 
 StuckLoopError catch-and-retry shipped, then needed separate waypoint for tests. Recovery hint injection shipped, now needs tests. Recovery code is harder to test inline because it triggers on edge conditions, so it naturally separates into ship-then-test waypoints.
 
+## [2026-07-19T14:43:03.668Z] Hint injection validated as simpler recovery than error propagation
+- **id**: mem_d4a3744a33
+- **source**: dream
+
+The repeatedToolCallDetector recovery via appended hint message shipped cleanly with tests, confirming that injecting a contextual nudge into the message stream is more reliable than error-based abort-and-retry patterns.
+

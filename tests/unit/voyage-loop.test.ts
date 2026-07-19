@@ -8,7 +8,8 @@ import type { LLMProvider, LLMCompletion } from '../../src/llm/provider.js';
 import type { OrchestratorEvent } from '../../src/orchestrator/events.js';
 import { ToolRegistry } from '../../src/tools/registry.js';
 import { FileWriteTool } from '../../src/tools/file.js';
-import { enqueueBacklog } from '../../src/cerebellum/backlog.js';
+import { enqueueBacklog, listBacklog } from '../../src/cerebellum/backlog.js';
+import { listPendingReview } from '../../src/cerebellum/pending-review.js';
 import { readMemory } from '../../src/cerebellum/memory.js';
 
 async function initRepo(dir: string): Promise<void> {
@@ -245,10 +246,13 @@ describe('CerebellumOrchestrator voyage loop', () => {
     await expect(readFile(join(workdir, 'dream.ts'), 'utf8')).resolves.toContain('d = 2');
   });
 
-  test('voyage dream that produces backlog items triggers another iteration', async () => {
-    // The first dream should enqueue a follow-up waypoint.
-    // Sequence: seed goal → waypoint → DONE → dream(produces 1 item) →
-    //           next waypoint (the dreamed item) → DONE → dream(empty) → idle.
+  test('voyage dream that produces backlog items parks them in pending-review (no auto-iteration)', async () => {
+    // New behavior: dream output goes to pending-review, not backlog.
+    // The voyage stops after the seed waypoint — the user must approve the
+    // dreamed item before it enters the backlog and becomes eligible for
+    // the next voyage.
+    // Sequence: seed goal → waypoint → DONE → dream(produces 1 item, parked)
+    //           → backlog empty → idle.
     const followupGoal = 'followup task from dream';
     const provider = makeMockProvider([
       fileWriteArgs(workdir, 'seed.ts', 'export const s = 0;'),
@@ -257,9 +261,6 @@ describe('CerebellumOrchestrator voyage loop', () => {
         backlogItems: [{ goal: followupGoal, priority: 80 }],
         memoryEntries: [],
       }),
-      fileWriteArgs(workdir, 'followup.ts', 'export const f = 1;'),
-      'DONE',
-      JSON.stringify({ backlogItems: [], memoryEntries: [] }),
     ]);
 
     const orch = new CerebellumOrchestrator({
@@ -274,15 +275,27 @@ describe('CerebellumOrchestrator voyage loop', () => {
 
     const result = await orch.runVoyage({ seedGoal: 'seed task' });
 
-    expect(result.waypoints.length).toBe(2);
-    expect(result.waypoints[1]!.waypoint.goal).toBe(followupGoal);
+    // Only the seed waypoint ran — the dreamed item did NOT trigger a
+    // second iteration.
+    expect(result.waypoints.length).toBe(1);
+    expect(result.waypoints[0]!.waypoint.goal).toBe('seed task');
 
-    // Dream-completed should have been emitted at least twice.
+    // The dreamed item should be parked in pending-review, not in backlog.
+    const pending = await listPendingReview(join(workdir, '.odysseus'));
+    expect(pending.length).toBe(1);
+    expect(pending[0]!.goal).toBe(followupGoal);
+    expect(pending[0]!.origin).toBe('dream');
+
+    // Backlog should be empty — dream never wrote to it.
+    const backlog = await listBacklog(join(workdir, '.odysseus'));
+    expect(backlog.length).toBe(0);
+
+    // Exactly one dream-completed event, reporting 1 item added.
     const dreams = events.filter(
       (e): e is Extract<OrchestratorEvent, { type: 'dream-completed' }> =>
         e.type === 'dream-completed'
     );
-    expect(dreams.length).toBeGreaterThanOrEqual(2);
+    expect(dreams.length).toBe(1);
     expect(dreams[0]!.backlogItemsAdded).toBe(1);
   });
 

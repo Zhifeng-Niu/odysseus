@@ -73,7 +73,9 @@ describe('TUI smoke', () => {
       autoApprove: true,
     });
 
-    const instance = render(React.createElement(App, { orch, model: 'mock-model' }));
+    const instance = render(
+      React.createElement(App, { orch, model: 'mock-model', provider: staticProvider('DONE') })
+    );
     const frame = instance.lastFrame() ?? '';
     expect(frame).toContain('ODYSSEUS');
     expect(frame).toContain('mock-model');
@@ -93,9 +95,11 @@ describe('TUI smoke', () => {
       autoApprove: true,
     });
 
-    const instance = render(React.createElement(App, { orch, model: 'mock' }));
+    const instance = render(
+      React.createElement(App, { orch, model: 'mock', provider: staticProvider('DONE') })
+    );
     const frame = instance.lastFrame() ?? '';
-    expect(frame).toContain('No waypoints yet');
+    expect(frame).toContain('Chat with the agent');
     expect(frame).toContain('phase: idle');
     instance.unmount();
   });
@@ -112,7 +116,9 @@ describe('TUI smoke', () => {
       autoApprove: true,
     });
 
-    const instance = render(React.createElement(App, { orch, model: 'mock' }));
+    const instance = render(
+      React.createElement(App, { orch, model: 'mock', provider: staticProvider('DONE') })
+    );
     const frame = instance.lastFrame() ?? '';
     // Brain state glyph + label for 'idle' must render.
     expect(frame).toContain('idle');

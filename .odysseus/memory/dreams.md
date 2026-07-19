@@ -22,3 +22,9 @@ The per-goal retry counter in backlog.ts is now live. Dream resolved.
 
 The StuckLoopError catch retries once, but nothing prevents the retry from re-triggering the same error and entering another catch. A boolean guard or error-type narrowing is needed before this becomes a production issue.
 
+## [2026-07-19T14:43:03.668Z] Early termination threshold may need tuning under real load
+- **id**: mem_d4a37411c0
+- **source**: dream
+
+Three consecutive non-tool responses triggers abort, but legitimate multi-step reasoning could hit this. The threshold was raised from 2 to 3 already — may need to be 4 or context-aware (e.g., token length of responses) to avoid false positives on complex but valid reasoning chains.
+
