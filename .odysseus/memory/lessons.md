@@ -88,3 +88,9 @@ Both the StuckLoopError catch block and the retry counter shipped without tests 
 
 Test creation goals covering multiple scenarios (substring + case + empty) consistently fail convergence. Single-scenario goals match the minimal-diff success pattern.
 
+## [2026-07-19T14:18:31.755Z] Loop-prevention code needs tests more than features do
+- **id**: mem_be2dcb0948
+- **source**: dream
+
+The retry counter in backlog.ts prevents infinite re-seeding but shipped without tests. If this code silently breaks, the system re-enters the exact failure loop it was designed to stop. Guard rails deserve guard rails.
+

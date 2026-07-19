@@ -79,13 +79,6 @@
       "createdAt": "2026-07-19T12:12:34.920Z"
     },
     {
-      "id": "bl_b109ec4fc7b0",
-      "goal": "add recovery hint injection in src/orchestrator.ts when repeatedToolCallDetector fires, appending a contextual message like 'try a different approach' instead of hard-aborting",
-      "origin": "dream",
-      "priority": 25,
-      "createdAt": "2026-07-19T12:21:08.744Z"
-    },
-    {
       "id": "bl_ea13ef464bac",
       "goal": "你知道你自己作为一个未来要成为AGI的agent的现在的不足吗",
       "origin": "user",
@@ -119,6 +112,20 @@
       "origin": "dream",
       "priority": 35,
       "createdAt": "2026-07-19T14:14:34.538Z"
+    },
+    {
+      "id": "bl_7e4baf276251",
+      "goal": "add unit tests for retry counter block-after-3-attempts logic in src/cerebellum/backlog.test.ts",
+      "origin": "dream",
+      "priority": 25,
+      "createdAt": "2026-07-19T14:18:31.753Z"
+    },
+    {
+      "id": "bl_9b6eef5be534",
+      "goal": "add edge case test to src/cerebellum/goalValidator.test.ts rejecting goals that mention .test.ts in non-coding context like 'explain what .test.ts files are'",
+      "origin": "dream",
+      "priority": 55,
+      "createdAt": "2026-07-19T14:18:31.754Z"
     }
   ]
 }

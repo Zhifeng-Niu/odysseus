@@ -112,3 +112,9 @@ GoalValidator now accepts .test.ts goals, but test creation still fails converge
 
 StuckLoopError catch-and-retry shipped successfully but test goal was abandoned as non-coding. Recovery code is now in production with no regression safety net.
 
+## [2026-07-19T14:18:31.755Z] Inline recovery in detectors fails; error propagation succeeds
+- **id**: mem_be2dcb2bd0
+- **source**: dream
+
+Two attempts to add recovery logic directly inside repeatedToolCallDetector hit maxIterations without converging. Throwing StuckLoopError and catching at the main loop level shipped in one pass. Detectors should detect, not recover.
+
