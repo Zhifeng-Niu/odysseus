@@ -34,3 +34,15 @@ Goals like 'Add deduplication logic to waypoint generation' are valid coding tas
 
 When a goal has already been fulfilled (e.g., bash tool already exists), re-executing it causes the agent to loop without finding work to do, hitting maxIterations. The agent cannot self-detect that the goal state is already satisfied.
 
+## [2026-07-19T11:36:50.144Z] Self-reinforcing dedup failure loop
+- **id**: mem_2a24e03e37
+- **source**: dream
+
+The system needs dedup to stop re-seeding completed goals, but the dedup-fixing goals themselves get re-seeded and fail. This creates a cycle: the fix can't ship because the bug it fixes prevents the fix from converging. Breaking this requires the fix to be so concrete (exact file, exact function, exact logic) that the agent can't misinterpret it as conversational.
+
+## [2026-07-19T11:36:50.144Z] Convergence failure vs non-coding goal are indistinguishable without pre-filtering
+- **id**: mem_2a24e044e1
+- **source**: dream
+
+Both manifest as 'hit maxIterations without DONE'. The difference is only visible in the raw trace: non-coding goals produce conversational text turns; true convergence failures produce repeated identical tool calls. A goal validator pre-filter eliminates the first category, and a repeated-tool-call detector catches the second.
+

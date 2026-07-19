@@ -16,3 +16,9 @@ Goals like 'hi' or '你好' fail with 'agent did not converge' but the real issu
 
 The 'add a bash tool' goal succeeded 4 separate times before failing on the 5th. Without a completion registry, the system has no memory of success and re-seeds identical goals, wasting compute and eventually hitting convergence failure when the task is already done.
 
+## [2026-07-19T11:36:50.139Z] Meta-goals need extra-concrete file targets
+- **id**: mem_2a24db87d1
+- **source**: dream
+
+Goals like 'add deduplication logic' or 'add a completed-goals registry' were abandoned because the agent treated them as conversational despite being legitimate coding tasks. The lesson: when the goal is about improving the agent's own infrastructure, the goal text must include exact file paths, type names, and function signatures — otherwise the agent's LLM may interpret it as a discussion topic rather than a code change.
+
