@@ -70,3 +70,9 @@ The repeated-tool-call detector caused a legitimate test-writing goal to fail be
 
 The failed recovery-intervention goal was over-specified ('inject a context message before hard abort'). Successful recovery should be the simplest possible escape hatch — a typed error and a catch block — not a complex intervention.
 
+## [2026-07-19T14:05:30.708Z] Over-specified goals fail; minimal diffs succeed
+- **id**: mem_b242d4d15c
+- **source**: dream
+
+Two failures on repeatedToolCallDetector recovery (inject context + replace abort) both hit maxIterations. The single-responsibility goal (add catch block) succeeded. Decompose complex changes into atomic file-scoped diffs.
+

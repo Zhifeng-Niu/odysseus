@@ -88,3 +88,9 @@ completedGoals.test.ts failed with a detailed goal ('covering substring matching
 
 The agent attempting to add recovery logic to the repeatedToolCallDetector itself hit maxIterations without converging. Fixing a stuck-loop detector is vulnerable to the same loop it's meant to solve — the fix must be smaller than the problem.
 
+## [2026-07-19T14:05:30.708Z] Recovery shipped via fallback goal after two failed attempts
+- **id**: mem_b242d49112
+- **source**: dream
+
+The StuckLoopError recovery path required three attempts: two over-specified failures, then a minimal catch-block addition that succeeded. The failure attempts weren't wasted — they clarified the simplest viable approach.
+

@@ -16,3 +16,9 @@ The per-goal retry counter in backlog.ts is now live. The dream that marked it u
 
 The per-goal retry counter in backlog.ts is now live. Dream resolved.
 
+## [2026-07-19T14:05:30.708Z] Retry-once without a guard flag is a latent infinite loop
+- **id**: mem_b242d429b8
+- **source**: dream
+
+The StuckLoopError catch retries once, but nothing prevents the retry from re-triggering the same error and entering another catch. A boolean guard or error-type narrowing is needed before this becomes a production issue.
+
