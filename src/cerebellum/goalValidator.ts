@@ -22,7 +22,7 @@
 // Source-file extensions and the `src/` path prefix that mark a goal as a
 // concrete code task touching a specific file. `\b` after the extension
 // prevents matching inside longer tokens (e.g. "foots").
-const FILE_PATH_PATTERN = /(\.(ts|js|py)\b)|(src\/)/i;
+const FILE_PATH_PATTERN = /(\.(ts|js|py|test\.ts)\b)|(src\/)/i;
 
 // English conversational patterns — greetings, identity questions, off-topic
 // chat, and closings. `\b` word boundaries are safe for ASCII.
