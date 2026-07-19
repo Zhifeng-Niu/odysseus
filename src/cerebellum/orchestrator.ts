@@ -525,7 +525,7 @@ export class CerebellumOrchestrator extends EventEmitter {
     // Return a clear failure instead of burning through maxIterations.
     if (conversationalStop) {
       const reason =
-        `early termination: agent produced ${consecutiveTextOnly} consecutive ` +
+        `conversational stop: agent produced ${consecutiveTextOnly} consecutive ` +
         `non-tool-calling responses (threshold: 3) without reaching DONE — ` +
         `the LLM is stuck in a text-only loop and cannot make further progress. ` +
         `Last reply: "${lastAssistantContent.slice(0, 200)}"`;
@@ -556,13 +556,13 @@ export class CerebellumOrchestrator extends EventEmitter {
         }
       }
 
-      const failed = markFailure(active, reason, iterationsUsed);
+      const abandoned = markAbandoned(active, reason);
       await rollbackTo({
         cwd: this.config.cwd,
         sha: checkpoint.sha,
         allowedShas: Array.from(this.state.allowedShas),
       });
-      await this.trace(failed, checkpoint.sha, null);
+      await this.trace(abandoned, checkpoint.sha, null);
       this.emitEvent({
         type: 'waypoint-rolled-back',
         waypointId: waypoint.id,
@@ -571,8 +571,8 @@ export class CerebellumOrchestrator extends EventEmitter {
         ts: Date.now(),
       });
       return {
-        waypoint: failed,
-        outcome: 'failure',
+        waypoint: abandoned,
+        outcome: 'abandoned',
         checkpointSha: checkpoint.sha,
         failReason: reason,
         iterationsUsed,
