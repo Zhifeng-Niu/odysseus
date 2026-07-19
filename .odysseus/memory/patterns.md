@@ -46,3 +46,9 @@ The system needs dedup to stop re-seeding completed goals, but the dedup-fixing 
 
 Both manifest as 'hit maxIterations without DONE'. The difference is only visible in the raw trace: non-coding goals produce conversational text turns; true convergence failures produce repeated identical tool calls. A goal validator pre-filter eliminates the first category, and a repeated-tool-call detector catches the second.
 
+## [2026-07-19T11:45:53.976Z] Three failure modes need distinct handling
+- **id**: mem_3271383f44
+- **source**: dream
+
+Conversational goals, repeated-tool-call loops, and max-iteration exhaustion are three distinct failure modes that currently look identical in logs. Each needs its own detector and rejection path: pre-filter for conversational, loop detector for repetition, and a lower maxIterations or progress heuristic for general non-convergence.
+

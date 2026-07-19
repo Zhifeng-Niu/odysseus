@@ -22,3 +22,15 @@ The 'add a bash tool' goal succeeded 4 separate times before failing on the 5th.
 
 Goals like 'add deduplication logic' or 'add a completed-goals registry' were abandoned because the agent treated them as conversational despite being legitimate coding tasks. The lesson: when the goal is about improving the agent's own infrastructure, the goal text must include exact file paths, type names, and function signatures — otherwise the agent's LLM may interpret it as a discussion topic rather than a code change.
 
+## [2026-07-19T11:45:53.975Z] Created-but-unwired functions are invisible failures
+- **id**: mem_327137435d
+- **source**: dream
+
+Building a validator or gate function without wiring it into the call path creates a false sense of safety. Always pair creation tasks with integration tasks in the same batch.
+
+## [2026-07-19T11:45:53.976Z] Test coverage should follow shipped features immediately
+- **id**: mem_3271388dcd
+- **source**: dream
+
+completedGoals.ts and goalValidator.ts both shipped without tests. Substring matching and regex-based validation are especially fragile — tests should be seeded as backlog items the moment the feature lands.
+

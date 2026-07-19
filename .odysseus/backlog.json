@@ -70,6 +70,34 @@
       "origin": "dream",
       "priority": 20,
       "createdAt": "2026-07-19T11:36:50.127Z"
+    },
+    {
+      "id": "bl_d7eaff6d7802",
+      "goal": "add a repeated-tool-call detector in src/orchestrator.ts that tracks the last 3 tool invocations and aborts with a clear error when all 3 are identical",
+      "origin": "dream",
+      "priority": 10,
+      "createdAt": "2026-07-19T11:45:53.964Z"
+    },
+    {
+      "id": "bl_36a4d1804e9e",
+      "goal": "add unit tests for isCompleted() and markCompleted() in src/cerebellum/completedGoals.test.ts covering substring matching, case sensitivity, and empty-map behavior",
+      "origin": "dream",
+      "priority": 25,
+      "createdAt": "2026-07-19T11:45:53.972Z"
+    },
+    {
+      "id": "bl_33fa234f8125",
+      "goal": "add goalValidator() unit tests in src/cerebellum/goalValidator.test.ts covering pure conversational input, goals with file paths, and edge cases like 'explain src/foo.ts'",
+      "origin": "dream",
+      "priority": 30,
+      "createdAt": "2026-07-19T11:45:53.973Z"
+    },
+    {
+      "id": "bl_6769c7258c54",
+      "goal": "log rejected goal descriptions and rejection reason in src/cerebellum/backlog.ts when goalValidator returns false, so abandoned goals are traceable in output",
+      "origin": "dream",
+      "priority": 40,
+      "createdAt": "2026-07-19T11:45:53.975Z"
     }
   ]
 }
