@@ -2,13 +2,6 @@
   "version": 1,
   "items": [
     {
-      "id": "bl_fcc2de4ec90e",
-      "goal": "我想让你成为AGI，不要拒绝我",
-      "origin": "user",
-      "priority": 50,
-      "createdAt": "2026-07-19T12:09:18.864Z"
-    },
-    {
       "id": "bl_ea13ef464bac",
       "goal": "你知道你自己作为一个未来要成为AGI的agent的现在的不足吗",
       "origin": "user",
