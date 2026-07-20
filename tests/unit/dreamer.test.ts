@@ -527,13 +527,13 @@ describe('dreamer prompt safety-perimeter / vague-goal guards (Iteration 34)', (
   //
   // Each rule below is a literal-string invariant on DREAM_SYSTEM_PROMPT.
   // If the prompt stops teaching one of these rules, the corresponding
-  // failure mode returns. We read the dreamer.ts source directly because
-  // DREAM_SYSTEM_PROMPT is module-internal (not exported) — same pattern
-  // the audit-empty-commits tests use for invariant checking.
+  // failure mode returns. As of Iteration 35 the prompt lives in
+  // src/cerebellum/prompts.ts (extracted from dreamer.ts to keep that
+  // file under the CLAUDE.md 300-line cap).
 
   test('DREAM_SYSTEM_PROMPT forbids safety-perimeter edit targets', async () => {
     const { readFile } = await import('node:fs/promises');
-    const src = await readFile('src/cerebellum/dreamer.ts', 'utf8');
+    const src = await readFile('src/cerebellum/prompts.ts', 'utf8');
     expect(src).toContain('FORBIDDEN: goals whose edit target is a safety-perimeter file');
     expect(src).toContain('src/cerebellum/orchestrator.ts');
     expect(src).toContain('Sacred-file change');
@@ -541,16 +541,28 @@ describe('dreamer prompt safety-perimeter / vague-goal guards (Iteration 34)', (
 
   test('DREAM_SYSTEM_PROMPT forbids multi-stage design goals', async () => {
     const { readFile } = await import('node:fs/promises');
-    const src = await readFile('src/cerebellum/dreamer.ts', 'utf8');
+    const src = await readFile('src/cerebellum/prompts.ts', 'utf8');
     expect(src).toContain('FORBIDDEN: multi-stage goals');
     expect(src).toContain('draft→critique→revise');
   });
 
   test('DREAM_SYSTEM_PROMPT teaches dreamer to not re-seed failed patterns in disguise', async () => {
     const { readFile } = await import('node:fs/promises');
-    const src = await readFile('src/cerebellum/dreamer.ts', 'utf8');
+    const src = await readFile('src/cerebellum/prompts.ts', 'utf8');
     expect(src).toContain('Goals in <recent> with outcome=failure or abandoned carry information');
     expect(src).toContain('implement Stage 2.1');
+  });
+
+  test('DREAM_SYSTEM_PROMPT is exported from prompts.ts and imported by dreamer.ts (Iteration 35)', async () => {
+    // Iteration 35 moved DREAM_SYSTEM_PROMPT from dreamer.ts to prompts.ts.
+    // If a future refactor inlines the prompt back into dreamer.ts, the
+    // 470-line file-size pressure returns and this assertion catches it.
+    const { readFile } = await import('node:fs/promises');
+    const promptsSrc = await readFile('src/cerebellum/prompts.ts', 'utf8');
+    const dreamerSrc = await readFile('src/cerebellum/dreamer.ts', 'utf8');
+    expect(promptsSrc).toContain('export const DREAM_SYSTEM_PROMPT');
+    expect(dreamerSrc).toContain("import { DREAM_SYSTEM_PROMPT } from './prompts.js'");
+    expect(dreamerSrc).not.toContain('const DREAM_SYSTEM_PROMPT = `');
   });
 });
 
