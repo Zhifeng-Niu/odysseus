@@ -14,6 +14,12 @@ export interface TraceRecord {
   verify_result: Record<string, string>;
   fail_reason: string | null;
   diff_summary: string | null;
+  /**
+   * Identifier of the voyage this waypoint belongs to. Present on records
+   * written after 2026-07-21 (Iteration 10); older records may omit it and
+   * loadRecentVoyageSummaries treats them as a single legacy voyage.
+   */
+  voyage_id?: string;
 }
 
 export async function appendTrace(
@@ -34,6 +40,7 @@ export async function appendTrace(
     verify_result: partial.verify_result ?? {},
     fail_reason: partial.fail_reason ?? null,
     diff_summary: partial.diff_summary ?? null,
+    ...(partial.voyage_id !== undefined ? { voyage_id: partial.voyage_id } : {}),
   };
   const line = JSON.stringify(record) + '\n';
   await appendFile(path, line, 'utf8');

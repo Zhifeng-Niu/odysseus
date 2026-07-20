@@ -204,6 +204,17 @@ describe('CerebellumOrchestrator voyage loop', () => {
     // File was actually written.
     const written = await readFile(join(workdir, 'out.ts'), 'utf8');
     expect(written).toContain('export const v = 1;');
+
+    // Iteration 10: trace record carries voyage_id so the voyage-log
+    // module can group waypoints by voyage. Without this field, recent
+    // voyage summaries cannot be built and the cross-voyage working
+    // memory injection is silently empty.
+    const traceRaw = await readFile(tracePath, 'utf8');
+    const traceLines = traceRaw.trim().split('\n');
+    expect(traceLines.length).toBe(1);
+    const traceRecord = JSON.parse(traceLines[0]!) as { voyage_id?: string };
+    expect(traceRecord.voyage_id).toBeDefined();
+    expect(traceRecord.voyage_id).toBe(result.voyageId);
   });
 
   test('voyage with no backlog and no seed emits voyage-idle immediately', async () => {

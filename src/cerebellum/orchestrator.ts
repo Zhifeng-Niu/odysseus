@@ -74,6 +74,12 @@ export interface OrchestratorConfig {
 export interface RunWaypointInput {
   goal: string;
   parentWaypointId?: string;
+  /**
+   * Set by runVoyage so the resulting Waypoint carries its voyage id,
+   * which trace() then writes to trace.jsonl. Lets voyage-log group
+   * records by voyage. Undefined for one-shot runWaypoint calls.
+   */
+  voyageId?: string;
 }
 
 export interface RunWaypointResult {
@@ -159,6 +165,7 @@ export class CerebellumOrchestrator extends EventEmitter {
       ...(input.parentWaypointId !== undefined
         ? { parentWaypointId: input.parentWaypointId }
         : {}),
+      ...(input.voyageId !== undefined ? { voyageId: input.voyageId } : {}),
     });
     const strategy = selectStrategy({ goal: input.goal });
 
@@ -1038,6 +1045,7 @@ export class CerebellumOrchestrator extends EventEmitter {
         this.setBrainState('wakeful', `starting waypoint for: ${dequeued.goal.slice(0, 60)}`);
         const result = await this.runWaypoint({
           goal: dequeued.goal,
+          voyageId,
           ...(dequeued.sourceWaypointId !== undefined
             ? { parentWaypointId: dequeued.sourceWaypointId }
             : {}),
@@ -1441,6 +1449,7 @@ export class CerebellumOrchestrator extends EventEmitter {
       goal: waypoint.goal,
       strategy: waypoint.strategy,
       parent: waypoint.parentWaypointId ?? null,
+      ...(waypoint.voyageId !== undefined ? { voyage_id: waypoint.voyageId } : {}),
       outcome:
         waypoint.status === 'success'
           ? 'success'

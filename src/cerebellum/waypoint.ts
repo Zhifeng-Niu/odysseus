@@ -12,12 +12,19 @@ export interface Waypoint {
   checkpointSha?: string;
   iterationsUsed: number;
   failureReason?: string;
+  /**
+   * Identifier of the voyage this waypoint belongs to. Set by the
+   * orchestrator at createWaypoint time so trace records can be grouped
+   * by voyage. Undefined for one-shot `runWaypoint` calls outside a voyage.
+   */
+  voyageId?: string;
 }
 
 export interface CreateWaypointInput {
   goal: string;
   strategy?: Strategy;
   parentWaypointId?: string;
+  voyageId?: string;
 }
 
 let counter = 0;
@@ -39,6 +46,7 @@ export function createWaypoint(input: CreateWaypointInput): Waypoint {
     ...(input.parentWaypointId !== undefined
       ? { parentWaypointId: input.parentWaypointId }
       : {}),
+    ...(input.voyageId !== undefined ? { voyageId: input.voyageId } : {}),
     iterationsUsed: 0,
   };
 }

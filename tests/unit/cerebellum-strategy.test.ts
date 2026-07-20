@@ -275,4 +275,75 @@ describe('ENGINEER_STRATEGY.systemPrompt long-term memory injection', () => {
     expect(ltmIdx).toBeGreaterThan(selfModelIdx);
     expect(engineerIdx).toBeGreaterThan(ltmIdx);
   });
+
+  test('voyage log surfaces in systemPrompt under VOYAGE LOG section when trace exists', async () => {
+    await writeFile(
+      join(tempDir, '.odysseus', 'trace.jsonl'),
+      JSON.stringify({
+        ts: '2026-07-20T10:00:00Z',
+        waypoint_id: 'wp_abc',
+        goal: 'add retry to llm provider',
+        strategy: 'engineer',
+        parent: null,
+        outcome: 'success',
+        checkpoint_sha: 'sha_abc',
+        iterations_used: 3,
+        tokens_consumed: { input: 0, output: 0 },
+        verify_result: {},
+        fail_reason: null,
+        diff_summary: 'committed as sha_abc',
+        voyage_id: 'voy_abc',
+      }) + '\n',
+    );
+    const prompt = ENGINEER_STRATEGY.systemPrompt;
+    expect(prompt).toContain('VOYAGE LOG');
+    expect(prompt).toContain('add retry to llm provider');
+    expect(prompt).toContain('voy_abc');
+  });
+
+  test('VOYAGE LOG section is absent when trace.jsonl is missing', () => {
+    // No trace.jsonl written.
+    const prompt = ENGINEER_STRATEGY.systemPrompt;
+    expect(prompt).not.toContain('VOYAGE LOG');
+    expect(prompt).toContain('ENGINEER ORIENTATION');
+  });
+
+  test('four-layer ordering: SELF-MODEL → LONG-TERM MEMORY → VOYAGE LOG → ENGINEER ORIENTATION', async () => {
+    await writeFile(
+      join(tempDir, '.odysseus', 'self-model.md'),
+      '# Self-Model\n\n## Identity\n\nI am Odysseus.\n',
+    );
+    await writeFile(
+      join(tempDir, '.odysseus', 'memory', 'patterns.md'),
+      '## [2026-07-20T10:00:00Z] Some pattern\n- **id**: mem_aaa\n- **source**: dream\n\nbody\n',
+    );
+    await writeFile(
+      join(tempDir, '.odysseus', 'trace.jsonl'),
+      JSON.stringify({
+        ts: '2026-07-20T10:00:00Z',
+        waypoint_id: 'wp_abc',
+        goal: 'add retry',
+        strategy: 'engineer',
+        parent: null,
+        outcome: 'success',
+        checkpoint_sha: 'sha_abc',
+        iterations_used: 1,
+        tokens_consumed: { input: 0, output: 0 },
+        verify_result: {},
+        fail_reason: null,
+        diff_summary: null,
+        voyage_id: 'voy_abc',
+      }) + '\n',
+    );
+
+    const prompt = ENGINEER_STRATEGY.systemPrompt;
+    const selfModelIdx = prompt.indexOf('SELF-MODEL');
+    const ltmIdx = prompt.indexOf('LONG-TERM MEMORY');
+    const voyageLogIdx = prompt.indexOf('VOYAGE LOG');
+    const engineerIdx = prompt.indexOf('ENGINEER ORIENTATION');
+    expect(selfModelIdx).toBeGreaterThan(-1);
+    expect(ltmIdx).toBeGreaterThan(selfModelIdx);
+    expect(voyageLogIdx).toBeGreaterThan(ltmIdx);
+    expect(engineerIdx).toBeGreaterThan(voyageLogIdx);
+  });
 });

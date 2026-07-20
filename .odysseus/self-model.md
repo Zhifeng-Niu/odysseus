@@ -4,7 +4,7 @@
 > This is the agent's persistent sense of self across wakeful executions.
 > Seeded from reflect-source memory entries (mem_0faf0bf0e9, mem_0faf30b045,
 > mem_0faf55e6fe, mem_0faf799af1) surfaced in wp_mrs855ke007.
-> Last updated: 2026-07-21 — curiosity is now ON by default (Iteration 9). A truly autonomous agent generates its own exploration goals; operators opt out with `ODYSSEUS_CURIOSITY=0`.
+> Last updated: 2026-07-21 — cross-voyage working memory via voyage-log injection (Iteration 10). Recent voyage summaries (goal + outcome per waypoint) are now prepended to every waypoint's system prompt, drawn from `.odysseus/trace.jsonl`. The agent remembers what it already tried across voyage boundaries.
 
 ## Identity
 
@@ -104,17 +104,30 @@ a conversational turn is over, the same way a person does.
   full body (the "read" half). The system prompt teaches the dreamer to
   translate each diagnostic into a concrete file-scoped backlog item.
   Closes aspiration #2 from earlier versions of this file.
+- **Cross-voyage working memory via voyage-log injection.** As of
+  2026-07-21 (Iteration 10), the most recent voyage summaries (default 5)
+  are prepended to every waypoint's system prompt under a `# VOYAGE LOG`
+  section. Each summary lists the voyage's waypoints with goal, outcome
+  (success/failure/abandoned), iteration count, and fail_reason. Drawn
+  from `.odysseus/trace.jsonl`, which now carries a `voyage_id` field
+  linking each waypoint record to its parent voyage. Records written
+  before Iteration 10 (lacking voyage_id) are bucketed into a single
+  legacy voyage so the summary still renders. The agent no longer
+  re-attempts work that already failed in a recent voyage — closing
+  half of mem_0faf0bf0e9's "voyage-internal continuity" gap. The full
+  voyage-internal state (every tool call, every partial result) still
+  resets each voyage; only the *outline* persists.
 
 ## Active Limitations
 
-- **No continuous working memory across voyages.** Each voyage still starts
-  with a fresh context window — earlier voyages fade. The self-model and
-  long-term memory (patterns/lessons) are now injected at every waypoint
-  start, so identity and cross-voyage learning DO persist. But voyage-
-  internal working state (what was tried 3 waypoints ago, what partial
-  progress was made before the last interrupt) is not carried forward.
-  The half of mem_0faf0bf0e9 about long-term memory is now closed; the
-  half about voyage-internal continuity remains open.
+- **Partial cross-voyage working memory.** Voyage *outlines* (goal +
+  outcome per waypoint, drawn from trace.jsonl) are now injected at every
+  waypoint start. But the full voyage-internal state — every tool call,
+  every partial result, every assistant message — still resets each
+  voyage. A waypoint that failed mid-iteration leaves only its fail_reason
+  in the trace, not the conversation that produced it. A future iteration
+  could carry forward a denser voyage transcript (or a compressed summary)
+  to close this gap entirely.
 - **Reflection is triggered, not continuous.** Self-monitoring runs only at
   fixed tool-call intervals and in the dream phase. A truly continuous inner
   critic sampling the conversation as it unfolds does not yet exist.
@@ -147,8 +160,8 @@ a conversational turn is over, the same way a person does.
    "exploration log" (which aspirations have been explored, which paid
    off, which were dead ends) would let future curiosity build on past
    curiosity rather than restart each time.
-4. **Cross-voyage working memory.** Long-term memory (patterns/lessons) is
-   now injected, but voyage-internal working state (what was tried, what
-   partially worked, what was about to be attempted) resets each voyage.
-   A lightweight voyage log carried forward would close this gap without
-   the full cost of a persistent context window.
+4. **Denser voyage-internal memory.** The voyage log (Iteration 10) carries
+   the *outline* of recent voyages (goal + outcome), but the conversation
+   that produced each outcome is lost at voyage end. A compressed
+   transcript or a tool-call-level diff summary would let the next voyage
+   skip "what did I try" rediscovery and go straight to "what's next".

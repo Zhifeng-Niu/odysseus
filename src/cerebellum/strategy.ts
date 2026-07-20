@@ -1,6 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Strategy } from './waypoint.js';
+import {
+  loadRecentVoyageSummariesSync,
+  formatVoyageSummariesMarkdown,
+} from './voyage-log.js';
 
 /**
  * The literal token the agent appends to a conversational reply to signal
@@ -214,7 +218,23 @@ export function loadLongTermMemoryMarkdown(cwd: string | undefined): string {
 }
 
 /**
- * Build the full system prompt for the engineer strategy. Three layers,
+ * Load the recent voyage summaries as a markdown block. Returns '' when
+ * trace.jsonl is missing or empty — fresh agents start with no voyage
+ * history, the same way they start with no patterns/lessons.
+ *
+ * Read synchronously because the systemPrompt getter must stay sync.
+ * Trace is append-only and small (one line per waypoint), so blocking
+ * cost is negligible.
+ */
+function loadVoyageLogMarkdown(cwd: string | undefined): string {
+  if (!cwd) return '';
+  const tracePath = join(cwd, '.odysseus', 'trace.jsonl');
+  const summaries = loadRecentVoyageSummariesSync(tracePath);
+  return formatVoyageSummariesMarkdown(summaries);
+}
+
+/**
+ * Build the full system prompt for the engineer strategy. Four layers,
  * prepended in order of persistence:
  *
  *   1. **SELF-MODEL** — persistent identity / capabilities / limitations /
@@ -224,7 +244,12 @@ export function loadLongTermMemoryMarkdown(cwd: string | undefined): string {
  *      This is the cross-voyage learning signal: the agent must see past
  *      patterns at every waypoint start to avoid repeating mistakes and
  *      to repeat validated approaches.
- *   3. **ENGINEER ORIENTATION** — the immutable action-bias prompt.
+ *   3. **VOYAGE LOG** — outline of the most recent voyages (goal + outcome
+ *      per waypoint). Cross-voyage working memory: the agent knows what it
+ *      already tried, what failed, and what succeeded, even after a fresh
+ *      voyage starts. Read fresh on every waypoint from
+ *      `.odysseus/trace.jsonl`.
+ *   4. **ENGINEER ORIENTATION** — the immutable action-bias prompt.
  *
  * Each layer degrades gracefully: missing files are silently skipped, so
  * a fresh agent with no self-model and no memory gets the bare engineer
@@ -233,6 +258,7 @@ export function loadLongTermMemoryMarkdown(cwd: string | undefined): string {
 function buildEngineerSystemPrompt(cwd: string | undefined): string {
   const selfModel = loadSelfModel(cwd);
   const longTermMemory = loadLongTermMemoryMarkdown(cwd);
+  const voyageLog = loadVoyageLogMarkdown(cwd);
 
   const parts: string[] = [];
   if (selfModel.length > 0) {
@@ -243,6 +269,11 @@ function buildEngineerSystemPrompt(cwd: string | undefined): string {
   if (longTermMemory.length > 0) {
     parts.push(
       `# LONG-TERM MEMORY (patterns and lessons from past voyages — apply these actively)\n\n${longTermMemory}`
+    );
+  }
+  if (voyageLog.length > 0) {
+    parts.push(
+      `# VOYAGE LOG (recent voyages — what you already tried; do not repeat failed approaches)\n\n${voyageLog}`
     );
   }
   parts.push(`# ENGINEER ORIENTATION\n\n${ENGINEER_BASE_PROMPT}`);
