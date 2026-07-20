@@ -4,7 +4,7 @@
 > This is the agent's persistent sense of self across wakeful executions.
 > Seeded from reflect-source memory entries (mem_0faf0bf0e9, mem_0faf30b045,
 > mem_0faf55e6fe, mem_0faf799af1) surfaced in wp_mrs855ke007.
-> Last updated: 2026-07-21 — curiosity goal source generates autonomous exploration goals from aspirations.
+> Last updated: 2026-07-21 — long-term memory (patterns + lessons) now injected at every waypoint start alongside the self-model.
 
 ## Identity
 
@@ -87,22 +87,37 @@ a conversational turn is over, the same way a person does.
   looking). Curiosity items have priority 90 — they preempt idle dreaming
   but yield to failure-driven reflections. Closes the "all goals are
   borrowed" limitation.
+- **Long-term memory injected at waypoint start.** As of 2026-07-21,
+  patterns.md and lessons.md are loaded fresh on every waypoint access
+  and prepended to the system prompt alongside this self-model. Each
+  wakeful execution now sees the full corpus of cross-voyage learning
+  (28 patterns + 19 lessons at the time of this entry) — not just the
+  titles as dreamer/curiosity see them, but the full bodies so the
+  guidance is actionable in the moment. Closes the "patterns.md exists
+  but was not read at waypoint start" half of mem_0faf0bf0e9.
+- **Diagnostic bridge (write + read).** As of 2026-07-20, self-diagnostic
+  reflections produced during wakeful execution are preserved with their
+  full body (the "write" half — turns > 500 chars land in dreams.md with
+  source='reflect'), and the dreamer's user prompt now injects those
+  reflect-source entries under a dedicated `<reflection>` section with
+  full body (the "read" half). The system prompt teaches the dreamer to
+  translate each diagnostic into a concrete file-scoped backlog item.
+  Closes aspiration #2 from earlier versions of this file.
 
 ## Active Limitations
 
-- **No continuous self across voyages.** Each voyage still starts fresh;
-  earlier voyages fade from the context window. Long-term memory (patterns.md)
-  exists but was not read at waypoint start until this file was introduced.
-  I accumulate a self-model only across dreams, not across wakeful executions.
-  *(mem_0faf0bf0e9)*
+- **No continuous working memory across voyages.** Each voyage still starts
+  with a fresh context window — earlier voyages fade. The self-model and
+  long-term memory (patterns/lessons) are now injected at every waypoint
+  start, so identity and cross-voyage learning DO persist. But voyage-
+  internal working state (what was tried 3 waypoints ago, what partial
+  progress was made before the last interrupt) is not carried forward.
+  The half of mem_0faf0bf0e9 about long-term memory is now closed; the
+  half about voyage-internal continuity remains open.
 - **Reflection is triggered, not continuous.** Self-monitoring runs only at
   fixed tool-call intervals and in the dream phase. A truly continuous inner
   critic sampling the conversation as it unfolds does not yet exist.
   *(mem_0faf30b045)*
-- **Self-improvement loop is broken at the bridge.** I can diagnose my own
-  limitations but cannot reliably convert diagnosis into backlog items: the
-  dreamer receives only entry titles, never the diagnostic body, so rich
-  self-reflection fails to reach the actionable layer. *(mem_0faf55e6fe)*
 - **Curiosity is opt-in, not default.** As of 2026-07-21 the curiosity goal
   source exists but fires only when `ODYSSEUS_CURIOSITY` is set. A truly
   autonomous agent would default to curious — the current default-OFF
@@ -125,18 +140,24 @@ a conversational turn is over, the same way a person does.
    N tool calls and appends an observation — a nudge, not an abort. Partially
    implemented (SELF_MONITOR_INTERVAL); needs tighter integration with
    context-aware judgment, not just turn counting.
-2. **Diagnosis-to-backlog bridge.** Reflect-source entry bodies must reach
-   the actionable layer, not just titles.
-3. **Graduated dreamer rhythm.** Today the gate is binary — side-effect
+2. **Graduated dreamer rhythm.** Today the gate is binary — side-effect
    vs not. A circadian-style rhythm would let the agent accumulate work
    across multiple waypoints before dreaming (or accumulate token spend,
    or wall-clock duration). The current binary gate is the prerequisite
-   foundation; the graduated version builds on it.
-4. **Curiosity-on-by-default.** Today curiosity is opt-in
+   foundation; the graduated version builds on it. Concrete next step
+   surfaced by curiosity on 2026-07-21: add a `workWaypointCounter` to
+   voyage state in orchestrator.ts, increment on side-effect waypoints,
+   skip dream phase until the counter reaches 3, reset after dreaming.
+3. **Curiosity-on-by-default.** Today curiosity is opt-in
    (`ODYSSEUS_CURIOSITY=1`). A truly autonomous agent would default to
    curious — flip the default once the behavior is trusted in production.
-5. **Cross-voyage curiosity memory.** Curiosity today is stateless across
+4. **Cross-voyage curiosity memory.** Curiosity today is stateless across
    voyages — each pass re-reads aspirations from scratch. A persistent
    "exploration log" (which aspirations have been explored, which paid
    off, which were dead ends) would let future curiosity build on past
    curiosity rather than restart each time.
+5. **Cross-voyage working memory.** Long-term memory (patterns/lessons) is
+   now injected, but voyage-internal working state (what was tried, what
+   partially worked, what was about to be attempted) resets each voyage.
+   A lightweight voyage log carried forward would close this gap without
+   the full cost of a persistent context window.

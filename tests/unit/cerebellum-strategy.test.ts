@@ -1,9 +1,15 @@
-import { describe, test, expect } from 'vitest';
+import { describe, test, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   selectStrategy,
   ENGINEER_STRATEGY,
   CONVERSATIONAL_DONE_MARKER,
   detectConversationalDone,
+  loadSelfModel,
+  loadLongTermMemoryMarkdown,
+  setStrategyCwd,
 } from '../../src/cerebellum/strategy.js';
 
 describe('selectStrategy (Iteration 0: engineer only)', () => {
@@ -105,5 +111,168 @@ describe('detectConversationalDone', () => {
     );
     expect(result.found).toBe(true);
     expect(result.cleanContent).toBe('Reply text here.');
+  });
+});
+
+describe('loadLongTermMemoryMarkdown', () => {
+  test('returns empty string when cwd is undefined', () => {
+    expect(loadLongTermMemoryMarkdown(undefined)).toBe('');
+  });
+
+  test('returns empty string when both files are missing', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ody-strat-'));
+    try {
+      expect(loadLongTermMemoryMarkdown(dir)).toBe('');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('returns empty string when files exist but are empty', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ody-strat-'));
+    try {
+      await mkdir(join(dir, '.odysseus', 'memory'), { recursive: true });
+      await writeFile(join(dir, '.odysseus', 'memory', 'patterns.md'), '');
+      await writeFile(join(dir, '.odysseus', 'memory', 'lessons.md'), '   \n  \n');
+      expect(loadLongTermMemoryMarkdown(dir)).toBe('');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('returns patterns content when only patterns.md exists', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ody-strat-'));
+    try {
+      await mkdir(join(dir, '.odysseus', 'memory'), { recursive: true });
+      await writeFile(
+        join(dir, '.odysseus', 'memory', 'patterns.md'),
+        '## [2026-07-20T10:00:00Z] Always pin file paths\n- **id**: mem_aaa\n- **source**: dream\n\nGoals must name a specific file.\n',
+      );
+      const result = loadLongTermMemoryMarkdown(dir);
+      expect(result).toContain('## patterns');
+      expect(result).toContain('Always pin file paths');
+      expect(result).toContain('Goals must name a specific file.');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('returns both categories joined by separator', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ody-strat-'));
+    try {
+      await mkdir(join(dir, '.odysseus', 'memory'), { recursive: true });
+      await writeFile(
+        join(dir, '.odysseus', 'memory', 'patterns.md'),
+        '## [2026-07-20T10:00:00Z] Pattern title\n- **id**: mem_aaa\n- **source**: dream\n\nbody-a\n',
+      );
+      await writeFile(
+        join(dir, '.odysseus', 'memory', 'lessons.md'),
+        '## [2026-07-20T10:00:00Z] Lesson title\n- **id**: mem_bbb\n- **source**: dream\n\nbody-b\n',
+      );
+      const result = loadLongTermMemoryMarkdown(dir);
+      expect(result).toContain('## patterns');
+      expect(result).toContain('Pattern title');
+      expect(result).toContain('## lessons');
+      expect(result).toContain('Lesson title');
+      // Both bodies injected (not just titles — full context for the agent).
+      expect(result).toContain('body-a');
+      expect(result).toContain('body-b');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('ignores preferences.md and dreams.md (not in INJECTED_MEMORY_CATEGORIES)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ody-strat-'));
+    try {
+      await mkdir(join(dir, '.odysseus', 'memory'), { recursive: true });
+      await writeFile(
+        join(dir, '.odysseus', 'memory', 'preferences.md'),
+        '## [2026-07-20T10:00:00Z] Operator prefers tabs\n- **id**: mem_aaa\n- **source**: user\n\nuse tabs not spaces\n',
+      );
+      await writeFile(
+        join(dir, '.odysseus', 'memory', 'dreams.md'),
+        '## [2026-07-20T10:00:00Z] Reflective entry\n- **id**: mem_bbb\n- **source**: reflect\n\ndeep diagnostic\n',
+      );
+      const result = loadLongTermMemoryMarkdown(dir);
+      // Neither category should be injected.
+      expect(result).toBe('');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('ENGINEER_STRATEGY.systemPrompt long-term memory injection', () => {
+  let originalCwd: string | undefined;
+  let tempDir: string;
+
+  beforeEach(async () => {
+    // Snapshot whatever cwd was set by earlier tests so we can restore it.
+    // setStrategyCwd has no getter, so we track via a known temp dir.
+    tempDir = await mkdtemp(join(tmpdir(), 'ody-strat-inject-'));
+    await mkdir(join(tempDir, '.odysseus', 'memory'), { recursive: true });
+    // Point the strategy at the temp dir.
+    setStrategyCwd(tempDir);
+  });
+
+  afterEach(async () => {
+    // Restore to project root so other test suites don't see our temp dir.
+    setStrategyCwd(join(process.cwd(), '.odysseus', '..'));
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  test('patterns.md content surfaces in systemPrompt under LONG-TERM MEMORY section', async () => {
+    await writeFile(
+      join(tempDir, '.odysseus', 'memory', 'patterns.md'),
+      '## [2026-07-20T10:00:00Z] Bias to action over narration\n- **id**: mem_aaa\n- **source**: dream\n\nThe agent must call tools, not describe what it will do.\n',
+    );
+    const prompt = ENGINEER_STRATEGY.systemPrompt;
+    expect(prompt).toContain('LONG-TERM MEMORY');
+    expect(prompt).toContain('Bias to action over narration');
+    expect(prompt).toContain('The agent must call tools');
+  });
+
+  test('lessons.md content surfaces alongside patterns', async () => {
+    await writeFile(
+      join(tempDir, '.odysseus', 'memory', 'patterns.md'),
+      '## [2026-07-20T10:00:00Z] P1\n- **id**: mem_aaa\n- **source**: dream\n\nbody-p1\n',
+    );
+    await writeFile(
+      join(tempDir, '.odysseus', 'memory', 'lessons.md'),
+      '## [2026-07-20T10:00:00Z] L1\n- **id**: mem_bbb\n- **source**: dream\n\nbody-l1\n',
+    );
+    const prompt = ENGINEER_STRATEGY.systemPrompt;
+    expect(prompt).toContain('P1');
+    expect(prompt).toContain('L1');
+  });
+
+  test('both sections degrade gracefully when files are missing', () => {
+    // No files written — both categories missing.
+    const prompt = ENGINEER_STRATEGY.systemPrompt;
+    // SELF-MODEL may or may not be present (project root has one); the key
+    // assertion is that LONG-TERM MEMORY section is absent.
+    expect(prompt).not.toContain('LONG-TERM MEMORY');
+    // Engineer orientation is always present.
+    expect(prompt).toContain('ENGINEER ORIENTATION');
+  });
+
+  test('self-model and long-term memory both present when both exist', async () => {
+    await writeFile(
+      join(tempDir, '.odysseus', 'self-model.md'),
+      '# Self-Model — Odysseus\n\n## Identity\n\nI am Odysseus.\n',
+    );
+    await writeFile(
+      join(tempDir, '.odysseus', 'memory', 'patterns.md'),
+      '## [2026-07-20T10:00:00Z] Some pattern\n- **id**: mem_aaa\n- **source**: dream\n\nbody\n',
+    );
+    const prompt = ENGINEER_STRATEGY.systemPrompt;
+    // Both sections present, in order: SELF-MODEL → LONG-TERM MEMORY → ENGINEER.
+    const selfModelIdx = prompt.indexOf('SELF-MODEL');
+    const ltmIdx = prompt.indexOf('LONG-TERM MEMORY');
+    const engineerIdx = prompt.indexOf('ENGINEER ORIENTATION');
+    expect(selfModelIdx).toBeGreaterThan(-1);
+    expect(ltmIdx).toBeGreaterThan(selfModelIdx);
+    expect(engineerIdx).toBeGreaterThan(ltmIdx);
   });
 });

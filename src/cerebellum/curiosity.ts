@@ -325,7 +325,7 @@ export async function curiosity(input: CuriosityInput): Promise<CuriosityOutput>
   const completion = await input.provider.complete(buildCuriosityUserPrompt(input), {
     systemPrompt: CURIOSITY_SYSTEM_PROMPT,
     temperature: 0.8, // high temp for divergent exploration, slightly lower than dreamer (0.9) — curiosity is more focused
-    maxTokens: 1200,
+    maxTokens: 1800, // cap reflects current self-model + memory title footprint; bump if truncated JSON reappears
   });
 
   const extracted = extractJson(completion.content);
