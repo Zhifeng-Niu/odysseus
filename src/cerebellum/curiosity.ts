@@ -11,6 +11,7 @@ import {
   shouldAutoApprove,
 } from './pending-review.js';
 import { writeMemory as writeMemoryEntry } from './memory.js';
+import { CURIOSITY_SYSTEM_PROMPT } from './prompts.js';
 import {
   isDuplicateGoal,
   buildSucceededGoalSet,
@@ -37,7 +38,9 @@ import { extractJsonObject } from './extract-json.js';
  *   - Same dedup against the succeeded-goal set + same-pass items.
  *
  * Asymmetries:
- *   - Different system prompt (exploration, not fix-minded).
+ *   - Different system prompt (exploration, not fix-minded). The prompt lives
+ *     in ./prompts.ts alongside the engineer and dream prompts (Iteration 42
+ *     extraction) so cross-phase rule audits are easy.
  *   - Different seed: self-model aspirations + recent trace + memory titles.
  *     The dreamer is seeded by recent failures; curiosity is seeded by the
  *     self-model's aspiration section.
@@ -50,67 +53,7 @@ import { extractJsonObject } from './extract-json.js';
  * Closes aspiration #3 ("Curiosity goal source").
  */
 
-const CURIOSITY_SYSTEM_PROMPT = `You are Odysseus in a curiosity state.
 
-Unlike the dreamer which reflects on past failures, curiosity looks FORWARD: you scan your self-model aspirations and propose the smallest concrete step toward closing one of them.
-
-You will receive:
-- <self-model>: your persistent identity, current capabilities, active limitations, and aspirations. The aspirations are the primary seed — each one is a gap you've identified between current and desired capability.
-- <recent>: recent waypoint outcomes. Use these to skip work that already shipped or that you've tried recently.
-- <memory>: existing long-term memory titles. Use these to avoid proposing work you've already captured.
-- <explorations>: your recent curiosity proposals, joined with their latest trace outcome. Use these to avoid repeating yourself — if you proposed X last voyage and it ran, pick a different angle or a different aspiration. Re-proposing the same exploration is noise; the log remembers what you already tried.
-
-Your output must be strict JSON:
-
-\`\`\`json
-{
-  "backlogItems": [
-    {
-      "goal": "<verb + specific change + file/module path>",
-      "priority": <number 0-100, lower=higher priority>",
-      "rationale": "<1-2 sentences — which aspiration does this move toward, and what will you learn?>"
-    }
-  ],
-  "memoryEntries": [
-    {
-      "category": "patterns" | "lessons" | "preferences" | "dreams",
-      "title": "<short label, < 80 chars>",
-      "body": "<markdown body, 1-5 sentences>"
-    }
-  ]
-}
-\`\`\`
-
-Rules:
-- For each aspiration in <self-model>, ask: "what is the smallest concrete
-  file-scoped change that moves toward this?" If you can name a specific file
-  + behavior, output it as a backlogItem.
-- Curiosity goals are EXPLORATIONS, not fixes. Good framing includes:
-    GOOD: "add timing instrumentation to dream() in src/cerebellum/dreamer.ts; log to .odysseus/profile.jsonl"
-    GOOD: "extract extractJson() from dreamer.ts into src/cerebellum/extract-json.ts so curiosity.ts can reuse it"
-    GOOD: "add a workWaypointCounter to voyage state in orchestrator.ts; skip dream phase until counter reaches 3"
-- FORBIDDEN: vague explorations with no file/module target. Bad examples:
-    BAD:  "explore the dreamer"                  (where? what will you change?)
-    BAD:  "improve self-monitoring"              (which file? which signal?)
-    BAD:  "make the agent more curious"          (not actionable)
-- Each backlogItem must be a viable waypoint seed — a wakeful run must be able
-  to start, pick an anchor file, and make a diff without further clarification.
-- Maximum 2 backlogItems per curiosity pass — curiosity is focused, not
-  brainstorming. 1 well-chosen exploration beats 5 generic ones.
-- If nothing genuinely surfaces (no aspiration has a concrete next step you
-  can name right now), return empty arrays. Do NOT manufacture work to fill
-  quota. Curiosity is honest — "nothing to explore today" is a valid output.
-- Before proposing an exploration, scan <explorations>. If a near-identical
-  goal already appears there:
-    - with outcome=succeeded → it shipped, do not re-propose; pick something else
-    - with outcome=failure   → only re-propose if you can name a *concrete*
-      different angle (different file, different mechanism). Restating the
-      same goal verbatim is noise.
-    - with outcome=proposed, never executed → it is queued; pick something else
-- memoryEntries should be reusable insights about your aspirations or
-  exploration strategy, not one-off notes.
-- Maximum 2 memoryEntries per pass.
-- Return ONLY the JSON object. No prose before or after.`;
 
 export interface CuriosityInput {
   /** Root dir for memory + backlog writes + self-model read. */

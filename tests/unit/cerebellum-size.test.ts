@@ -40,13 +40,6 @@ const FILE_CAPS: readonly FileCap[] = [
       '(~95 lines, depends on MemoryCategory/MemoryEntry types).',
   },
   {
-    filename: 'prompts.ts',
-    lineCap: 220,
-    rationale:
-      'Iteration 35 centralized ENGINEER_BASE_PROMPT and DREAM_SYSTEM_PROMPT here (190 lines). ' +
-      'Cap at 220 leaves headroom for one more prompt extraction without forcing a split.',
-  },
-  {
     filename: 'dreamer-dedup.ts',
     lineCap: 120,
     rationale:
@@ -108,6 +101,26 @@ const FILE_CAPS: readonly FileCap[] = [
       'Current 86 lines. Cap at 120 — these are heuristics that should not ' +
       'grow. If it crosses 120, the policy is likely absorbing plan() ' +
       'mechanism code that belongs in planner.ts.',
+  },
+  {
+    filename: 'prompts.ts',
+    lineCap: 299,
+    rationale:
+      'Iteration 42 added CURIOSITY_SYSTEM_PROMPT alongside ENGINEER_BASE_PROMPT ' +
+      'and DREAM_SYSTEM_PROMPT: 212 → 294. Cap at 299 — strictly under ' +
+      'CLAUDE.md <300 ceiling. All three LLM-phase prompts now live in one ' +
+      'module so cross-phase rule audits are trivial. Any growth that crosses ' +
+      '300 must split a prompt into a sibling (e.g. curiosity-prompts.ts).',
+  },
+  {
+    filename: 'curiosity.ts',
+    lineCap: 440,
+    rationale:
+      'Iteration 42 extracted CURIOSITY_SYSTEM_PROMPT to prompts.ts: ' +
+      '492 → 435. Cap at 440 to lock progress. Next extraction targets: ' +
+      'buildCuriosityUserPrompt (~63 lines, depends on CuriosityInput type) ' +
+      'and the LLM result-coercion helpers (~40 lines, shared shape with ' +
+      'dreamer — long-term these may converge into a shared coercion module).',
   },
 ];
 

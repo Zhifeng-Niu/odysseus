@@ -663,4 +663,54 @@ describe('curiosity', () => {
       }
     });
   });
+
+  describe('CURIOSITY_SYSTEM_PROMPT invariants (Iteration 42 extraction)', () => {
+    // Iteration 42 moved CURIOSITY_SYSTEM_PROMPT from curiosity.ts to
+    // prompts.ts (mirroring Iteration 35's DREAM_SYSTEM_PROMPT extraction).
+    // Each rule below is a literal-string invariant on the prompt. If a
+    // rule disappears, the corresponding failure mode returns.
+
+    test('CURIOSITY_SYSTEM_PROMPT is exported from prompts.ts and imported by curiosity.ts', async () => {
+      // If a future refactor inlines the prompt back into curiosity.ts,
+      // the file-size pressure returns and this assertion catches it.
+      const { readFile } = await import('node:fs/promises');
+      const promptsSrc = await readFile('src/cerebellum/prompts.ts', 'utf8');
+      const curiositySrc = await readFile('src/cerebellum/curiosity.ts', 'utf8');
+      expect(promptsSrc).toContain('export const CURIOSITY_SYSTEM_PROMPT');
+      expect(curiositySrc).toContain(
+        "import { CURIOSITY_SYSTEM_PROMPT } from './prompts.js'",
+      );
+      expect(curiositySrc).not.toContain('const CURIOSITY_SYSTEM_PROMPT = `');
+    });
+
+    test('CURIOSITY_SYSTEM_PROMPT enforces file-scoped goals', async () => {
+      // Without this rule the curiosity LLM emits "explore the dreamer" —
+      // no anchor, no convergence. The GOOD/BAD contrast is the most
+      // effective teaching shape (mirrors DREAM_SYSTEM_PROMPT).
+      const { readFile } = await import('node:fs/promises');
+      const src = await readFile('src/cerebellum/prompts.ts', 'utf8');
+      expect(src).toContain('Curiosity goals are EXPLORATIONS');
+      expect(src).toContain('FORBIDDEN: vague explorations');
+      expect(src).toContain('"explore the dreamer"');
+    });
+
+    test('CURIOSITY_SYSTEM_PROMPT enforces focused cap (2 items, not 5)', async () => {
+      // Curiosity is focused, not brainstorming. If the cap drifts back to
+      // the dreamer's 5, the LLM proposes a scattershot of half-formed
+      // ideas instead of one well-chosen next step.
+      const { readFile } = await import('node:fs/promises');
+      const src = await readFile('src/cerebellum/prompts.ts', 'utf8');
+      expect(src).toContain('Maximum 2 backlogItems per curiosity pass');
+    });
+
+    test('CURIOSITY_SYSTEM_PROMPT teaches honest empty-output', async () => {
+      // Without this rule the LLM manufactures low-quality proposals to
+      // fill quota. "nothing to explore today" being a valid output is
+      // what makes curiosity honest instead of compulsive.
+      const { readFile } = await import('node:fs/promises');
+      const src = await readFile('src/cerebellum/prompts.ts', 'utf8');
+      expect(src).toContain('Do NOT manufacture work');
+      expect(src).toContain('"nothing to explore today" is a valid output');
+    });
+  });
 });
