@@ -70,6 +70,26 @@ const FILE_CAPS: readonly FileCap[] = [
       'Cap at 80 — pure function, should stay tight. Any larger and it is ' +
       'probably absorbing validation logic that belongs elsewhere.',
   },
+  {
+    filename: 'backlog.ts',
+    lineCap: 410,
+    rationale:
+      'Iteration 39 extracted registries to backlog-registries.ts: ' +
+      '505 → 403. Cap at 410 to lock progress. Next extraction target: ' +
+      'retry-counter block (~45 lines, hashGoalDescription + getRetryCount + ' +
+      'incrementRetryCounter + isRetryExhausted) — pure in-memory state, ' +
+      'fits naturally alongside seedAttempts.ts.',
+  },
+  {
+    filename: 'backlog-registries.ts',
+    lineCap: 200,
+    rationale:
+      'Iteration 39 — SkippedEnqueue + RejectedGoal registries. Current 151 ' +
+      'lines. Cap at 200 — leaves headroom for one more in-memory registry ' +
+      '(e.g. enqueue-attempts) without forcing a split. If it crosses 200, ' +
+      'consider whether SkippedEnqueue and RejectedGoal belong in separate ' +
+      'modules.',
+  },
 ];
 
 describe('cerebellum source file size caps', () => {
