@@ -342,15 +342,21 @@ describe('CerebellumOrchestrator events + approval gate', () => {
   test('conversational goal (no tool calls, no DONE) stops early as abandoned', async () => {
     // Simulates an ambiguous goal that slips past the pre-dispatch validator
     // (no greeting/question pattern, no action verb → "unknown intent, let
-    // through") but to which the LLM keeps replying with plain text and never
-    // invokes tools. Without the consecutiveTextOnly guard, the loop would
-    // burn all 16 iterations and emit a failure. With the guard at
-    // threshold=3, the orchestrator stops after 3 conversational turns and
-    // marks abandoned.
+    // through") but to which the LLM keeps replying with plain text, never
+    // invokes tools, and NEVER emits [CONVERSATIONAL-DONE]. Without the
+    // consecutiveTextOnly safety net, the loop would burn all 16 iterations
+    // and emit a failure. With the net at threshold=5, the orchestrator
+    // stops after 5 conversational turns and marks abandoned.
+    //
+    // This is the safety-net path — the primary conversational-stop path
+    // is [CONVERSATIONAL-DONE] emission (covered by other tests). The net
+    // exists to catch agents that forget to emit the marker.
     const provider = makeMockProvider([
       'Hi! I am Odysseus, ready to help.',
       'Please give me a concrete task.',
       'Still waiting for a real goal — try "add a file".',
+      'I do not have enough information to proceed.',
+      'Could you clarify what you would like me to do?',
     ]);
 
     const orch = new CerebellumOrchestrator({
@@ -367,20 +373,22 @@ describe('CerebellumOrchestrator events + approval gate', () => {
     const result = await orch.runWaypoint({ goal: 'not sure what to do here' });
 
     expect(result.outcome).toBe('abandoned');
-    expect(result.iterationsUsed).toBe(3);
-    expect(result.failReason ?? '').toMatch(/conversational/i);
+    expect(result.iterationsUsed).toBe(5);
+    expect(result.failReason ?? '').toMatch(/^conversational stop/i);
+    // Safety-net path, not the signal path:
+    expect(result.failReason ?? '').not.toMatch(/^agent emitted/i);
 
     // The agent must NOT have committed or attempted verify.
     const types = events.map((e) => e.type);
     expect(types).not.toContain('verify-started');
     expect(types).not.toContain('waypoint-committed');
 
-    // All three conversational replies should be surfaced to the UI.
+    // All five conversational replies should be surfaced to the UI.
     const assistantMessages = events.filter(
       (e): e is Extract<OrchestratorEvent, { type: 'assistant-message' }> =>
         e.type === 'assistant-message'
     );
-    expect(assistantMessages.length).toBe(3);
+    expect(assistantMessages.length).toBe(5);
   });
 
   test('single text reply followed by tool calls does NOT trip the conversational guard', async () => {
@@ -412,11 +420,12 @@ describe('CerebellumOrchestrator events + approval gate', () => {
     // any LLM call. That optimization cost agency: the agent could never
     // respond naturally to "hi" — chat path fell back to base-model identity.
     //
-    // New contract: greeting enters orchestrator, agent replies once, the
-    // consecutiveTextOnly threshold is lowered to 1 (conversational hint),
-    // waypoint ends cleanly with outcome='abandoned' after exactly 1 turn.
+    // New contract: greeting enters orchestrator, agent replies once and
+    // emits [CONVERSATIONAL-DONE] to signal the conversational turn is
+    // complete. Orchestrator trusts the signal, waypoint ends cleanly
+    // with outcome='abandoned' after exactly 1 turn.
     const provider = makeMockProvider([
-      'Hi! I am Odysseus, ready to help.',
+      'Hi! I am Odysseus, ready to help.\n[CONVERSATIONAL-DONE]',
     ]);
 
     const orch = new CerebellumOrchestrator({

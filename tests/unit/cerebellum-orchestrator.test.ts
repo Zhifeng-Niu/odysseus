@@ -6,6 +6,7 @@ import { execFileNoThrow } from '../../src/util/exec.js';
 import { CerebellumOrchestrator } from '../../src/cerebellum/orchestrator.js';
 import type { LLMProvider, LLMCompletion, LLMCompleteOptions } from '../../src/llm/provider.js';
 import { ToolRegistry } from '../../src/tools/registry.js';
+import type { OrchestratorEvent } from '../../src/orchestrator/events.js';
 import { FileWriteTool, FileReadTool } from '../../src/tools/file.js';
 import { GitTool } from '../../src/tools/git.js';
 import {
@@ -417,10 +418,13 @@ describe('CerebellumOrchestrator', () => {
   });
 
   test('conversational goal flows through LLM once and stops (honors reply-once-and-stop)', async () => {
-    // The agent replies once and the orchestrator honors the engineer prompt's
-    // CONVERSATION CASE promise: "reply once and stop". A single text-only
-    // response ends the waypoint cleanly. Provider is called exactly once.
-    const provider = makeMockProvider(['Hi! I am Odysseus. What would you like me to build?']);
+    // The agent replies once and emits [CONVERSATIONAL-DONE] to signal that
+    // this was a conversational turn, not a code task. The orchestrator
+    // trusts the signal and ends the waypoint after exactly one turn.
+    // Provider is called exactly once.
+    const provider = makeMockProvider([
+      'Hi! I am Odysseus. What would you like me to build?\n[CONVERSATIONAL-DONE]',
+    ]);
 
     const orch = new CerebellumOrchestrator({
       cwd: workdir,
@@ -432,18 +436,89 @@ describe('CerebellumOrchestrator', () => {
 
     const result = await orch.runWaypoint({ goal: 'hello' });
 
-    // Waypoint still ends as abandoned (no DONE, no work), but only after
-    // one LLM turn. This is the new contract: conversational inputs get a
-    // real reply, then stop. They are no longer pre-rejected.
+    // Waypoint ends as abandoned (no DONE, no work) after exactly one LLM
+    // turn. This is the new contract: agent emits [CONVERSATIONAL-DONE],
+    // orchestrator trusts the signal.
     expect(result.outcome).toBe('abandoned');
     expect(result.iterationsUsed).toBe(1);
-    expect(result.failReason ?? '').toMatch(/conversational/i);
+    expect(result.failReason ?? '').toMatch(/CONVERSATIONAL-DONE/i);
 
     // Conversational goals no longer hit the rejection registry — only
     // empty goals do. This assertion locks that contract: a hello is not a
     // rejection, it's a conversation.
     const rejected = listRejectedGoals();
     expect(rejected.length).toBe(0);
+  });
+
+  test('[CONVERSATIONAL-DONE] signal: agent emits marker → waypoint stops after 1 turn', async () => {
+    // Iteration 5 contract: the agent now emits an explicit signal rather
+    // than relying on an external regex classifier to guess whether the
+    // input was conversational. The orchestrator trusts the signal and
+    // stops immediately. failReason identifies the signal-emission path
+    // (not the safety-net path) so future telemetry can tell them apart.
+    const provider = makeMockProvider([
+      '你好！我是 Odysseus，一个编码 agent。\n[CONVERSATIONAL-DONE]',
+    ]);
+
+    const orch = new CerebellumOrchestrator({
+      cwd: workdir,
+      provider,
+      registry,
+      tracePath,
+      verifyLayers: ['syntax'],
+    });
+    const events: OrchestratorEvent[] = [];
+    orch.on('event', (e) => {
+      events.push(e);
+    });
+
+    const result = await orch.runWaypoint({ goal: '你是谁' });
+
+    expect(result.outcome).toBe('abandoned');
+    expect(result.iterationsUsed).toBe(1);
+    // failReason explicitly attributes the stop to signal emission:
+    expect(result.failReason ?? '').toMatch(/^agent emitted \[CONVERSATIONAL-DONE\]/i);
+    // NOT the safety-net path:
+    expect(result.failReason ?? '').not.toMatch(/^conversational stop/i);
+
+    // The marker itself is stripped from the assistant-message event — the
+    // protocol token must not leak into user-facing content.
+    const assistantMessages = events.filter((e) => e.type === 'assistant-message');
+    expect(assistantMessages.length).toBe(1);
+    const emittedContent = (assistantMessages[0] as { content: string }).content;
+    expect(emittedContent).not.toContain('[CONVERSATIONAL-DONE]');
+    expect(emittedContent).toContain('你好');
+  });
+
+  test('safety-net threshold: agent forgets signal → fallback stop at 5 text-only turns', async () => {
+    // When the agent never emits [CONVERSATIONAL-DONE] (buggy model, weird
+    // prompt drift, etc.), the orchestrator's consecutiveTextOnly safety net
+    // catches the runaway loop. Unified threshold = 5 (no longer bifurcated
+    // by a pre-dispatch classifier hint).
+    const provider = makeMockProvider([
+      'Hmm, let me think about this.',
+      'I am not sure what to do.',
+      'Could you give me more context?',
+      'Still not sure what you want.',
+      'I do not think I can help with this.',
+    ]);
+
+    const orch = new CerebellumOrchestrator({
+      cwd: workdir,
+      provider,
+      registry,
+      tracePath,
+      verifyLayers: ['syntax'],
+    });
+
+    const result = await orch.runWaypoint({ goal: 'random ambiguous input with no action verb' });
+
+    expect(result.outcome).toBe('abandoned');
+    expect(result.iterationsUsed).toBe(5);
+    // Safety-net path — failReason starts with "conversational stop" (not
+    // "agent emitted"), distinguishing it from the signal path:
+    expect(result.failReason ?? '').toMatch(/^conversational stop/i);
+    expect(result.failReason ?? '').not.toMatch(/^agent emitted/i);
   });
 
   test('empty goal is still rejected before any LLM turn', async () => {

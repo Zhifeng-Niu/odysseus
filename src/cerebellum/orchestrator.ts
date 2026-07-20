@@ -26,8 +26,7 @@ import {
 import { createCheckpoint } from './checkpoint.js';
 import { rollbackTo } from './rollback.js';
 import { runVerify, type VerifyLayer } from './verify.js';
-import { selectStrategy, setStrategyCwd } from './strategy.js';
-import { validateGoal } from './goal-validator.js';
+import { selectStrategy, setStrategyCwd, detectConversationalDone } from './strategy.js';
 import { appendTrace, readTrace } from '../trace/jsonl.js';
 import type { OrchestratorEvent } from '../orchestrator/events.js';
 import { InterruptedError, RejectedError, StuckLoopError } from '../orchestrator/errors.js';
@@ -167,22 +166,24 @@ export class CerebellumOrchestrator extends EventEmitter {
 
     // PRE-DISPATCH GOAL CLASSIFIER — advisory signal, not a hard gate.
     //
-    // History: this used to be a hard reject for conversational goals (greeting,
-    // identity question, off-topic chat). The rejection saved a checkpoint and
-    // up to 3 LLM turns, but at the cost of agency: the agent could never
-    // respond naturally to "hi" or "who are you" — it just failed silently.
-    // That trade produced the failure captured in the user's 2026-07-20
-    // transcript where the chat path fell back to base-model identity ("I am
-    // GLM, by Z.ai") because no Odysseus context ever loaded.
+    // Goal validation — empty-goal rejection only.
     //
-    // Now: empty goals still hard-reject (nothing for the agent to do). All
-    // other conversational/informational goals flow through the LLM. The
-    // classifier output is used as a HINT to lower the consecutiveTextOnly
-    // threshold to 1 (instead of 3) — so when the input looks conversational,
-    // a single text reply ends the waypoint cleanly, honoring the engineer
-    // prompt's "reply once and stop" promise.
-    const validation = validateGoal(input.goal);
-    const isEmptyGoal = !validation.valid && validation.reason === 'goal is empty';
+    // History: this used to dispatch through a regex-based goal validator
+    // (validateGoal) that pre-classified inputs as "conversational" vs
+    // "code task" and lowered the consecutiveTextOnly threshold for the
+    // former. That pre-dispatch classifier was the last external heuristic
+    // standing between the user's input and the agent's own judgment of
+    // whether a goal is conversational. As of iteration 5 it is gone:
+    //   - The agent now emits an explicit [CONVERSATIONAL-DONE] marker at
+    //     the end of a conversational reply (see ENGINEER_BASE_PROMPT).
+    //   - The orchestrator trusts that signal and stops immediately.
+    //   - consecutiveTextOnly remains as a safety-net threshold (constant,
+    //     no longer bifurcated by conversationalHint) to catch the rare
+    //     case where the agent forgets to emit the marker.
+    //
+    // Empty goals still hard-reject: there is literally nothing for the
+    // agent to respond to. This is the only structural reject left.
+    const isEmptyGoal = input.goal.trim().length === 0;
     if (isEmptyGoal) {
       const reason = 'goal is empty';
       recordRejectedGoal(input.goal, reason);
@@ -204,12 +205,6 @@ export class CerebellumOrchestrator extends EventEmitter {
         tokensConsumed: { input: 0, output: 0 },
       };
     }
-    // HINT: looks conversational/informational (no action verb). Used below to
-    // lower the consecutiveTextOnly threshold so one text reply ends the
-    // waypoint. Action-verb goals keep the original threshold of 3 so the
-    // "ask one clarifying question → receive reply → start working" flow
-    // still works for ambiguous code tasks.
-    const conversationalHint = !validation.valid;
 
     // LAZY CHECKPOINT — deferred until the first mutating tool call.
     //
@@ -266,6 +261,11 @@ export class CerebellumOrchestrator extends EventEmitter {
     let lastAssistantContent = '';
     let consecutiveTextOnly = 0;
     let conversationalStop = false;
+    // True only when the agent itself emitted [CONVERSATIONAL-DONE]. False
+    // when we hit the consecutiveTextOnly safety-net threshold (the agent
+    // forgot to emit the marker). The distinction matters for the failReason
+    // narrative and for future telemetry on signal reliability.
+    let conversationalDoneEmitted = false;
     let stuckLoopRetried = false;
     // PRESERVATION BUFFER — captures the raw content of each consecutive
     // text-only assistant turn (in order). When the 3-strike early-stop
@@ -491,39 +491,54 @@ export class CerebellumOrchestrator extends EventEmitter {
         }
 
         consecutiveTextOnly += 1;
-        lastAssistantContent = completion.content;
-        textOnlyTurns.push(completion.content);
-        if (completion.content) {
+        // CONVERSATIONAL-DONE DETECTION — strip the protocol marker before
+        // any downstream consumer sees the content. The clean content is
+        // what gets emitted as assistant-message, pushed into history, and
+        // used in failReason truncation. The raw marker never leaks.
+        const doneDetection = detectConversationalDone(completion.content);
+        const cleanContent = doneDetection.cleanContent;
+        lastAssistantContent = cleanContent;
+        textOnlyTurns.push(cleanContent);
+        if (cleanContent) {
           this.emitEvent({
             type: 'assistant-message',
             waypointId: waypoint.id,
-            content: completion.content,
+            content: cleanContent,
             ts: Date.now(),
           });
         }
-        if (completion.content.trim().toUpperCase() === 'DONE') {
+        if (cleanContent.trim().toUpperCase() === 'DONE') {
           break;
         }
-        history.push({ role: 'assistant', content: completion.content });
+        if (doneDetection.found) {
+          // The agent has explicitly signaled "this was a conversational
+          // turn, no code task to perform". Trust the signal and end the
+          // waypoint — no verify, no further iteration. This is the
+          // primary conversational-stop path; the consecutiveTextOnly
+          // threshold below is a safety net, not the main flow.
+          conversationalDoneEmitted = true;
+          conversationalStop = true;
+          break;
+        }
+        history.push({ role: 'assistant', content: cleanContent });
 
-        // If the agent returns plain text without tool calls for multiple
-        // consecutive turns, the goal is conversational rather than a code
-        // task (e.g. "hi", "what can you do?"). Stop the loop so we don't
-        // burn the entire iteration budget on echo-chamber replies.
+        // SAFETY-NET THRESHOLD — the agent did NOT emit [CONVERSATIONAL-DONE]
+        // and is producing text-only replies without any tool calls. This
+        // is the "stuck in a text loop" failure mode (echo chamber, drift,
+        // inability to formulate a tool plan). End the voyage before we burn
+        // the entire iteration budget on prose.
         //
-        // Threshold depends on whether the pre-dispatch classifier hinted
-        // this input looks conversational (no action verb):
-        //   - conversationalHint = true → 1 text reply ends the waypoint.
-        //     This honors the engineer prompt's CONVERSATION CASE promise:
-        //     "reply once and stop". A person doesn't need three "please
-        //     give me a task" nudges to handle "hi".
-        //   - conversationalHint = false → 3 text replies (the original
-        //     threshold). A legitimate "ask one clarifying question → receive
-        //     user reply → start working" flow consumes two text-only turns
-        //     before the first tool call; killing at 2 would mark every
-        //     valid clarification as abandoned.
-        const textOnlyThreshold = conversationalHint ? 1 : 3;
-        if (consecutiveTextOnly >= textOnlyThreshold) {
+        // Threshold is a single constant now — no longer bifurcated by a
+        // pre-dispatch conversationalHint classifier. The reasoning: if
+        // the agent forgets to emit [CONVERSATIONAL-DONE], we want one
+        // consistent fallback regardless of whether the goal "looked"
+        // conversational. The value is intentionally higher than the old
+        // hint=true threshold (which was 1) so the safety net does NOT
+        // interfere with the agent's primary signal — a single text-only
+        // turn without [CONVERSATIONAL-DONE] is now allowed, and the net
+        // only catches genuine drift.
+        const CONVERSATIONAL_SAFETY_NET_THRESHOLD = 5;
+        if (consecutiveTextOnly >= CONVERSATIONAL_SAFETY_NET_THRESHOLD) {
           conversationalStop = true;
           break;
         }
@@ -579,17 +594,26 @@ export class CerebellumOrchestrator extends EventEmitter {
       };
     }
 
-    // Early termination — agent produced 3+ consecutive non-tool-calling
-    // responses. This means the LLM is stuck in a text-only loop (echo
-    // chamber, conversational drift, or inability to formulate a tool plan).
-    // Return a clear failure instead of burning through maxIterations.
+    // Early termination — conversational stop. Two sub-paths land here:
+    //   1. The agent emitted [CONVERSATIONAL-DONE] (conversationalDoneEmitted
+    //      === true). This is the primary, intended path: the agent judged
+    //      the goal non-engineering and signaled completion. outcome is
+    //      'abandoned' but this is NOT a failure — it is the agent ending
+    //      a conversational turn cleanly.
+    //   2. The agent produced CONVERSATIONAL_SAFETY_NET_THRESHOLD consecutive
+    //      text-only replies without emitting the marker. This is the
+    //      safety-net path: the agent is stuck in a text-only loop and
+    //      cannot make progress. Genuine failure mode.
+    // The failReason string distinguishes the two for telemetry and for
+    // the human reading the trace.
     if (conversationalStop) {
-      const textOnlyThreshold = conversationalHint ? 1 : 3;
-      const reason =
-        `conversational stop: agent produced ${consecutiveTextOnly} consecutive ` +
-        `non-tool-calling responses (threshold: ${textOnlyThreshold}) without reaching DONE — ` +
-        `the LLM is stuck in a text-only loop and cannot make further progress. ` +
-        `Last reply: "${lastAssistantContent.slice(0, 200)}"`;
+      const reason = conversationalDoneEmitted
+        ? `agent emitted [CONVERSATIONAL-DONE]: conversational turn complete (no code task to perform). ` +
+          `Last reply: "${lastAssistantContent.slice(0, 200)}"`
+        : `conversational stop: agent produced ${consecutiveTextOnly} consecutive ` +
+          `non-tool-calling responses without emitting [CONVERSATIONAL-DONE] or reaching DONE — ` +
+          `the LLM is stuck in a text-only loop and cannot make further progress. ` +
+          `Last reply: "${lastAssistantContent.slice(0, 200)}"`;
 
       // PRESERVATION — before the irreversible rollback, salvage any
       // consecutive-text-only turn whose content exceeds 500 chars. These

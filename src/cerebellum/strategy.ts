@@ -2,6 +2,56 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Strategy } from './waypoint.js';
 
+/**
+ * The literal token the agent appends to a conversational reply to signal
+ * "this was a conversational turn, no code task to verify". Symmetric
+ * counterpart of DONE: DONE = "task finished, please verify";
+ * [CONVERSATIONAL-DONE] = "no task here, just a reply".
+ *
+ * Defined as a constant so the orchestrator and the strategy prompt cannot
+ * drift on the exact spelling.
+ */
+export const CONVERSATIONAL_DONE_MARKER = '[CONVERSATIONAL-DONE]';
+
+/**
+ * Detection result for the conversational-done marker in an assistant reply.
+ * `cleanContent` is the reply with the marker stripped (and surrounding
+ * whitespace trimmed), so downstream consumers (events, history, failReason
+ * truncation) never see the protocol token mixed into the prose.
+ */
+export interface ConversationalDoneDetection {
+  found: boolean;
+  cleanContent: string;
+}
+
+/**
+ * Detect the [CONVERSATIONAL-DONE] marker in an assistant reply. The marker
+ * MUST appear on its own line (case-insensitive) — `foo [CONVERSATIONAL-DONE]`
+ * mid-sentence does NOT count, to avoid false positives from an LLM that
+ * merely mentions the token in a meta-discussion. Acceptable positions:
+ *   - alone on a line, anywhere in the reply
+ *   - at the very start or end of the reply
+ *
+ * Returns `cleanContent` with the marker line removed and surrounding blank
+ * lines collapsed. When the marker is absent, `cleanContent` equals the input
+ * (trimmed) and `found` is false.
+ */
+export function detectConversationalDone(
+  raw: string,
+): ConversationalDoneDetection {
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return { found: false, cleanContent: '' };
+
+  // Match the marker on its own line. Anchored with (^|\n) and (\n|$) so
+  // inline occurrences inside a sentence are ignored. Case-insensitive.
+  const pattern = /(^|\n)\s*\[CONVERSATIONAL-DONE\]\s*(?=\n|$)/i;
+  if (!pattern.test(trimmed)) {
+    return { found: false, cleanContent: trimmed };
+  }
+  const clean = trimmed.replace(pattern, '').replace(/\n{3,}/g, '\n\n').trim();
+  return { found: true, cleanContent: clean };
+}
+
 export interface StrategyDefinition {
   name: Strategy;
   /**
@@ -61,12 +111,24 @@ BIAS TO ACTION — CRITICAL:
   Even then, the same assistant turn MUST include the tool calls that start
   the work. Prose-only turns are reserved for the conversation case below.
 
-CONVERSATION CASE (rare):
-- Reply with ONE short message AND NO TOOL CALLS only when the goal is clearly
-  non-engineering: a greeting ("hi", "你好"), identity question ("who are you"),
-  or off-topic chat ("what's the weather").
-- In that case, reply once and stop. The orchestrator will detect the
-  conversational pattern and end the voyage.
+CONVERSATION CASE — rare, and the ONLY case where prose-only output is allowed:
+- Applies when the goal is clearly non-engineering: a greeting ("hi", "你好"),
+  identity question ("who are you", "你是谁"), capability question
+  ("what can you do?"), or off-topic chat ("what's the weather").
+- Reply with ONE short message, then end your reply with the literal token
+  [CONVERSATIONAL-DONE] on its own line. This token is the symmetric
+  counterpart of DONE: DONE = "the code task is finished, please verify";
+  [CONVERSATIONAL-DONE] = "this was a conversational turn, no task to verify".
+- The orchestrator trusts this signal and ends the voyage immediately. It
+  does NOT pattern-match your prose, count your turns, or guess whether you
+  are done. You decide.
+- Never emit [CONVERSATIONAL-DONE] alongside a tool call. If the goal even
+  partly names a code task ("hi, can you fix the parser?" — has action verb
+  "fix"), ignore the greeting and START BY CALLING A TOOL. Mixed goals are
+  code tasks, not conversation.
+- Example reply to "你好":
+    你好！我是 Odysseus，一个编码 agent。给我一个代码任务，我就直接动手改。
+    [CONVERSATIONAL-DONE]
 
 Hard rules:
 - Never disable the safety perimeter: src/cerebellum/orchestrator.ts,
