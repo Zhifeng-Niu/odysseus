@@ -229,6 +229,9 @@ export async function enqueueBacklog(
  * - `user` (50): user-initiated work always preempts autonomous work.
  * - `reflect` (75): failure-driven reflections are urgent — the agent
  *   shouldn't repeat the mistake.
+ * - `curiosity` (90): forward-looking exploration of aspirations. Preempts
+ *   idle dreaming (lower priority than fixing failures, but higher than
+ *   abstract dream proposals).
  * - `dream` (100): exploratory work, no urgency.
  * - `system` (100): bookkeeping; same as dream.
  */
@@ -238,6 +241,8 @@ function defaultPriorityForOrigin(origin: BacklogOrigin): number {
       return 50;
     case 'reflect':
       return 75;
+    case 'curiosity':
+      return 90;
     case 'dream':
     case 'system':
       return 100;

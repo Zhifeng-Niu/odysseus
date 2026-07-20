@@ -5,30 +5,34 @@ import { enqueueBacklog, type BacklogItem } from './backlog.js';
 import type { BacklogOrigin } from '../orchestrator/events.js';
 
 /**
- * Pending review queue — dream/reflect proposals wait here for user approval
- * before entering the backlog.
+ * Pending review queue — dream/reflect/curiosity proposals wait here for user
+ * approval before entering the backlog.
  *
  * Why this exists: previously dreamer output went straight into the backlog,
  * which meant the autonomous dreamer could keep the voyage loop busy without
- * the user's consent. Moving dream/reflect outputs into a holding pen makes
- * the agent ask before acting on its own ideas — "I just thought about X,
- * want me to work on it?"
+ * the user's consent. Moving dream/reflect/curiosity outputs into a holding
+ * pen makes the agent ask before acting on its own ideas — "I just thought
+ * about X, want me to work on it?"
  *
  * `user` and `system` origins bypass this queue (they go straight to the
- * backlog via enqueueBacklog). Only `dream` and `reflect` are routed here.
+ * backlog via enqueueBacklog). Only `dream`, `reflect`, and `curiosity` are
+ * routed here — all three are autonomous thought outputs.
  *
  * Physical shape: `{rootDir}/pending-review.json`. Atomic write via tmp+rename
  * — same pattern as backlog.ts.
  */
 
-export type ReviewableOrigin = Extract<BacklogOrigin, 'dream' | 'reflect'>;
+export type ReviewableOrigin = Extract<
+  BacklogOrigin,
+  'dream' | 'reflect' | 'curiosity'
+>;
 
 export interface PendingItem {
   /** Stable identifier; format: `pr_<12 hex>` for grep-ability. */
   readonly id: string;
   /** Goal text — what the agent is proposing to do. */
   readonly goal: string;
-  /** Always 'dream' or 'reflect' (other origins skip this queue). */
+  /** Always 'dream', 'reflect', or 'curiosity' (other origins skip this queue). */
   readonly origin: ReviewableOrigin;
   /**
    * Priority to use *if* the user approves. Inherited from the producer
@@ -129,6 +133,8 @@ function defaultPriorityForOrigin(origin: ReviewableOrigin): number {
   switch (origin) {
     case 'reflect':
       return 75;
+    case 'curiosity':
+      return 90;
     case 'dream':
       return 100;
   }

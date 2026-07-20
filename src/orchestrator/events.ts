@@ -4,8 +4,20 @@ import type { BrainState } from '../cerebellum/brain-state.js';
 /**
  * Origin tag for backlog items — tells us where a piece of pending work came
  * from. Drives prioritization in the consolidator.
+ *
+ * - `user`: explicitly injected by the user (CLI arg, TUI input). Always
+ *   highest priority.
+ * - `reflect`: produced by reflection on a failure. Time-urgent — the agent
+ *   shouldn't repeat the mistake.
+ * - `dream`: produced by the dreamer's free-association over recent trace.
+ *   Exploratory, no urgency.
+ * - `curiosity`: produced by the curiosity phase's forward-looking
+ *   exploration of self-model aspirations. Where dream reflects on the past,
+ *   curiosity explores the future. Priority between reflect and dream —
+ *   curiosity work preempts idle dreaming but yields to failures.
+ * - `system`: bookkeeping origin for internal seed items.
  */
-export type BacklogOrigin = 'user' | 'dream' | 'reflect' | 'system';
+export type BacklogOrigin = 'user' | 'dream' | 'reflect' | 'curiosity' | 'system';
 
 /**
  * Memory categories map 1:1 to files in `.odysseus/memory/`. Each category
@@ -109,6 +121,20 @@ export type OrchestratorEvent =
       durationMs: number;
       ts: number;
     }
+  // ─── Curiosity phase events ────────────────────────────────────────────
+  // Symmetric to dream-completed but for the forward-looking exploration
+  // phase. Fired after runCuriosityPhase finishes (whether or not it added
+  // items). Observers use this to distinguish "agent is idle" from "agent
+  // is curious" — both end with voyage-idle, but only the former has no
+  // curiosity-completed preceding it.
+  | {
+      type: 'curiosity-completed';
+      voyageId: string;
+      backlogItemsAdded: number;
+      memoryEntriesAdded: number;
+      durationMs: number;
+      ts: number;
+    }
   | {
       type: 'backlog-item-added';
       itemId: string;
@@ -194,6 +220,7 @@ export const EVENT_TYPES = [
   'brain-state-changed',
   'voyage-idle',
   'dream-completed',
+  'curiosity-completed',
   'backlog-item-added',
   'memory-consolidated',
   // Recovery intervention

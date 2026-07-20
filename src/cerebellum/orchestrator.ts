@@ -42,6 +42,7 @@ import {
   type BrainStateTransition,
 } from './brain-state.js';
 import { dream } from './dreamer.js';
+import { curiosity, shouldRunCuriosity } from './curiosity.js';
 import {
   enqueueBacklog,
   peekBacklog,
@@ -1004,6 +1005,12 @@ export class CerebellumOrchestrator extends EventEmitter {
     const waypoints: RunWaypointResult[] = [];
     let dreamCount = 0;
     let lastWaypointId: string | null = null;
+    // Tracks whether this voyage has done any real (side-effect-producing)
+    // work. Used to gate the curiosity phase: curiosity should NOT fire after
+    // a pure-conversational "hi" (no side effects = no real work = the agent
+    // has nothing to be curious about). Only fire when the agent has actually
+    // engaged with the codebase this voyage.
+    let didRealWork = false;
 
     try {
       for (let i = 0; i < maxWaypoints; i++) {
@@ -1037,6 +1044,9 @@ export class CerebellumOrchestrator extends EventEmitter {
         });
         waypoints.push(result);
         lastWaypointId = result.waypoint.id;
+        if (result.checkpointSha !== undefined) {
+          didRealWork = true;
+        }
 
         if (this.interrupted) {
           throw new InterruptedError('voyage interrupted before dreaming');
@@ -1077,7 +1087,32 @@ export class CerebellumOrchestrator extends EventEmitter {
         }
 
         // Back to wakeful for the next iteration (or to await user input).
-        const backlogSize = await sizeBacklog(this.memoryRoot());
+        let backlogSize = await sizeBacklog(this.memoryRoot());
+        if (backlogSize === 0) {
+          // Curiosity phase — fires when the dreamer produced no new work
+          // AND the agent has done real work this voyage AND the operator
+          // has opted in via ODYSSEUS_CURIOSITY. Curiosity reads the
+          // self-model aspirations and proposes the smallest concrete step
+          // toward one of them. Closes the "all goals are borrowed" gap.
+          //
+          // The didRealWork gate prevents curiosity from firing after a
+          // pure-conversational "hi" (no side effects). The env gate makes
+          // autonomous exploration opt-in — see shouldRunCuriosity() in
+          // curiosity.ts for the rationale.
+          //
+          // Reuses the 'dreaming' brain state (with a distinct reason
+          // string) to avoid cascading changes in brain-state.ts. The
+          // 'curiosity-completed' event is the precise signal — observers
+          // use it to distinguish the two phases.
+          if (didRealWork && shouldRunCuriosity()) {
+            this.setBrainState('dreaming', 'voyage curiosity phase');
+            await this.runCuriosityPhase(voyageId);
+            // Curiosity may have added items to the backlog. Re-check size
+            // before deciding to idle — if curiosity proposed something,
+            // the voyage continues with that item.
+            backlogSize = await sizeBacklog(this.memoryRoot());
+          }
+        }
         if (backlogSize === 0) {
           this.emitEvent({
             type: 'voyage-idle',
@@ -1243,6 +1278,90 @@ export class CerebellumOrchestrator extends EventEmitter {
     // observability even though they're instantaneous.
     if (parseOk) {
       this.setBrainState('reflecting', 'post-dream reflection');
+      this.setBrainState('consolidating', 'persisting memory + backlog');
+    }
+    return { backlogItemsAdded, memoryEntriesAdded };
+  }
+
+  /**
+   * Run a single curiosity pass. Mirrors runDreamingPhase's structure but
+   * invokes curiosity() instead of dream(). The curiosity phase reads the
+   * self-model aspirations and proposes forward-looking explorations —
+   * closes the "all goals are borrowed" gap (aspiration #3 in self-model).
+   *
+   * Same failure-mode handling as runDreamingPhase: a thrown curiosity call
+   * is caught, parseOk stays false, and curiosity-completed is still emitted
+   * with zero counts so observers always see the phase end.
+   */
+  private async runCuriosityPhase(voyageId: string): Promise<{
+    backlogItemsAdded: number;
+    memoryEntriesAdded: number;
+  }> {
+    const start = Date.now();
+    let backlogItemsAdded = 0;
+    let memoryEntriesAdded = 0;
+    let addedBacklogItems: Array<{ id: string; goal: string; priority: number }> = [];
+    let addedMemoryEntries: Array<{ id: string; category: MemoryCategory; title: string }> = [];
+    let parseOk = true;
+
+    try {
+      const recentTrace = await readTrace(this.config.tracePath);
+      const memorySnapshot = await this.readMemorySnapshot();
+      const result = await curiosity({
+        rootDir: this.memoryRoot(),
+        provider: this.config.provider,
+        recentTrace,
+        memorySnapshot,
+      });
+      backlogItemsAdded = result.backlogItemsAdded;
+      memoryEntriesAdded = result.memoryEntriesAdded;
+      addedBacklogItems = [...result.addedBacklogItems];
+      addedMemoryEntries = [...result.addedMemoryEntries];
+      parseOk = result.parseOk;
+    } catch {
+      // Curiosity threw — leave counts at 0 and emit curiosity-completed.
+      parseOk = false;
+    }
+
+    this.emitEvent({
+      type: 'curiosity-completed',
+      voyageId,
+      backlogItemsAdded,
+      memoryEntriesAdded,
+      durationMs: Date.now() - start,
+      ts: Date.now(),
+    });
+
+    // Emit per-item events with origin='curiosity' so the TUI can show
+    // "added (curiosity): <goal>" distinctly from dream proposals.
+    for (const item of addedBacklogItems) {
+      this.emitEvent({
+        type: 'backlog-item-added',
+        itemId: item.id,
+        goal: item.goal,
+        origin: 'curiosity',
+        priority: item.priority,
+        ts: Date.now(),
+      });
+    }
+
+    const byCategory = new Map<MemoryCategory, number>();
+    for (const entry of addedMemoryEntries) {
+      const current = byCategory.get(entry.category) ?? 0;
+      byCategory.set(entry.category, current + 1);
+    }
+    for (const [category, count] of byCategory) {
+      this.emitEvent({
+        type: 'memory-consolidated',
+        category,
+        entryCount: count,
+        bytesWritten: 0,
+        ts: Date.now(),
+      });
+    }
+
+    if (parseOk) {
+      this.setBrainState('reflecting', 'post-curiosity reflection');
       this.setBrainState('consolidating', 'persisting memory + backlog');
     }
     return { backlogItemsAdded, memoryEntriesAdded };

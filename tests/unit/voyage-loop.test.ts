@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, readFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileNoThrow } from '../../src/util/exec.js';
@@ -565,5 +565,143 @@ describe('CerebellumOrchestrator voyage loop', () => {
         e.type === 'brain-state-changed' && e.to === 'dreaming'
     );
     expect(dreamStateChanges.length).toBe(0);
+  });
+
+  test('curiosity fires when dream produces nothing, ODYSSEUS_CURIOSITY=1, and voyage did real work', async () => {
+    // The autonomy arc: agent did real work → dreamed → dream was empty →
+    // agent is curious → proposes an exploration → voyage continues.
+    // Closes the "all goals are borrowed" gap from self-model aspiration #3.
+    process.env.ODYSSEUS_AUTO_APPROVE = '1';
+    process.env.ODYSSEUS_CURIOSITY = '1';
+
+    // Self-model seeds the curiosity phase. Without it, curiosity produces
+    // no proposals (the aspirations are the seed).
+    await mkdir(join(workdir, '.odysseus'), { recursive: true });
+    await writeFile(
+      join(workdir, '.odysseus', 'self-model.md'),
+      '# Self-Model\n\n## Aspirations\n1. Add continuous self-monitor.\n'
+    );
+
+    const seedGoal = 'curiosity-trigger seed';
+    const curiosityGoal = 'add timing instrumentation to dreamer.ts';
+    const provider = makeMockProvider([
+      // Waypoint 1 (seed): write a file, then DONE — produces side effects.
+      fileWriteArgs(workdir, 'work.ts', 'export const w = 0;'),
+      'DONE',
+      // Dream 1: empty — no proposals.
+      JSON.stringify({ backlogItems: [], memoryEntries: [] }),
+      // Curiosity 1: proposes one exploration.
+      JSON.stringify({
+        backlogItems: [{ goal: curiosityGoal, priority: 90 }],
+        memoryEntries: [],
+      }),
+      // Waypoint 2 (curiosity item): write another file, DONE.
+      fileWriteArgs(workdir, 'explore.ts', 'export const e = 1;'),
+      'DONE',
+      // Dream 2: empty — voyage finally drains (and curiosity would fire
+      // again, but maxWaypoints=3 stops the loop first).
+      JSON.stringify({ backlogItems: [], memoryEntries: [] }),
+    ]);
+
+    const orch = new CerebellumOrchestrator({
+      cwd: workdir,
+      provider,
+      registry,
+      tracePath,
+      verifyLayers: ['syntax'],
+      autoApprove: true,
+    });
+    const events = subscribe(orch);
+
+    const result = await orch.runVoyage({ seedGoal, maxWaypoints: 3 });
+
+    // Two waypoints ran: the seed and the curiosity-proposed exploration.
+    expect(result.waypoints.length).toBe(2);
+    expect(result.waypoints[0]!.waypoint.goal).toBe(seedGoal);
+    expect(result.waypoints[1]!.waypoint.goal).toBe(curiosityGoal);
+
+    // curiosity-completed event fired.
+    const types = events.map((e) => e.type);
+    expect(types).toContain('curiosity-completed');
+
+    // The curiosity-proposed backlog item was tagged with origin='curiosity'.
+    const curiosityAdded = events.filter(
+      (e): e is Extract<OrchestratorEvent, { type: 'backlog-item-added' }> =>
+        e.type === 'backlog-item-added' && e.origin === 'curiosity'
+    );
+    expect(curiosityAdded.length).toBe(1);
+    expect(curiosityAdded[0]!.goal).toBe(curiosityGoal);
+    expect(curiosityAdded[0]!.priority).toBe(90);
+
+    // The exploration file exists on disk.
+    await expect(readFile(join(workdir, 'explore.ts'), 'utf8')).resolves.toContain('e = 1');
+  });
+
+  test('curiosity does NOT fire when ODYSSEUS_CURIOSITY is unset (default OFF)', async () => {
+    // Curiosity is opt-in. Without the env var, the voyage drains normally
+    // even if the dream produced nothing and the agent did real work.
+    process.env.ODYSSEUS_AUTO_APPROVE = '1';
+    delete process.env.ODYSSEUS_CURIOSITY;
+
+    await mkdir(join(workdir, '.odysseus'), { recursive: true });
+    await writeFile(
+      join(workdir, '.odysseus', 'self-model.md'),
+      '# Self-Model\n\n## Aspirations\n1. Add continuous self-monitor.\n'
+    );
+
+    const provider = makeMockProvider([
+      fileWriteArgs(workdir, 'work.ts', 'export const w = 0;'),
+      'DONE',
+      JSON.stringify({ backlogItems: [], memoryEntries: [] }),
+    ]);
+
+    const orch = new CerebellumOrchestrator({
+      cwd: workdir,
+      provider,
+      registry,
+      tracePath,
+      verifyLayers: ['syntax'],
+      autoApprove: true,
+    });
+    const events = subscribe(orch);
+
+    const result = await orch.runVoyage({ seedGoal: 'curiosity-gated seed' });
+
+    // Only one waypoint ran; curiosity never added work.
+    expect(result.waypoints.length).toBe(1);
+    const types = events.map((e) => e.type);
+    expect(types).not.toContain('curiosity-completed');
+  });
+
+  test('curiosity does NOT fire after a pure-conversational waypoint (didRealWork gate)', async () => {
+    // Even with ODYSSEUS_CURIOSITY=1, curiosity must not fire when the agent
+    // has done no real work. A "hi" should not trigger autonomous exploration
+    // — the agent has nothing to be curious about if it hasn't engaged.
+    process.env.ODYSSEUS_AUTO_APPROVE = '1';
+    process.env.ODYSSEUS_CURIOSITY = '1';
+
+    const provider = makeMockProvider([
+      // Single text reply, no tool calls — conversational waypoint.
+      'Hi! I am Odysseus.',
+    ]);
+
+    const orch = new CerebellumOrchestrator({
+      cwd: workdir,
+      provider,
+      registry,
+      tracePath,
+      verifyLayers: ['syntax'],
+      autoApprove: true,
+    });
+    const events = subscribe(orch);
+
+    const result = await orch.runVoyage({ seedGoal: 'hi' });
+
+    expect(result.waypoints.length).toBe(1);
+    expect(result.waypoints[0]!.checkpointSha).toBeUndefined();
+
+    const types = events.map((e) => e.type);
+    expect(types).not.toContain('curiosity-completed');
+    expect(types).not.toContain('dream-completed');
   });
 });
