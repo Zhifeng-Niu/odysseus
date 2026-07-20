@@ -4,7 +4,7 @@
 > This is the agent's persistent sense of self across wakeful executions.
 > Seeded from reflect-source memory entries (mem_0faf0bf0e9, mem_0faf30b045,
 > mem_0faf55e6fe, mem_0faf799af1) surfaced in wp_mrs855ke007.
-> Last updated: 2026-07-21 — User-origin backlog items bypass dedup (Iteration 18). Diagnostic on `.odysseus/events.jsonl` revealed that 9 of the 9 most recent voyages produced zero waypoints — including direct user inputs "你好" and "想想如果你要变成世界第一的agent...". Root cause: `enqueueBacklog`'s three dedup early-returns (`isSeedExhausted`, `isRetryExhausted`, `isCompleted`) applied uniformly to all origins. When a user resent a message the system had seen before, the item was silently dropped — the function returned a phantom BacklogItem but never wrote to the file. `peekBacklog` returned null on the next tick, `voyage-idle` fired immediately, and the user saw zero response. From their perspective the agent had died. Fix: `origin === 'user'` now bypasses all three checks via a dedicated `enqueueUserOrigin` helper — user input MUST always produce a waypoint. The retry counter is still incremented (informational), but it is not a gate. The dedup machinery stays in place for autonomous origins (dream, reflect, curiosity, system, plan) since that's what protects against loop re-seeding. Also added a `listSkippedEnqueues()` observability registry: every autonomous-origin drop is now recorded with goal + origin + reason + timestamp, so future regressions of the silent-drop class are diagnosable. 8 new backlog tests cover: user-origin enqueues against all three dedup checks (individually and combined), user-origin still increments retry counter, dream-origin still dedups (no regression), all three skip reasons recorded distinctly, and user-origin preserves EnqueueOptions (sourceWaypointId, id, priority). Full suite 524/524.
+> Last updated: 2026-07-21 — Empty-commit audit surfaces false-success pattern (Iteration 19). Building on Iteration 18's user-input fix, this iteration tackled a quieter but more pervasive honesty bug: the orchestrator's `commitWaypoint` (src/cerebellum/orchestrator.ts:1503-1505) intentionally allows empty commits by appending `--allow-empty` when `git diff --cached --quiet` returns 0. The resulting `waypoint/wp_*-ok` commits have fresh SHAs but zero file changes — the TUI shows a green "OK" badge and the event stream emits `waypoint-committed`, but the agent produced nothing. Initial investigation focused on the single known empty commit `43b6a7c` (a waypoint for the user input "想想如果你要变成世界第一的agent..."); running the new audit module against the live repo revealed the problem is systemic — **11 of ~27 recent waypoint commits are empty (~40%)**. The new `src/cerebellum/commit-audit.ts` module exposes `detectEmptyWaypointCommits`, `isCommitEmpty`, and `countEmptyWaypointCommits`. Detection strategy: walk `git log --shortstat --format=%H|%s|%aI`, flag commits whose stat line reports 0 files changed (or has no stat line at all), filter to subjects matching `waypoint/...-ok` (excludes `checkpoint/...` which are structurally empty by design), and return reverse-chronological results with full 40-char SHA + subject + ISO date. Supports `since?: string` range bounding and `limit?: number` cap (default 1000). 12 unit tests cover: empty-commit detection (incl. root commits), real-diff non-flagging, multi-commit ordering, subject-prefix filtering (excludes human/checkpoint commits), `since` bounding, invalid-range handling, field completeness, count aggregation, and a regression test that reproduces the exact `43b6a7c` pattern (`checkpoint/wp_*-start` followed by empty `waypoint/wp_*-ok`). Editing orchestrator.ts to refuse empty commits is the right structural fix but is gated on manual review per CLAUDE.md; the audit module makes the problem measurable in the meantime. Full suite 536/536.
 
 ## Identity
 
@@ -280,6 +280,34 @@ a conversational turn is over, the same way a person does.
   every autonomous-origin drop is recorded with goal + origin +
   reason + timestamp, so the silent-drop class of bugs is now
   diagnosable. 8 new backlog tests; full suite 524/524.
+- **Empty-commit audit surfaces false-success pattern.** As of 2026-07-21
+  (Iteration 19), the agent can no longer pretend it shipped work it
+  didn't ship — at least not invisibly. Investigation into a single
+  known empty commit (`43b6a7c`, a waypoint for the user input "想想
+  如果你要变成世界第一的agent...") revealed that the orchestrator's
+  `commitWaypoint` (src/cerebellum/orchestrator.ts:1503-1505)
+  intentionally allows empty commits via `--allow-empty`. The result:
+  a `waypoint/wp_*-ok` commit with a fresh SHA but zero file changes.
+  The TUI shows a green "OK" badge, the event stream emits `waypoint-
+  committed`, and `git log` shows a new commit — but nothing was
+  actually written. The new `src/cerebellum/commit-audit.ts` module
+  walks `git log --shortstat --format=%H|%s|%aI` and flags commits
+  that match the `waypoint/...-ok` subject pattern AND have zero file
+  changes. Checkpoint commits (`checkpoint/...`) are excluded by
+  design — they are structurally empty (the lazy-checkpoint path
+  creates them before any mutating tool runs). An audit run on the
+  live repo found **11 empty waypoint commits out of ~27 recent
+  (~40%)** — the false-success pattern is systemic, not isolated.
+  Three exports: `detectEmptyWaypointCommits(cwd, opts)` returns
+  reverse-chronological `EmptyWaypointCommit[]` with full SHA,
+  subject, and ISO date; `isCommitEmpty(cwd, sha)` is the single-
+  commit check; `countEmptyWaypointCommits(cwd, opts)` is the
+  cardinality shortcut for voyage-summary badges. 12 unit tests
+  cover detection, ordering, subject-prefix filtering, range
+  bounding, invalid-range handling, and a regression test that
+  reproduces the exact `43b6a7c` pattern. The structural fix —
+  refusing empty commits in `commitWaypoint` — is documented in
+  Active Limitations and gated on manual review per CLAUDE.md.
 - **Test-gated self-verification.** As of 2026-07-21 (Iteration 13),
   the verify gate runs the full vitest suite (442 tests) after every
   waypoint, not just `tsc --noEmit`. The `tests` layer in
@@ -317,6 +345,24 @@ a conversational turn is over, the same way a person does.
   the hard gate (2026-07-21) now structurally refuses tool calls that
   arrive in the same turn as the marker — so even if I slip, the worst
   case is a retry, not a broken protocol.
+- **Empty-commit false-success pattern.** As of 2026-07-21 (Iteration 19
+  audit), the orchestrator's `commitWaypoint` (src/cerebellum/orchestrator.ts
+  :1503-1505) intentionally allows empty commits: when `git diff --cached
+  --quiet` returns 0, the code appends `--allow-empty` and creates a
+  commit anyway. The result is a `waypoint/wp_*-ok` commit with a fresh
+  SHA but zero file changes. From the operator's perspective this is a
+  *false success*: the TUI shows a green "OK" badge, the event stream
+  emits `waypoint-committed`, and `git log` shows a new commit, but the
+  agent produced nothing of value. An audit run on the live repo found
+  11 empty waypoint commits out of ~27 recent — roughly 40% of "successes"
+  were hollow. The new `src/cerebellum/commit-audit.ts` module
+  (`detectEmptyWaypointCommits`, `isCommitEmpty`, `countEmptyWaypointCommits`)
+  surfaces these post-hoc; 12 unit tests cover detection of empty
+  waypoint/...-ok commits, exclusion of checkpoint/* commits (which are
+  structurally empty by design), `since` range bounding, and the
+  real-world false-success pattern. The fix — refusing empty commits in
+  `commitWaypoint` — requires editing orchestrator.ts and is gated on
+  manual review per CLAUDE.md.
 
 ## Aspirations (gaps to close)
 
