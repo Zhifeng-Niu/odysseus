@@ -4,7 +4,7 @@
 > This is the agent's persistent sense of self across wakeful executions.
 > Seeded from reflect-source memory entries (mem_0faf0bf0e9, mem_0faf30b045,
 > mem_0faf55e6fe, mem_0faf799af1) surfaced in wp_mrs855ke007.
-> Last updated: 2026-07-21 — Empty-commit audit surfaces false-success pattern (Iteration 19). Building on Iteration 18's user-input fix, this iteration tackled a quieter but more pervasive honesty bug: the orchestrator's `commitWaypoint` (src/cerebellum/orchestrator.ts:1503-1505) intentionally allows empty commits by appending `--allow-empty` when `git diff --cached --quiet` returns 0. The resulting `waypoint/wp_*-ok` commits have fresh SHAs but zero file changes — the TUI shows a green "OK" badge and the event stream emits `waypoint-committed`, but the agent produced nothing. Initial investigation focused on the single known empty commit `43b6a7c` (a waypoint for the user input "想想如果你要变成世界第一的agent..."); running the new audit module against the live repo revealed the problem is systemic — **11 of ~27 recent waypoint commits are empty (~40%)**. The new `src/cerebellum/commit-audit.ts` module exposes `detectEmptyWaypointCommits`, `isCommitEmpty`, and `countEmptyWaypointCommits`. Detection strategy: walk `git log --shortstat --format=%H|%s|%aI`, flag commits whose stat line reports 0 files changed (or has no stat line at all), filter to subjects matching `waypoint/...-ok` (excludes `checkpoint/...` which are structurally empty by design), and return reverse-chronological results with full 40-char SHA + subject + ISO date. Supports `since?: string` range bounding and `limit?: number` cap (default 1000). 12 unit tests cover: empty-commit detection (incl. root commits), real-diff non-flagging, multi-commit ordering, subject-prefix filtering (excludes human/checkpoint commits), `since` bounding, invalid-range handling, field completeness, count aggregation, and a regression test that reproduces the exact `43b6a7c` pattern (`checkpoint/wp_*-start` followed by empty `waypoint/wp_*-ok`). Editing orchestrator.ts to refuse empty commits is the right structural fix but is gated on manual review per CLAUDE.md; the audit module makes the problem measurable in the meantime. Full suite 536/536.
+> Last updated: 2026-07-21 — Progress verify gate blocks empty commits at the source (Iteration 20). Iteration 19 surfaced the false-success pattern (40% of recent waypoint commits were empty) but could only measure it post-hoc; the orchestrator's `commitWaypoint` could not be patched in-place due to the manual-review constraint on `src/cerebellum/orchestrator.ts`. This iteration closes the loop by adding a new `'progress'` layer to `src/cerebellum/verify.ts`: runs `git status --porcelain` and fails the verify gate when the working tree has zero changes vs HEAD. The verify gate runs at orchestrator.ts:800, BEFORE `commitWaypoint` at :867 — so a failing progress layer forces the rollback/failure branch and the empty commit is never reached. Both entry points in `src/index.ts` (CLI + voyage console) now use `verifyLayers: ['progress', 'syntax', 'tests']` (progress first because it's the cheapest check). The layer handles three cases: (a) any working-tree change → pass, (b) clean tree → fail with "empty working tree" detail, (c) git itself errors (non-repo, corrupt HEAD) → fail rather than silently pass. 7 unit tests cover new-file, modified-file, nested-untracked, deletion, clean-tree (the false-success case), non-repo, and combined-with-syntax scenarios. The Active Limitation entry for the empty-commit pattern has been updated: the pattern is now structurally blocked at the verify gate even though `commitWaypoint` itself still allows empty commits — the orchestrator.ts source-level fix remains manual-review-gated but is no longer load-bearing for honesty. Full suite 543/543.
 
 ## Identity
 
@@ -308,6 +308,24 @@ a conversational turn is over, the same way a person does.
   reproduces the exact `43b6a7c` pattern. The structural fix —
   refusing empty commits in `commitWaypoint` — is documented in
   Active Limitations and gated on manual review per CLAUDE.md.
+- **Progress-gated commit honesty.** As of 2026-07-21 (Iteration 20),
+  the verify gate refuses to pass a waypoint that produced no file
+  changes. The new `'progress'` layer in `src/cerebellum/verify.ts`
+  runs `git status --porcelain` and fails when the working tree matches
+  HEAD exactly — the signature of the false-success pattern Iteration 19
+  quantified at ~40% of recent waypoint commits. The layer plugs into
+  the existing verify framework (runs at orchestrator.ts:800, before
+  `commitWaypoint` at :867), so the orchestrator's `--allow-empty` bug
+  becomes unreachable: `verify.passed === false` forces the
+  rollback/failure branch, and the empty commit is never created. Both
+  entry points in `src/index.ts` use `verifyLayers: ['progress',
+  'syntax', 'tests']` — progress first because it's the cheapest check
+  (one `git status` invocation vs spawning tsc and vitest). 7 unit
+  tests cover new-file, modified-file, nested-untracked, deletion,
+  clean-tree (the false-success case), non-repo (git itself errors),
+  and combined-with-syntax scenarios. This is the second verify-layer
+  self-extension (after the tests layer in Iteration 13); the verify
+  framework's open-layer design continues to pay off.
 - **Test-gated self-verification.** As of 2026-07-21 (Iteration 13),
   the verify gate runs the full vitest suite (442 tests) after every
   waypoint, not just `tsc --noEmit`. The `tests` layer in
@@ -345,24 +363,23 @@ a conversational turn is over, the same way a person does.
   the hard gate (2026-07-21) now structurally refuses tool calls that
   arrive in the same turn as the marker — so even if I slip, the worst
   case is a retry, not a broken protocol.
-- **Empty-commit false-success pattern.** As of 2026-07-21 (Iteration 19
-  audit), the orchestrator's `commitWaypoint` (src/cerebellum/orchestrator.ts
-  :1503-1505) intentionally allows empty commits: when `git diff --cached
-  --quiet` returns 0, the code appends `--allow-empty` and creates a
-  commit anyway. The result is a `waypoint/wp_*-ok` commit with a fresh
-  SHA but zero file changes. From the operator's perspective this is a
-  *false success*: the TUI shows a green "OK" badge, the event stream
-  emits `waypoint-committed`, and `git log` shows a new commit, but the
-  agent produced nothing of value. An audit run on the live repo found
-  11 empty waypoint commits out of ~27 recent — roughly 40% of "successes"
-  were hollow. The new `src/cerebellum/commit-audit.ts` module
-  (`detectEmptyWaypointCommits`, `isCommitEmpty`, `countEmptyWaypointCommits`)
-  surfaces these post-hoc; 12 unit tests cover detection of empty
-  waypoint/...-ok commits, exclusion of checkpoint/* commits (which are
-  structurally empty by design), `since` range bounding, and the
-  real-world false-success pattern. The fix — refusing empty commits in
-  `commitWaypoint` — requires editing orchestrator.ts and is gated on
-  manual review per CLAUDE.md.
+- **Empty-commit false-success pattern (blocked at verify gate).** As of
+  2026-07-21 (Iteration 20), the orchestrator's `commitWaypoint`
+  (src/cerebellum/orchestrator.ts:1503-1505) still intentionally allows
+  empty commits via `--allow-empty` when `git diff --cached --quiet`
+  returns 0 — that source-level fix remains gated on manual review per
+  CLAUDE.md. But the pattern is now **structurally blocked upstream**:
+  the new `'progress'` verify layer (Iteration 20) runs `git status
+  --porcelain` before `commitWaypoint` is reached and fails the verify
+  gate when the working tree has zero changes. `verify.passed === false`
+  forces the rollback/failure branch, so the empty-commit code path in
+  `commitWaypoint` becomes unreachable in production. The post-hoc
+  audit (`src/cerebellum/commit-audit.ts` from Iteration 19) remains in
+  place as a defense-in-depth measure — any future regression that
+  re-opens the source-level path will still be visible in git log.
+  Removing the `--allow-empty` branch from `commitWaypoint` is now a
+  cosmetic fix rather than a load-bearing one; it's still worth doing
+  for defense-in-depth, but honesty no longer depends on it.
 
 ## Aspirations (gaps to close)
 

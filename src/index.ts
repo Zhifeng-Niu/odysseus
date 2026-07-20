@@ -34,7 +34,10 @@ async function runCli(
     provider,
     registry,
     tracePath,
-    verifyLayers: ['syntax', 'tests'],
+    // Iteration 20 — progress gate first: cheapest check, and blocks the
+    // empty-commit false-success pattern before tsc/vitest burn cycles on
+    // a waypoint that produced nothing. See src/cerebellum/verify.ts.
+    verifyLayers: ['progress', 'syntax', 'tests'],
     mission: 'Iterate on the Odysseus spike codebase (Iteration 0 seed → co-evolution)',
   });
 
@@ -53,7 +56,8 @@ function runVoyageConsole(
     provider,
     registry,
     tracePath,
-    verifyLayers: ['syntax', 'tests'],
+    // Iteration 20 — progress gate first (cheapest, blocks empty commits).
+    verifyLayers: ['progress', 'syntax', 'tests'],
     // autoApprove defaults to false in TTY contexts — see orchestrator.ts.
   });
 
