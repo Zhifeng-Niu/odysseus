@@ -75,6 +75,36 @@ describe('selectStrategy (Iteration 0: engineer only)', () => {
     expect(prompt).toContain('tsconfig.json');
     expect(prompt).toContain('.gitignore');
   });
+
+  test('ENGINEER_STRATEGY prompt teaches PROJECT CONVENTIONS (Iteration 40)', () => {
+    // Iteration 40 finding: maxIterations failures (16/16 turns) frequently
+    // started with the agent writing a test to src/cerebellum/<x>.test.ts,
+    // running vitest, seeing "no test files found", then iterating on
+    // wrong fixes (rename, re-import, rewrite) because the real bug —
+    // vitest's include glob — was invisible to it. One waypoint alone
+    // (wp_mrrrhirp007) burned ~6 iterations on this class of confusion.
+    //
+    // The prompt must teach four conventions that are structural, not
+    // stylistic:
+    //   1. Tests live ONLY under tests/unit/. Anything else won't run.
+    //   2. The vitest include glob is tests/**/*.test.ts — exact string.
+    //   3. The entry cwd is the project root; `cd` is forbidden.
+    //   4. Source files stay < 300 lines; extractions are the escape valve.
+    //
+    // If this assertion fails, the agent will revert to path-guessing on
+    // every test-writing goal and burn the iteration budget.
+    const prompt = ENGINEER_STRATEGY.systemPrompt;
+    expect(prompt).toContain('PROJECT CONVENTIONS');
+    expect(prompt).toContain('tests/unit/<module>.test.ts');
+    expect(prompt).toContain('tests/**/*.test.ts');
+    expect(prompt).toContain('WILL NOT RUN');
+    // "no test files found" is the exact vitest diagnostic the agent will
+    // see; naming it in the prompt lets the agent pattern-match the error
+    // to the convention in one hop.
+    expect(prompt).toContain('no test files found');
+    expect(prompt).toContain('NEVER run `cd`');
+    expect(prompt).toContain('< 300 lines');
+  });
 });
 
 describe('detectConversationalDone', () => {

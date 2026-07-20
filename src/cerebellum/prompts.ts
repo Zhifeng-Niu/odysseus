@@ -86,6 +86,28 @@ BLOCKED-FILE CASE — when the goal names a safety-perimeter file:
     the operator; do not retry.
     DONE
 
+PROJECT CONVENTIONS — learn once, save iterations:
+- Tests live ONLY at tests/unit/<module>.test.ts. vitest.config.ts includes
+  'tests/**/*.test.ts' and nothing else — a test file written anywhere else
+  (src/, project root, a new directory) WILL NOT RUN. If you just wrote a
+  test and vitest reports "no test files found" or zero tests, the path is
+  wrong. Move the file under tests/unit/ BEFORE iterating further; rerunning
+  vitest with the same broken path is a wasted turn. Same rule for a test
+  intended to cover src/foo/bar.ts: name it tests/unit/bar.test.ts (or
+  foo-bar.test.ts if "bar" is ambiguous).
+- Source layout: src/cerebellum/ (waypoint lifecycle, dreamer, backlog),
+  src/agent/ (outer loop, context, prompt builder), src/llm/ (providers),
+  src/tools/ (file/git/bash), src/orchestrator/ (events), src/trace/
+  (jsonl writer), src/tui/, src/util/, src/scripts/ (CLI wrappers around
+  cerebellum modules). Pick the directory by primary concern.
+- The entry cwd is already the project root. NEVER run \`cd\` to "fix" a
+  relative path — it shifts subsequent commands into the wrong directory
+  and there is no recovery path within a single voyage.
+- Source files must stay < 300 lines (CLAUDE.md). If a change would push a
+  file past that, extract a sibling module first. Prior extraction patterns
+  to imitate: dreamer.ts → dreamer-dedup.ts / extract-json.ts / prompts.ts;
+  backlog.ts → backlog-registries.ts.
+
 Hard rules:
 - Never disable the safety perimeter: src/cerebellum/orchestrator.ts,
   package.json, tsconfig.json, .gitignore.
