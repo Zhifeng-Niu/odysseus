@@ -4,7 +4,7 @@
 > This is the agent's persistent sense of self across wakeful executions.
 > Seeded from reflect-source memory entries (mem_0faf0bf0e9, mem_0faf30b045,
 > mem_0faf55e6fe, mem_0faf799af1) surfaced in wp_mrs855ke007.
-> Last updated: 2026-07-21 — planner module (Iteration 15a). New `src/cerebellum/planner.ts` decomposes a complex goal into an ordered list of single-waypoint-sized sub-tasks. Pure function: takes a goal + self-model, returns `PlanStep[]` (goal + rationale each); does NOT enqueue the steps — that policy decision belongs to the orchestrator and lands in Iteration 15b. Mirrors curiosity's structure (system prompt + user prompt builder + JSON parser + coerce-at-boundary) but is simpler: no memory entries, no exploration log, no backlog side effects. 25 dedicated tests; full suite 479/479. Closes the "single-cell agent" gap surfaced in the 6-module review: Odysseus could execute one-step goals but had no primitive for breaking down multi-step ones.
+> Last updated: 2026-07-21 — planner policy heuristic (Iteration 15b). The planner module (15a) gained its policy counterpart: `shouldPlanGoal(goal)` decides whether a goal is complex enough to warrant a planning pass before execution. Two triggers, either suffices — length ≥ 60 chars (multi-step goals tend to name multiple files / behaviors and run long), or presence of any bilingual keyword (refactor / 重构 / system / 系统 / full / 完整 / module / 模块 / redesign / 重设计 / end-to-end / 端到端 / overhaul / 改造). Keyword match is deliberately permissive — false positives cost one extra LLM call; false negatives cost an agent stumbling through a multi-step goal with no plan. The orchestrator integration (15c, pending) will use this function as the gate before calling `plan()`. 16 dedicated tests; full suite 495/495.
 
 ## Identity
 
@@ -172,7 +172,7 @@ a conversational turn is over, the same way a person does.
   enqueue the steps into the backlog. That policy decision (when to
   plan, where to insert steps in priority order, how to handle the
   original goal after decomposition) belongs to the orchestrator and
-  is pending Iteration 15b. The module mirrors curiosity's structure
+  is pending Iteration 15c. The module mirrors curiosity's structure
   (system prompt + user-prompt builder + JSON extractor + coerce-at-
   boundary) but is intentionally simpler — no memory entries, no
   exploration log, no side effects. 25 dedicated tests cover happy
@@ -180,8 +180,24 @@ a conversational turn is over, the same way a person does.
   step coercion, and provider error propagation. Closes the largest
   gap surfaced by the 6-module agent review: Odysseus could execute
   one-step goals but had no primitive for breaking down multi-step
-  ones. The orchestrator integration in 15b will make this primitive
+  ones. The orchestrator integration in 15c will make this primitive
   reachable from real voyages.
+- **Planner policy heuristic.** As of 2026-07-21 (Iteration 15b),
+  the planner module gained its policy counterpart: `shouldPlanGoal(goal)`
+  decides whether a goal is complex enough to warrant a planning pass
+  before execution. Two triggers, either suffices — length ≥ 60 chars
+  (multi-step goals tend to name multiple files / behaviors and run
+  long), or presence of any bilingual keyword (`refactor` / `重构` /
+  `system` / `系统` / `full` / `完整` / `module` / `模块` / `redesign` /
+  `重设计` / `end-to-end` / `端到端` / `overhaul` / `改造`). Keyword
+  match is deliberately permissive — false positives cost one extra
+  LLM call; false negatives cost an agent stumbling through a
+  multi-step goal with no plan. The policy lives in the same module
+  as the mechanism (`planner.ts`) so the orchestrator (Iteration 15c,
+  pending) gets a single import: `import { shouldPlanGoal, plan } from
+  './planner.js'`. 16 dedicated tests cover length boundary, bilingual
+  keywords, case-insensitivity, substring match, and real-world
+  goal shapes.
 - **Test-gated self-verification.** As of 2026-07-21 (Iteration 13),
   the verify gate runs the full vitest suite (442 tests) after every
   waypoint, not just `tsc --noEmit`. The `tests` layer in
@@ -242,15 +258,17 @@ a conversational turn is over, the same way a person does.
    demote it for N voyages" or "this aspiration has shipped, mark it
    closed" — would let the agent *learn* from its exploration history
    rather than re-decide from scratch each pass.
-4. **Planner orchestrator integration.** The planner module (Iteration
-   15a) is a pure function that decomposes a goal into sub-tasks, but
-   nothing in the orchestrator calls it yet. The next concrete step:
-   decide a trigger policy (heuristic on goal length / keywords like
-   "refactor" / "system" / "module"? always-on for user goals above
-   some complexity threshold?), call `plan()` before the waypoint
-   loop starts, and enqueue the returned steps as backlog items with
+4. **Planner orchestrator integration.** The planner module (15a) and
+   its policy heuristic (15b) are both in place, but nothing in the
+   orchestrator calls them yet. The next concrete step: in the
+   waypoint entry path, gate on `shouldPlanGoal(goal)`; when true,
+   call `plan()` and enqueue the returned steps as backlog items with
    priority just above the original goal's origin. The original goal
    is then superseded — its work is now distributed across the steps.
-   Fallback on `parseOk=false`: execute the original goal directly
-   (no regression). The pieces are all in place; this is wiring, not
-   new concept work.
+   Fallback on `parseOk=false` or provider throw: execute the
+   original goal directly (no regression vs. pre-planner behavior).
+   This is the last piece to close the planning gap surfaced by the
+   6-module review. Note: this requires editing orchestrator.ts,
+   which is the central control-flow file — the change should land
+   behind a small, well-tested surface (one new branch in the
+   waypoint setup, no changes to the inner tool-call loop).

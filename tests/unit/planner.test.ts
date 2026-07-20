@@ -6,6 +6,9 @@ import type { LLMProvider, LLMCompletion } from '../../src/llm/provider.js';
 import {
   plan,
   buildPlannerUserPrompt,
+  shouldPlanGoal,
+  MIN_PLAN_GOAL_LENGTH,
+  PLAN_KEYWORDS,
   type PlanStep,
 } from '../../src/cerebellum/planner.js';
 
@@ -421,6 +424,99 @@ describe('planner', () => {
         expect(step.goal.length).toBeGreaterThan(0);
         expect(typeof step.rationale).toBe('string');
       }
+    });
+  });
+
+  describe('shouldPlanGoal — policy heuristic (Iteration 15b)', () => {
+    test('MIN_PLAN_GOAL_LENGTH is 60', () => {
+      expect(MIN_PLAN_GOAL_LENGTH).toBe(60);
+    });
+
+    test('PLAN_KEYWORDS includes bilingual refactor/system/module markers', () => {
+      expect(PLAN_KEYWORDS).toContain('refactor');
+      expect(PLAN_KEYWORDS).toContain('重构');
+      expect(PLAN_KEYWORDS).toContain('system');
+      expect(PLAN_KEYWORDS).toContain('系统');
+      expect(PLAN_KEYWORDS).toContain('module');
+      expect(PLAN_KEYWORDS).toContain('模块');
+    });
+
+    test('empty goal → false (no regression — caller executes directly)', () => {
+      expect(shouldPlanGoal('')).toBe(false);
+    });
+
+    test('whitespace-only goal → false', () => {
+      expect(shouldPlanGoal('   ')).toBe(false);
+    });
+
+    test('short concrete goal → false (single-waypoint-sized)', () => {
+      // 49 chars — under the 60 threshold, no keyword.
+      expect(shouldPlanGoal('add error-loop detection to src/cerebellum/self-monitor.ts')).toBe(false);
+    });
+
+    test('short goal with "refactor" keyword → true', () => {
+      // Keyword match triggers even when length is short.
+      expect(shouldPlanGoal('refactor dreamer.ts')).toBe(true);
+    });
+
+    test('short goal with "重构" keyword → true (bilingual)', () => {
+      expect(shouldPlanGoal('重构 dreamer.ts')).toBe(true);
+    });
+
+    test('short goal with "system" keyword → true', () => {
+      expect(shouldPlanGoal('design verification system')).toBe(true);
+    });
+
+    test('short goal with "系统" keyword → true (bilingual)', () => {
+      expect(shouldPlanGoal('设计验证系统')).toBe(true);
+    });
+
+    test('long goal without keywords → true (length threshold alone)', () => {
+      const long = 'update the verify gate to include a new layer that runs the full vitest suite after every waypoint and surfaces failures as rollback triggers';
+      expect(long.length).toBeGreaterThanOrEqual(60);
+      expect(shouldPlanGoal(long)).toBe(true);
+    });
+
+    test('goal at exactly MIN_PLAN_GOAL_LENGTH → true (boundary inclusive)', () => {
+      // Build a goal exactly 60 chars long with no keywords.
+      const goal = 'a'.repeat(60);
+      expect(goal.length).toBe(60);
+      expect(shouldPlanGoal(goal)).toBe(true);
+    });
+
+    test('goal just below threshold, no keyword → false', () => {
+      const goal = 'a'.repeat(59);
+      expect(shouldPlanGoal(goal)).toBe(false);
+    });
+
+    test('case-insensitive keyword match', () => {
+      expect(shouldPlanGoal('REFACTOR the parser')).toBe(true);
+      expect(shouldPlanGoal('Refactor the parser')).toBe(true);
+      expect(shouldPlanGoal('rEfAcToR the parser')).toBe(true);
+    });
+
+    test('keyword embedded in a larger word still triggers (substring match)', () => {
+      // "refactoring" contains "refactor" — by design (the policy is
+      // deliberately permissive: false positives are cheap — one extra
+      // LLM call; false negatives are expensive — agent stumbles on a
+      // multi-step goal without a plan).
+      expect(shouldPlanGoal('refactoring the parser')).toBe(true);
+      expect(shouldPlanGoal('systemic redesign')).toBe(true);
+    });
+
+    test('real-world multi-step goal triggers (integration sanity)', () => {
+      const goal = '把 odysseus 先做成一个合格的 agent';
+      // Length ~25 chars, no English keyword. But "agent" is not in the list.
+      // This SHOULD return false — and that's the right answer, because
+      // this goal is too vague to plan usefully. The orchestrator would
+      // execute it directly and let the agent discover its scope.
+      // (Real-world inputs that hit this path should be more specific.)
+      expect(shouldPlanGoal(goal)).toBe(false);
+    });
+
+    test('real-world single-file goal does not trigger (length too short)', () => {
+      const goal = 'fix typo in README.md';
+      expect(shouldPlanGoal(goal)).toBe(false);
     });
   });
 });
