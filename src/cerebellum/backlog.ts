@@ -230,8 +230,6 @@ export async function enqueueBacklog(
     };
   }
   const file = await loadBacklogFile(rootDir);
-  // Track this enqueue in the per-goal retry counter.
-  incrementRetryCounter(trimmedGoal);
   const item: BacklogItem = {
     id: options?.id ?? generateBacklogId(),
     goal: trimmedGoal,
@@ -247,6 +245,13 @@ export async function enqueueBacklog(
     items: [...file.items, item],
   };
   await saveBacklogFile(rootDir, nextFile);
+  // Iteration 24 — increment the retry counter AFTER save succeeds. The
+  // original code incremented before save, so a failed save (disk full,
+  // permissions) would bump the counter without the item landing in the
+  // queue — three such failures and isRetryExhausted would silently block
+  // all future enqueues of this goal, permanently freezing the agent on
+  // a goal that was never actually queued.
+  incrementRetryCounter(trimmedGoal);
   return item;
 }
 
@@ -268,7 +273,6 @@ async function enqueueUserOrigin(
   trimmedGoal: string,
   options?: EnqueueOptions
 ): Promise<BacklogItem> {
-  incrementRetryCounter(trimmedGoal);
   const file = await loadBacklogFile(rootDir);
   const item: BacklogItem = {
     id: options?.id ?? generateBacklogId(),
@@ -285,6 +289,8 @@ async function enqueueUserOrigin(
     items: [...file.items, item],
   };
   await saveBacklogFile(rootDir, nextFile);
+  // Iteration 24 — increment after save succeeds (see enqueueBacklog fix).
+  incrementRetryCounter(trimmedGoal);
   return item;
 }
 
@@ -388,11 +394,15 @@ export async function dequeueBacklog(rootDir: string): Promise<BacklogItem | nul
   if (file.items.length === 0) return null;
   const sorted = [...file.items].sort(byPriorityThenTime);
   const next = sorted[0]!;
-  // Count this dequeue as a seed attempt so the exhaustion counter
-  // tracks how many times the goal has been dispatched for execution.
-  incrementSeedAttempt(next.goal);
   const remaining = file.items.filter((it) => it.id !== next.id);
   await saveBacklogFile(rootDir, { version: 1, items: remaining });
+  // Iteration 24 — increment the seed counter AFTER save succeeds. The
+  // original code incremented before save, so a failed save would bump the
+  // counter without actually dequeuing — three such failures and the goal
+  // would be permanently blocked by isSeedExhausted, even though it never
+  // left the queue. Outbox ordering: mutate durable state first, then the
+  // in-memory counter that depends on it.
+  incrementSeedAttempt(next.goal);
   return next;
 }
 

@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -23,6 +23,7 @@ import {
 import {
   incrementSeedAttempt,
   clearSeedAttempts,
+  getSeedAttemptCount,
 } from '../../src/cerebellum/seedAttempts.js';
 
 describe('backlog queue', () => {
@@ -459,5 +460,48 @@ describe('Iteration 18 — user-origin bypasses dedup checks', () => {
     const dequeued = await dequeueBacklog(rootDir);
     expect(dequeued?.sourceWaypointId).toBe('wp_abc123');
     expect(dequeued?.priority).toBe(25);
+  });
+});
+
+describe('Iteration 24 — counter drift on save failure (outbox ordering)', () => {
+  let rootDir: string;
+
+  beforeEach(async () => {
+    clearRetryCounters();
+    clearCompletedGoals();
+    clearSeedAttempts();
+    clearSkippedEnqueues();
+    rootDir = await mkdtemp(join(tmpdir(), 'ody-bl-cd-'));
+  });
+
+  afterEach(async () => {
+    // Restore writable in case a test failed mid-block.
+    await chmod(rootDir, 0o755).catch(() => undefined);
+    await rm(rootDir, { recursive: true, force: true });
+  });
+
+  test('enqueueBacklog does NOT increment retry counter when save throws', async () => {
+    // The original code called incrementRetryCounter BEFORE saveBacklogFile.
+    // If save threw, the counter was already bumped — after 3 such failures,
+    // isRetryExhausted would return true and silently block all future
+    // enqueues. The fix moves the increment AFTER successful save.
+    //
+    // We force save to throw by making rootDir read-only after creation.
+    await chmod(rootDir, 0o555);
+    await expect(enqueueBacklog(rootDir, 'blocked', 'user')).rejects.toThrow();
+    expect(getRetryCount('blocked')).toBe(0);
+  });
+
+  test('dequeueBacklog does NOT increment seed counter when save throws', async () => {
+    // Same pattern as enqueue: seed counter must only count actual
+    // dequeues, not failed save attempts. Original code mutated the
+    // counter before saveBacklogFile — fix reorders.
+    //
+    // Seed an item first (while dir is writable), THEN make it read-only
+    // and try to dequeue.
+    await enqueueBacklog(rootDir, 'queued', 'user');
+    await chmod(rootDir, 0o555);
+    await expect(dequeueBacklog(rootDir)).rejects.toThrow();
+    expect(getSeedAttemptCount('queued')).toBe(0);
   });
 });
