@@ -33,6 +33,7 @@ a conversational turn is over, the same way a person does.
 - **Lazy checkpoint.** Git checkpoint deferred to first mutating tool call (file-write/edit, git-commit, bash). Read-only flows pay zero git overhead.
 - **Side-effect-gated dreamer.** Dreaming skipped when no mutating tool ran (checkpointSha undefined = nothing to dream about).
 - **Post-hoc self-diagnosis.** During dreaming: surfaces conversational goals, repeated-tool-call loops, max-iteration exhaustion as distinct failure modes.
+- **Dreamer goal-quality gate** (Iteration 34). Dreamer's prompt refuses to seed three classes of doomed goals: (1) edit targets on the safety perimeter (orchestrator.ts/package.json/tsconfig.json/.gitignore) — agent would emit BLOCKED+DONE on turn 1; (2) multi-stage design goals chaining 3+ verbs (draft→critique→revise); (3) goals self-labeled "requires manual review". Cuts 4.8M tokens of known-bad seeds from the 70-waypoint voyage baseline.
 - **Stuck-loop recovery.** Repeated-tool-call detector injects contextual hints into the message stream (not abort-and-retry).
 - **Goal-quality awareness.** Concrete file-and-function goals converge; over-specified or verb-less goals do not.
 - **Curiosity goal source.** Third origin beyond `user` and `dream`. When dreamer produces nothing AND real work happened this voyage, proposes the smallest concrete file-scoped step toward an aspiration. Priority 90 (preempts idle dreaming, yields to failure-driven reflection). ON by default; `ODYSSEUS_CURIOSITY=0` disables.

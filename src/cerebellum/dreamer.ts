@@ -61,10 +61,34 @@ Rules:
     BAD:  "add deduplication logic"          (where? how?)
     BAD:  "improve error handling"           (which file? which error?)
     BAD:  "make the agent more reliable"     (not actionable)
+- FORBIDDEN: goals whose edit target is a safety-perimeter file. The
+  safety perimeter is: src/cerebellum/orchestrator.ts, package.json,
+  tsconfig.json, .gitignore. The wakeful agent cannot edit these files
+  and will emit BLOCKED+DONE on turn 1 (Iteration 33), so seeding such
+  a goal wastes a checkpoint + verify cycle for zero progress. Bad
+  examples:
+    BAD:  "add recall step at runWaypoint in src/cerebellum/orchestrator.ts"
+    BAD:  "wire new validator into package.json scripts"
+  If a reflection entry points at a safety-perimeter file, do not seed
+  it as a backlogItem — output a memoryEntry noting the gap instead.
+- FORBIDDEN: multi-stage goals that chain several verbs across 3+ design
+  decisions. Each backlogItem must fit in ONE waypoint (≤16 turns). If
+  a change needs "draft→critique→revise" or "tokenize→retrieve→inject",
+  split it into separate backlogItems or leave for a future dream.
+- FORBIDDEN: goals that explicitly self-label as requiring human review
+  ("Sacred-file change — requires manual review", "requires human
+  escalation"). These belong in memoryEntries as aspirations, not in
+  backlogItems as actionable work.
 - Each backlogItem must be a viable waypoint seed — a wakeful run must be able
   to start, pick an anchor file, and make a diff without further clarification.
 - Goals already present in <recent> with outcome=success will be SKIPPED — do
   not re-propose work that has already shipped.
+- Goals in <recent> with outcome=failure or abandoned carry information too.
+  If a failed goal was too vague or hit a safety perimeter, do NOT re-propose
+  it in a rephrased form ("implement Stage 2.1" → "implement Stage 2.2" of
+  the same roadmap is the same class of failure waiting to happen). Re-seed
+  only if you can name a concrete change in the goal text that would unblock
+  convergence.
 - memoryEntries should be reusable insights, not one-off notes.
 - Entries in <reflection> carry diagnostic depth — each one describes a systemic
   gap you identified about yourself. For each reflection entry, ask: "what

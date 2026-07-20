@@ -517,6 +517,43 @@ describe('dreamer', () => {
   });
 });
 
+describe('dreamer prompt safety-perimeter / vague-goal guards (Iteration 34)', () => {
+  // Iteration 34 finding: 4 recent failed waypoints (totaling 4.8M input
+  // tokens) traced back to dreamer-seeded goals that violated three patterns:
+  //   1. Edit target was a safety-perimeter file (orchestrator.ts)
+  //   2. Multi-stage design goals (tokenize→retrieve→inject) — not viable
+  //      in one 16-turn waypoint
+  //   3. Goals self-labeled "Sacred-file change — requires manual review"
+  //
+  // Each rule below is a literal-string invariant on DREAM_SYSTEM_PROMPT.
+  // If the prompt stops teaching one of these rules, the corresponding
+  // failure mode returns. We read the dreamer.ts source directly because
+  // DREAM_SYSTEM_PROMPT is module-internal (not exported) — same pattern
+  // the audit-empty-commits tests use for invariant checking.
+
+  test('DREAM_SYSTEM_PROMPT forbids safety-perimeter edit targets', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const src = await readFile('src/cerebellum/dreamer.ts', 'utf8');
+    expect(src).toContain('FORBIDDEN: goals whose edit target is a safety-perimeter file');
+    expect(src).toContain('src/cerebellum/orchestrator.ts');
+    expect(src).toContain('Sacred-file change');
+  });
+
+  test('DREAM_SYSTEM_PROMPT forbids multi-stage design goals', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const src = await readFile('src/cerebellum/dreamer.ts', 'utf8');
+    expect(src).toContain('FORBIDDEN: multi-stage goals');
+    expect(src).toContain('draft→critique→revise');
+  });
+
+  test('DREAM_SYSTEM_PROMPT teaches dreamer to not re-seed failed patterns in disguise', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const src = await readFile('src/cerebellum/dreamer.ts', 'utf8');
+    expect(src).toContain('Goals in <recent> with outcome=failure or abandoned carry information');
+    expect(src).toContain('implement Stage 2.1');
+  });
+});
+
 describe('dreamer dedup helpers', () => {
   test('normalizeGoal strips punctuation and lowercases', () => {
     expect(normalizeGoal('Add Retry to GLM!')).toBe('add retry to glm');
