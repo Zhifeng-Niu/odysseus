@@ -43,7 +43,23 @@ export async function runVerify(input: VerifyInput): Promise<VerifyOutput> {
         details.push(`--- syntax ---\n${r.stdout}\n${r.stderr}`);
       }
     }
-    // lint, tests, metric layers land in Iteration 2+ via self-extension
+    if (layer === 'tests') {
+      // Run the full vitest suite. --passWithNoTests ensures the layer
+      // passes even when no test files exist (e.g. a brand-new codebase
+      // or a waypoint that touches only non-test code). The agent's own
+      // 442-test suite is the safety net that catches regressions before
+      // they ship.
+      const r = await execFileNoThrow(
+        'npx',
+        ['vitest', 'run', '--passWithNoTests'],
+        { cwd: input.cwd, env: input.env ?? process.env },
+      );
+      results.tests = r.exitCode === 0 ? 'pass' : 'fail';
+      if (r.exitCode !== 0) {
+        details.push(`--- tests ---\n${r.stdout}\n${r.stderr}`);
+      }
+    }
+    // lint, metric layers land in a future iteration via self-extension
   }
 
   const passed = input.layers.every((layer) => results[layer] === 'pass');

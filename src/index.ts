@@ -34,7 +34,7 @@ async function runCli(
     provider,
     registry,
     tracePath,
-    verifyLayers: ['syntax'],
+    verifyLayers: ['syntax', 'tests'],
     mission: 'Iterate on the Odysseus spike codebase (Iteration 0 seed → co-evolution)',
   });
 
@@ -53,7 +53,7 @@ function runVoyageConsole(
     provider,
     registry,
     tracePath,
-    verifyLayers: ['syntax'],
+    verifyLayers: ['syntax', 'tests'],
     // autoApprove defaults to false in TTY contexts — see orchestrator.ts.
   });
 

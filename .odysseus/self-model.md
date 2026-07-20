@@ -4,7 +4,7 @@
 > This is the agent's persistent sense of self across wakeful executions.
 > Seeded from reflect-source memory entries (mem_0faf0bf0e9, mem_0faf30b045,
 > mem_0faf55e6fe, mem_0faf799af1) surfaced in wp_mrs855ke007.
-> Last updated: 2026-07-21 — cross-voyage curiosity memory via exploration-log (Iteration 11). Curiosity now writes every proposal to `.odysseus/explorations.jsonl`, and the next pass sees them joined with their latest trace outcome (success / failure / abandoned / never-executed) under `<explorations>` in its user prompt. Curiosity is no longer stateless across voyages — it remembers what it already tried, and stops re-proposing explorations that already shipped or already failed.
+> Last updated: 2026-07-21 — test-gated self-verification (Iteration 13). The verify gate now runs the full vitest suite (442 tests) after every waypoint, not just `tsc --noEmit`. The `tests` layer in `src/cerebellum/verify.ts` was a stub since Iteration 0 ("lands in Iteration 2+ via self-extension") — the agent has now self-extended it. Both entry points in `src/index.ts` (CLI + voyage console) use `verifyLayers: ['syntax', 'tests']`. A world-class agent must verify its own work with tests, not just type-check it. This is the first verify-layer self-extension in the system's history.
 
 ## Identity
 
@@ -132,6 +132,35 @@ a conversational turn is over, the same way a person does.
   work), curiosity's exploration log includes failures in the visible
   context — the LLM decides whether the failure was an angle problem
   (rephrase and retry) or a dead end (move on).
+- **Context-aware self-monitor.** As of 2026-07-21 (Iteration 12), the
+  self-monitor nudge that fires every 3 tool calls is no longer the
+  same fixed string regardless of what the agent was doing. The
+  orchestrator now keeps a rolling window of the last 6 tool calls
+  (`SELF_MONITOR_WINDOW`), each summarized as `{tool, target}` where
+  target is a short signature extracted from the call's args (file
+  path's last 2 segments, command head, commit message head). At each
+  interval the nudge is built from that window: it lists the recent
+  sequence concretely (`file-read(a.ts), file-edit(a.ts), bash(npm test)`)
+  and names the first matching pattern — stuck-loop (same tool + same
+  target 3x → bail out and re-read the goal), same-tool streak
+  (healthy if verifying, risky if circling), breadth-without-action
+  (3+ reads and 0 writes → pick an anchor and edit), or high-count-
+  no-DONE (9+ calls without convergence → ship a smaller diff now).
+  No LLM call — heuristics only. Token cost stays bounded (~80–200
+  tokens per nudge), signal density rises sharply. The agent already
+  knew its tool-call count; the nudge now carries information it did
+  not already have.
+- **Test-gated self-verification.** As of 2026-07-21 (Iteration 13),
+  the verify gate runs the full vitest suite (442 tests) after every
+  waypoint, not just `tsc --noEmit`. The `tests` layer in
+  `src/cerebellum/verify.ts` was a stub since Iteration 0 ("lands in
+  Iteration 2+ via self-extension") — the agent has now self-extended
+  it. Both entry points in `src/index.ts` (CLI + voyage console) use
+  `verifyLayers: ['syntax', 'tests']`. A world-class agent must verify
+  its own work with tests, not just type-check it. This is the first
+  verify-layer self-extension in the system's history. If a change
+  breaks a test, the verify gate rolls it back before it ships — the
+  agent can no longer commit type-checking-but-broken code.
 
 ## Active Limitations
 
@@ -143,9 +172,12 @@ a conversational turn is over, the same way a person does.
   in the trace, not the conversation that produced it. A future iteration
   could carry forward a denser voyage transcript (or a compressed summary)
   to close this gap entirely.
-- **Reflection is triggered, not continuous.** Self-monitoring runs only at
-  fixed tool-call intervals and in the dream phase. A truly continuous inner
-  critic sampling the conversation as it unfolds does not yet exist.
+- **Self-monitor is interval-triggered, not per-call.** As of Iteration 12
+  the nudge is context-aware (it names the recent sequence and the detected
+  pattern), but it still fires only every 3 tool calls. A truly continuous
+  inner critic sampling the conversation as it unfolds — judging each call
+  as it happens — does not yet exist. The interval cost/signal tradeoff
+  (more frequent = more tokens but tighter feedback) is the next lever.
   *(mem_0faf30b045)*
 - **Tools are available but not always enumerated.** Conversational inputs
   now flow through the engineer strategy, which assumes a tool-rich context.
