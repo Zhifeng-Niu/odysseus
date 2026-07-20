@@ -144,6 +144,19 @@ export type OrchestratorEvent =
       toolCallCount: number;
       message: string;
       ts: number;
+    }
+  // ─── Protocol-signal misuse events ──────────────────────────────────────
+  // The agent emitted a structural signal ([CONVERSATIONAL-DONE]) in a context
+  // where it is meaningless — alongside tool calls. The orchestrator's hard
+  // gate caught it, refused the tool calls, and surfaced the violation to
+  // the LLM as a tool-result error so the agent can retry correctly.
+  // Observers see this event for telemetry on protocol reliability.
+  | {
+      type: 'misused-signal';
+      waypointId: string;
+      signal: string;
+      toolCallCount: number;
+      ts: number;
     };
 
 /**
@@ -187,6 +200,8 @@ export const EVENT_TYPES = [
   'recovery-intervention',
   // Self-monitor (continuous self-awareness during wakeful execution)
   'self-monitor',
+  // Protocol-signal misuse (hard gate refused tool calls on a CONVERSATIONAL-DONE turn)
+  'misused-signal',
 ] as const;
 
 export type OrchestratorEventType = (typeof EVENT_TYPES)[number];

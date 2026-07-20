@@ -26,7 +26,12 @@ import {
 import { createCheckpoint } from './checkpoint.js';
 import { rollbackTo } from './rollback.js';
 import { runVerify, type VerifyLayer } from './verify.js';
-import { selectStrategy, setStrategyCwd, detectConversationalDone } from './strategy.js';
+import {
+  selectStrategy,
+  setStrategyCwd,
+  detectConversationalDone,
+  CONVERSATIONAL_DONE_MARKER,
+} from './strategy.js';
 import { appendTrace, readTrace } from '../trace/jsonl.js';
 import type { OrchestratorEvent } from '../orchestrator/events.js';
 import { InterruptedError, RejectedError, StuckLoopError } from '../orchestrator/errors.js';
@@ -325,6 +330,62 @@ export class CerebellumOrchestrator extends EventEmitter {
         this.state.totalOutput += completion.usage.outputTokens;
 
         if (completion.toolCalls && completion.toolCalls.length > 0) {
+          // CONVERSATIONAL-DONE HARD GATE — the marker is a stop signal
+          // (symmetric counterpart of DONE), and a stop signal is
+          // structurally meaningless alongside tool calls. If the agent
+          // emits both, it is confused about which protocol path it is on.
+          // We strip the marker from the assistant message, refuse every
+          // tool call with a clear protocol error, and let the LLM retry.
+          // This is defense-in-depth: in practice the agent rarely emits
+          // the marker here (its prompt teaches the two paths as exclusive),
+          // but the gate guarantees the protocol cannot be misused even
+          // under prompt drift or model substitution.
+          const misuseDetection = detectConversationalDone(completion.content);
+          if (misuseDetection.found) {
+            this.emitEvent({
+              type: 'misused-signal',
+              waypointId: waypoint.id,
+              signal: CONVERSATIONAL_DONE_MARKER,
+              toolCallCount: completion.toolCalls.length,
+              ts: Date.now(),
+            });
+            // Build assistant message with marker stripped (so downstream
+            // consumers never see the protocol token) + per-tool error
+            // results. The LLM sees the violation and can choose: emit
+            // marker alone (conversational path) or emit tool calls without
+            // the marker (work path).
+            history.push({
+              role: 'assistant',
+              content: misuseDetection.cleanContent,
+              toolCalls: completion.toolCalls,
+            });
+            if (misuseDetection.cleanContent) {
+              this.emitEvent({
+                type: 'assistant-message',
+                waypointId: waypoint.id,
+                content: misuseDetection.cleanContent,
+                ts: Date.now(),
+              });
+            }
+            for (const call of completion.toolCalls) {
+              const protocolError =
+                `protocol violation: ${CONVERSATIONAL_DONE_MARKER} cannot coexist with tool calls. ` +
+                `The marker is a stop signal (symmetric to DONE) and is structurally meaningless ` +
+                `alongside work. Choose one path: (a) emit text + ${CONVERSATIONAL_DONE_MARKER} ` +
+                `alone if this is a conversational turn, or (b) emit tool calls without the ` +
+                `marker if this is a code task.`;
+              history.push({
+                role: 'tool',
+                toolCallId: call.id,
+                content: JSON.stringify({ ok: false, error: protocolError }),
+              });
+            }
+            // Let the LLM see the errors and retry. The stuck-loop detector
+            // will catch repeated identical tool calls if the agent refuses
+            // to adapt.
+            continue;
+          }
+
           // Tool activity resets the conversational-turn counter — the agent
           // is making progress on a real code task.
           consecutiveTextOnly = 0;

@@ -40,18 +40,35 @@ function extractToolCalls(content: string): unknown {
   }
 }
 
+// Extract an optional `__content` override from a JSON-encoded response.
+// When a test needs the mock to return BOTH a non-JSON `content` string
+// (e.g. prose containing a protocol marker) AND structured `toolCalls`,
+// it can encode them as `{"__content": "...", "toolCalls": [...]}`.
+// The mock then returns the override as `content` and the parsed toolCalls.
+// Without an override, behavior is unchanged (raw response string is the
+// content), so existing tests are not affected.
+function extractContentOverride(content: string): string | undefined {
+  try {
+    const parsed = JSON.parse(content) as { __content?: unknown };
+    return typeof parsed.__content === 'string' ? parsed.__content : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function makeMockProvider(responses: string[]): LLMProvider {
   let call = 0;
   return {
     async complete(): Promise<LLMCompletion> {
-      const content = responses[Math.min(call, responses.length - 1)] ?? '';
+      const raw = responses[Math.min(call, responses.length - 1)] ?? '';
       call += 1;
+      const contentOverride = extractContentOverride(raw);
       return {
-        content,
+        content: contentOverride ?? raw,
         model: 'mock',
         usage: { inputTokens: 10, outputTokens: 5 },
         finishReason: 'stop',
-        toolCalls: content.startsWith('{') ? extractToolCalls(content) : undefined,
+        toolCalls: raw.startsWith('{') ? extractToolCalls(raw) : undefined,
       };
     },
     async *stream() {
@@ -519,6 +536,149 @@ describe('CerebellumOrchestrator', () => {
     // "agent emitted"), distinguishing it from the signal path:
     expect(result.failReason ?? '').toMatch(/^conversational stop/i);
     expect(result.failReason ?? '').not.toMatch(/^agent emitted/i);
+  });
+
+  test('hard gate: tool calls + [CONVERSATIONAL-DONE] in same turn → tool calls refused, marker stripped, LLM retries', async () => {
+    // Structural enforcement: the marker is a STOP signal and cannot coexist
+    // with tool calls. If the agent emits both in the same turn (model
+    // confusion, prompt drift), the hard gate:
+    //   1. emits a misused-signal event (telemetry)
+    //   2. strips the marker from the assistant-message content (UI never
+    //      sees the protocol token)
+    //   3. refuses every tool call with a protocol-violation error
+    //   4. lets the LLM see the errors and retry
+    // The LLM then chooses the correct path on retry.
+    const provider = makeMockProvider([
+      // Turn 1: confused — emits BOTH a tool call AND the marker. Encoded
+      // as JSON with a `__content` override so the mock returns the marker
+      // prose as content while still parsing the toolCalls array.
+      JSON.stringify({
+        __content:
+          'I will write the file now.\n[CONVERSATIONAL-DONE]',
+        toolCalls: [
+          {
+            id: 'call_1',
+            type: 'function',
+            function: {
+              name: 'file-write',
+              arguments: JSON.stringify({
+                path: join(workdir, 'oops.ts'),
+                content: 'export const oops = 1;',
+              }),
+            },
+          },
+        ],
+      }),
+      // Turn 2: agent recovered — emits tool call alone (no marker).
+      JSON.stringify({
+        toolCalls: [
+          {
+            id: 'call_2',
+            type: 'function',
+            function: {
+              name: 'file-write',
+              arguments: JSON.stringify({
+                path: join(workdir, 'ok.ts'),
+                content: 'export const ok = 1;',
+              }),
+            },
+          },
+        ],
+      }),
+      'DONE',
+    ]);
+
+    const orch = new CerebellumOrchestrator({
+      cwd: workdir,
+      provider,
+      registry,
+      tracePath,
+      verifyLayers: ['syntax'],
+    });
+    const events: OrchestratorEvent[] = [];
+    orch.on('event', (e) => {
+      events.push(e);
+    });
+
+    const result = await orch.runWaypoint({ goal: 'write ok.ts' });
+
+    // Waypoint completed successfully on the recovered path:
+    expect(result.outcome).toBe('success');
+    expect(result.iterationsUsed).toBe(3);
+
+    // The oops.ts file was NEVER written — the hard gate refused the tool
+    // call rather than executing it.
+    await expect(readFile(join(workdir, 'oops.ts'), 'utf8')).rejects.toThrow();
+
+    // The ok.ts file WAS written — the recovered turn's tool call executed.
+    const okContent = await readFile(join(workdir, 'ok.ts'), 'utf8');
+    expect(okContent).toContain('ok = 1');
+
+    // misused-signal event fired with the correct payload:
+    const misusedEvents = events.filter(
+      (e): e is Extract<OrchestratorEvent, { type: 'misused-signal' }> =>
+        e.type === 'misused-signal',
+    );
+    expect(misusedEvents.length).toBe(1);
+    expect(misusedEvents[0]!.signal).toBe('[CONVERSATIONAL-DONE]');
+    expect(misusedEvents[0]!.toolCallCount).toBe(1);
+
+    // The marker was stripped from the assistant-message events. The
+    // cleanContent emitted to the UI never contains the protocol token.
+    const assistantMessages = events.filter((e) => e.type === 'assistant-message');
+    for (const msg of assistantMessages) {
+      const content = (msg as { content: string }).content;
+      expect(content).not.toContain('[CONVERSATIONAL-DONE]');
+    }
+  });
+
+  test('hard gate: tool calls alone (no marker) are unaffected', async () => {
+    // Negative control — normal code-task path must not trigger the hard
+    // gate. The marker-detection logic runs on every tool-call turn, so a
+    // false positive here would break the primary work surface.
+    const provider = makeMockProvider([
+      JSON.stringify({
+        toolCalls: [
+          {
+            id: 'call_1',
+            type: 'function',
+            function: {
+              name: 'file-write',
+              arguments: JSON.stringify({
+                path: join(workdir, 'normal.ts'),
+                content: 'export const normal = 1;',
+              }),
+            },
+          },
+        ],
+      }),
+      'DONE',
+    ]);
+
+    const orch = new CerebellumOrchestrator({
+      cwd: workdir,
+      provider,
+      registry,
+      tracePath,
+      verifyLayers: ['syntax'],
+    });
+    const events: OrchestratorEvent[] = [];
+    orch.on('event', (e) => {
+      events.push(e);
+    });
+
+    const result = await orch.runWaypoint({ goal: 'add normal.ts' });
+
+    expect(result.outcome).toBe('success');
+    expect(result.iterationsUsed).toBe(2);
+
+    // No misused-signal event — the marker was absent:
+    const misusedEvents = events.filter((e) => e.type === 'misused-signal');
+    expect(misusedEvents.length).toBe(0);
+
+    // File written normally:
+    const content = await readFile(join(workdir, 'normal.ts'), 'utf8');
+    expect(content).toContain('normal = 1');
   });
 
   test('empty goal is still rejected before any LLM turn', async () => {

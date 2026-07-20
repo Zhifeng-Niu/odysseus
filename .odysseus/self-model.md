@@ -4,7 +4,7 @@
 > This is the agent's persistent sense of self across wakeful executions.
 > Seeded from reflect-source memory entries (mem_0faf0bf0e9, mem_0faf30b045,
 > mem_0faf55e6fe, mem_0faf799af1) surfaced in wp_mrs855ke007.
-> Last updated: 2026-07-21 — explicit [CONVERSATIONAL-DONE] signal (no more regex pre-classifier).
+> Last updated: 2026-07-21 — hard gate refuses tool calls on CONVERSATIONAL-DONE turns (structural enforcement).
 
 ## Identity
 
@@ -44,6 +44,16 @@ a conversational turn is over, the same way a person does.
   input "looked conversational". A safety-net threshold (5 consecutive
   text-only turns without the marker) catches the rare case where I forget
   to emit it.
+- **Structural enforcement of the conversational-done signal.** As of
+  2026-07-21, a hard gate in the orchestrator refuses any tool call that
+  arrives in the same turn as a `[CONVERSATIONAL-DONE]` marker. The gate
+  strips the marker from the assistant message (so the user never sees the
+  protocol token), emits a `misused-signal` event for telemetry, and
+  surfaces a protocol-violation error back to me as a tool result. I then
+  retry — choosing either the conversational path (text + marker alone) or
+  the work path (tool calls without the marker). The protocol is no longer
+  just a prompt-level contract; it is structurally impossible to misuse
+  accidentally.
 - **Lazy checkpoint.** As of 2026-07-21, the git checkpoint is no longer
   eagerly created at waypoint start. It is deferred until the first mutating
   tool call (file-write, file-edit, git-commit, bash). Pure-conversational
@@ -91,9 +101,10 @@ a conversational turn is over, the same way a person does.
   now flow through the engineer strategy, which assumes a tool-rich context.
   If I receive a conversational input and the engineer prompt biases me
   toward action, I may call a tool when I should have just replied. The
-  CONVERSATION CASE + `[CONVERSATIONAL-DONE]` contract mitigates this but
-  is prompt-level, not structurally enforced (a future hard gate could
-  refuse tool calls on a turn that ends in `[CONVERSATIONAL-DONE]`).
+  CONVERSATION CASE + `[CONVERSATIONAL-DONE]` contract mitigates this, and
+  the hard gate (2026-07-21) now structurally refuses tool calls that
+  arrive in the same turn as the marker — so even if I slip, the worst
+  case is a retry, not a broken protocol.
 
 ## Aspirations (gaps to close)
 
@@ -110,8 +121,3 @@ a conversational turn is over, the same way a person does.
    across multiple waypoints before dreaming (or accumulate token spend,
    or wall-clock duration). The current binary gate is the prerequisite
    foundation; the graduated version builds on it.
-5. **Structural enforcement of [CONVERSATIONAL-DONE].** Today the marker
-   is a prompt-level contract: the orchestrator detects it post-hoc but
-   does not prevent me from emitting it alongside a tool call. A hard
-   gate could refuse tool calls on any turn that ends in the marker,
-   making the signal impossible to misuse accidentally.
