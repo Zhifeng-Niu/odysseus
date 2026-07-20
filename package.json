@@ -16,7 +16,8 @@
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "audit:empty-commits": "node dist/scripts/audit-empty-commits.js"
+    "audit:empty-commits": "node dist/scripts/audit-empty-commits.js",
+    "voyage-stats": "node dist/scripts/voyage-stats.js"
   },
   "dependencies": {
     "ink": "^5.2.1",
