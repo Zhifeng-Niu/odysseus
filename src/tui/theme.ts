@@ -67,6 +67,19 @@ export const theme = {
     failed: palette.red,
   },
 
+  // ─── Planner ─────────────────────────────────────────────────────
+  // Iteration 16 — planner observability. Distinct hue (teal) so plan
+  // decomposition events are visually separable from waypoint lifecycle.
+  // Teal sits between sky (iteration, cool) and green (committed, success)
+  // — a plan is "structured intent", cooler than a commit but warmer than
+  // a raw iteration counter.
+  plan: {
+    badge: palette.teal,
+    goal: palette.sapphire,
+    step: palette.sky,
+    meta: palette.subtext0,
+  },
+
   // ─── Tool calls ──────────────────────────────────────────────────
   toolCall: {
     name: palette.sapphire,

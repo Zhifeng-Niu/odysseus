@@ -7,6 +7,16 @@ interface WaypointCardProps {
   goal: string;
   strategy: string;
   events: readonly OrchestratorEvent[];
+  /**
+   * When non-null, this waypoint is step `current` of `total` in a plan
+   * decomposition produced by the planner. Rendered as a "step N/M" chip
+   * in the header so multi-step plans read as a sequence rather than a
+   * list of unrelated waypoints.
+   *
+   * Iteration 16 — planner observability. Optional; absent for user-,
+   * reflect-, dream-, curiosity-, and system-origin waypoints.
+   */
+  planStepInfo?: { current: number; total: number; planGoal: string };
 }
 
 interface WaypointSummary {
@@ -60,7 +70,13 @@ function shortSha(sha: string): string {
   return sha.slice(0, 7);
 }
 
-export function WaypointCard({ waypointId, goal, strategy, events }: WaypointCardProps): JSX.Element {
+export function WaypointCard({
+  waypointId,
+  goal,
+  strategy,
+  events,
+  planStepInfo,
+}: WaypointCardProps): JSX.Element {
   const summary = summarize(events);
   const badge = STATUS_BADGE[summary.status];
 
@@ -73,6 +89,14 @@ export function WaypointCard({ waypointId, goal, strategy, events }: WaypointCar
         <Text color={theme.chrome.prompt} bold>
           {shortId(waypointId)}
         </Text>
+        {planStepInfo !== undefined && (
+          <>
+            <Text color={theme.text.muted}>·</Text>
+            <Text color={theme.plan.badge} bold>
+              step {planStepInfo.current}/{planStepInfo.total}
+            </Text>
+          </>
+        )}
         <Text color={theme.text.muted}>·</Text>
         <Text color={theme.text.secondary}>{strategy}</Text>
         <Text color={theme.text.muted}>·</Text>

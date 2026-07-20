@@ -4,7 +4,7 @@
 > This is the agent's persistent sense of self across wakeful executions.
 > Seeded from reflect-source memory entries (mem_0faf0bf0e9, mem_0faf30b045,
 > mem_0faf55e6fe, mem_0faf799af1) surfaced in wp_mrs855ke007.
-> Last updated: 2026-07-21 — planner orchestrator integration (Iteration 15c). The planner is now reachable from real voyages: `runVoyage` gates on `shouldPlanGoal(seedGoal)` before enqueuing. When true, `plan()` decomposes the goal into ordered `PlanStep[]` and each step enters the backlog as a `'plan'`-origin item at priority 50 (same as user — see backlog.ts `defaultPriorityForOrigin`). When false, or when `plan()` returns `parseOk=false` / empty steps / throws, the orchestrator falls back to enqueuing the original goal as `'user'` origin — no regression vs. pre-planner behavior. A new `plan-completed` event fires on the happy path for telemetry. The integration is a single branch in `runVoyage`'s seed-goal path — the inner tool-call loop, verify gate, and rollback invariants are untouched. 5 new integration tests in voyage-loop.test.ts (now 500/500). Closes the planner gap end-to-end (mechanism 15a + policy 15b + wiring 15c).
+> Last updated: 2026-07-21 — TUI planner observability (Iteration 16). The planner 15c wired in the previous iteration was invisible to the operator: a 5-step plan just looked like 5 unrelated waypoints. The TUI now infers plan→step relationships from event order (each `plan-completed` claims the next N `waypoint-started` events as its steps) and renders: (1) a `🧩 PLAN · N steps · Xms · ok|parse-fail` banner above the waypoint stream, with `N/M ran` when a plan was interrupted mid-execution; (2) a `step N/M` chip on each plan-origin waypoint card header. A new teal accent (`theme.plan`) visually separates plan events from the lavender/sky waypoint stream. 7 new ChatPanel unit tests cover banner rendering, step chips, multi-plan boundary cases, partial-execution, and empty-state. Full suite 507/507.
 
 ## Identity
 
@@ -220,6 +220,24 @@ a conversational turn is over, the same way a person does.
   (15c). 5 new integration tests in voyage-loop.test.ts cover all
   four branches (skip / succeed / parse-fail / throw / empty-steps);
   full suite 500/500.
+- **TUI planner observability.** As of 2026-07-21 (Iteration 16),
+  the planner is no longer invisible to the operator. The TUI's
+  ChatPanel infers plan→step relationships from event order (each
+  `plan-completed` claims the next N `waypoint-started` events as
+  its steps) and renders: (1) a `🧩 PLAN · N steps · Xms · ok|parse-fail`
+  banner above the waypoint stream — with `N/M ran` when a plan was
+  interrupted mid-execution (user Ctrl+C, maxWaypoints cap, etc.);
+  (2) a `step N/M` chip on each plan-origin waypoint card header,
+  so a 5-step plan reads as a sequence rather than five unrelated
+  waypoints. The inference is forward-only: plans never steal way-
+  points from each other, even with two consecutive plans back-to-
+  back. A new teal accent (`theme.plan.badge = #94e2d5`) visually
+  separates plan events from the lavender/sky waypoint stream.
+  7 new ChatPanel unit tests cover banner rendering, step chips,
+  multi-plan boundary cases, partial-execution surfacing, parse-fail
+  indication, and empty-state. The change is pure-presentation — no
+  orchestrator.ts edits, no new events (the `plan-completed` event
+  from 15c was already in place but had no consumer).
 - **Test-gated self-verification.** As of 2026-07-21 (Iteration 13),
   the verify gate runs the full vitest suite (442 tests) after every
   waypoint, not just `tsc --noEmit`. The `tests` layer in
