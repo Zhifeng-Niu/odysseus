@@ -165,18 +165,26 @@ export class CerebellumOrchestrator extends EventEmitter {
       ts: Date.now(),
     });
 
-    // PRE-DISPATCH GOAL VALIDATOR — reject non-coding conversational goals
-    // (greetings, identity questions, off-topic chat) before any checkpoint
-    // or LLM work. This is the cheap, deterministic complement to the
-    // reactive `consecutiveTextOnly` heuristic below: the reactive path
-    // catches ambiguous goals the validator lets through, while the
-    // validator short-circuits the obvious cases to save a checkpoint
-    // (git ops) and up to 3 wasted LLM turns.
+    // PRE-DISPATCH GOAL CLASSIFIER — advisory signal, not a hard gate.
+    //
+    // History: this used to be a hard reject for conversational goals (greeting,
+    // identity question, off-topic chat). The rejection saved a checkpoint and
+    // up to 3 LLM turns, but at the cost of agency: the agent could never
+    // respond naturally to "hi" or "who are you" — it just failed silently.
+    // That trade produced the failure captured in the user's 2026-07-20
+    // transcript where the chat path fell back to base-model identity ("I am
+    // GLM, by Z.ai") because no Odysseus context ever loaded.
+    //
+    // Now: empty goals still hard-reject (nothing for the agent to do). All
+    // other conversational/informational goals flow through the LLM. The
+    // classifier output is used as a HINT to lower the consecutiveTextOnly
+    // threshold to 1 (instead of 3) — so when the input looks conversational,
+    // a single text reply ends the waypoint cleanly, honoring the engineer
+    // prompt's "reply once and stop" promise.
     const validation = validateGoal(input.goal);
-    if (!validation.valid) {
-      const reason = validation.reason ?? 'goal rejected by validator';
-      // Record the rejection so abandoned goals are traceable in output
-      // (voyage summary, TUI, tests). See backlog.recordRejectedGoal.
+    const isEmptyGoal = !validation.valid && validation.reason === 'goal is empty';
+    if (isEmptyGoal) {
+      const reason = 'goal is empty';
       recordRejectedGoal(input.goal, reason);
       const abandoned = markAbandoned(waypoint, reason);
       await this.trace(abandoned, null, null);
@@ -196,6 +204,12 @@ export class CerebellumOrchestrator extends EventEmitter {
         tokensConsumed: { input: 0, output: 0 },
       };
     }
+    // HINT: looks conversational/informational (no action verb). Used below to
+    // lower the consecutiveTextOnly threshold so one text reply ends the
+    // waypoint. Action-verb goals keep the original threshold of 3 so the
+    // "ask one clarifying question → receive reply → start working" flow
+    // still works for ambiguous code tasks.
+    const conversationalHint = !validation.valid;
 
     // CHECKPOINT
     const checkpoint = await createCheckpoint({
@@ -459,13 +473,19 @@ export class CerebellumOrchestrator extends EventEmitter {
         // task (e.g. "hi", "what can you do?"). Stop the loop so we don't
         // burn the entire iteration budget on echo-chamber replies.
         //
-        // Threshold = 3 (not 2): a legitimate "ask one clarifying question →
-        // receive user reply → start working" flow consumes two text-only
-        // turns before the first tool call. Killing at 2 would mark every
-        // valid clarification as abandoned. Genuine greetings/chat ("hi",
-        // "who are you") typically burn 3+ turns of "please give me a task"
-        // before the user gives up — that's the signal we want to catch.
-        if (consecutiveTextOnly >= 3) {
+        // Threshold depends on whether the pre-dispatch classifier hinted
+        // this input looks conversational (no action verb):
+        //   - conversationalHint = true → 1 text reply ends the waypoint.
+        //     This honors the engineer prompt's CONVERSATION CASE promise:
+        //     "reply once and stop". A person doesn't need three "please
+        //     give me a task" nudges to handle "hi".
+        //   - conversationalHint = false → 3 text replies (the original
+        //     threshold). A legitimate "ask one clarifying question → receive
+        //     user reply → start working" flow consumes two text-only turns
+        //     before the first tool call; killing at 2 would mark every
+        //     valid clarification as abandoned.
+        const textOnlyThreshold = conversationalHint ? 1 : 3;
+        if (consecutiveTextOnly >= textOnlyThreshold) {
           conversationalStop = true;
           break;
         }
@@ -524,9 +544,10 @@ export class CerebellumOrchestrator extends EventEmitter {
     // chamber, conversational drift, or inability to formulate a tool plan).
     // Return a clear failure instead of burning through maxIterations.
     if (conversationalStop) {
+      const textOnlyThreshold = conversationalHint ? 1 : 3;
       const reason =
         `conversational stop: agent produced ${consecutiveTextOnly} consecutive ` +
-        `non-tool-calling responses (threshold: 3) without reaching DONE — ` +
+        `non-tool-calling responses (threshold: ${textOnlyThreshold}) without reaching DONE — ` +
         `the LLM is stuck in a text-only loop and cannot make further progress. ` +
         `Last reply: "${lastAssistantContent.slice(0, 200)}"`;
 

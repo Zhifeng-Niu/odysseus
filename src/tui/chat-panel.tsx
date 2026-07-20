@@ -2,12 +2,9 @@ import { Box, Text } from 'ink';
 import type { OrchestratorEvent } from '../orchestrator/events.js';
 import { WaypointCard } from './waypoint-card.js';
 import { theme } from './theme.js';
-import type { ConversationMessage } from './conversation.js';
 
 interface ChatPanelProps {
   events: readonly OrchestratorEvent[];
-  conversation: readonly ConversationMessage[];
-  chatPending: boolean;
 }
 
 interface WaypointGroup {
@@ -47,36 +44,28 @@ function groupByWaypoint(events: readonly OrchestratorEvent[]): WaypointGroup[] 
   return Array.from(groups.values());
 }
 
-export function ChatPanel({ events, conversation, chatPending }: ChatPanelProps): JSX.Element {
+/**
+ * Renders the unified conversation surface: every user input (chat or code
+ * task) enters the orchestrator and surfaces here as a waypoint group.
+ *
+ * Prior to the 2026-07-21 unification, ChatPanel rendered two parallel
+ * surfaces: a "conversation" array for chat path messages and waypoint
+ * groups for code-task path. The split caused identity loss on the chat
+ * path (the agent fell back to its base-model identity because no Odysseus
+ * context loaded). Now there is one surface — every interaction is a
+ * waypoint, some are 1-turn conversational waypoints, some are multi-turn
+ * code-task waypoints. The agent is always the same agent.
+ */
+export function ChatPanel({ events }: ChatPanelProps): JSX.Element {
   const groups = groupByWaypoint(events);
-  const hasConversation = conversation.length > 0;
   const hasWaypoints = groups.length > 0;
 
   return (
     <Box flexDirection="column">
-      {!hasConversation && !hasWaypoints && (
+      {!hasWaypoints && (
         <Text color={theme.text.muted}>
           Chat with the agent, or describe a code change to start a voyage.
         </Text>
-      )}
-
-      {hasConversation && (
-        <Box flexDirection="column" marginBottom={1}>
-          {conversation.map((m) => (
-            <Box key={m.id} flexDirection="row" gap={1}>
-              <Text color={m.role === 'user' ? theme.chrome.prompt : theme.text.secondary} bold>
-                {m.role === 'user' ? 'you' : 'agent'}
-              </Text>
-              <Text color={theme.text.primary}>{m.content}</Text>
-            </Box>
-          ))}
-          {chatPending && (
-            <Box flexDirection="row" gap={1}>
-              <Text color={theme.text.secondary} bold>agent</Text>
-              <Text color={theme.text.muted} italic>…</Text>
-            </Box>
-          )}
-        </Box>
       )}
 
       {hasWaypoints && (

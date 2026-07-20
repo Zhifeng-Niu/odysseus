@@ -65,7 +65,7 @@ function runVoyageConsole(
     recordEvent(eventLogPath, e);
   });
 
-  startTui({ orch, model, provider });
+  startTui({ orch, model });
 }
 
 async function main(): Promise<void> {

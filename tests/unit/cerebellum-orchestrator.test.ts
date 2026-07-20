@@ -404,10 +404,11 @@ describe('CerebellumOrchestrator', () => {
     expect(result.failReason ?? '').toMatch(/maxIterations.*DONE/);
   });
 
-  test('rejected conversational goal is recorded for traceability and abandoned', async () => {
-    // Provider should never be called — the validator short-circuits before
-    // any LLM work. An empty response array enforces that.
-    const provider = makeMockProvider([]);
+  test('conversational goal flows through LLM once and stops (honors reply-once-and-stop)', async () => {
+    // The agent replies once and the orchestrator honors the engineer prompt's
+    // CONVERSATION CASE promise: "reply once and stop". A single text-only
+    // response ends the waypoint cleanly. Provider is called exactly once.
+    const provider = makeMockProvider(['Hi! I am Odysseus. What would you like me to build?']);
 
     const orch = new CerebellumOrchestrator({
       cwd: workdir,
@@ -419,21 +420,25 @@ describe('CerebellumOrchestrator', () => {
 
     const result = await orch.runWaypoint({ goal: 'hello' });
 
-    // Waypoint is abandoned before dispatch — no checkpoint, no LLM turns.
+    // Waypoint still ends as abandoned (no DONE, no work), but only after
+    // one LLM turn. This is the new contract: conversational inputs get a
+    // real reply, then stop. They are no longer pre-rejected.
     expect(result.outcome).toBe('abandoned');
-    expect(result.iterationsUsed).toBe(0);
-    expect(result.failReason ?? '').toMatch(/conversational|validator|rejected/i);
+    expect(result.iterationsUsed).toBe(1);
+    expect(result.failReason ?? '').toMatch(/conversational/i);
 
-    // The rejected goal + reason are now traceable in output.
+    // Conversational goals no longer hit the rejection registry — only
+    // empty goals do. This assertion locks that contract: a hello is not a
+    // rejection, it's a conversation.
     const rejected = listRejectedGoals();
-    expect(rejected.length).toBe(1);
-    expect(rejected[0]!.goal).toBe('hello');
-    expect(rejected[0]!.reason).toMatch(/conversational|rejected/i);
-    expect(rejected[0]!.rejectedAt).toBeGreaterThan(0);
+    expect(rejected.length).toBe(0);
   });
 
-  test('rejected goal is not re-recorded when the same goal+reason recurs', async () => {
+  test('empty goal is still rejected before any LLM turn', async () => {
+    // Empty goals are the only remaining hard-reject case: nothing for the
+    // agent to respond to. Provider is never called.
     const provider = makeMockProvider([]);
+
     const orch = new CerebellumOrchestrator({
       cwd: workdir,
       provider,
@@ -442,10 +447,16 @@ describe('CerebellumOrchestrator', () => {
       verifyLayers: ['syntax'],
     });
 
-    await orch.runWaypoint({ goal: 'hi' });
-    await orch.runWaypoint({ goal: 'hi' });
+    const result = await orch.runWaypoint({ goal: '' });
 
-    // Deduped — identical (goal, reason) rejections don't spam the registry.
-    expect(listRejectedGoals().length).toBe(1);
+    expect(result.outcome).toBe('abandoned');
+    expect(result.iterationsUsed).toBe(0);
+    expect(result.failReason ?? '').toMatch(/empty/i);
+
+    // Note: empty goals are not recorded in listRejectedGoals (recordRejectedGoal
+    // explicitly skips them — nothing meaningful to trace). The contract here
+    // is just "short-circuit cleanly, don't burn an LLM call".
+    const rejected = listRejectedGoals();
+    expect(rejected.length).toBe(0);
   });
 });

@@ -1,7 +1,6 @@
 import { Box, Text, useApp, useInput } from 'ink';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CerebellumOrchestrator } from '../cerebellum/orchestrator.js';
-import type { LLMProvider } from '../llm/provider.js';
 import {
   useOrchestratorEvents,
   findPendingApproval,
@@ -14,18 +13,10 @@ import { InputArea } from './input-area.js';
 import { StatusBar } from './status-bar.js';
 import { PendingReviewPanel } from './pending-review-panel.js';
 import { theme } from './theme.js';
-import {
-  classifyInput,
-  chatWithProvider,
-  makeUserMessage,
-  makeAssistantMessage,
-  type ConversationMessage,
-} from './conversation.js';
 
 interface AppProps {
   orch: CerebellumOrchestrator;
   model: string;
-  provider: LLMProvider;
 }
 
 /**
@@ -61,12 +52,10 @@ function idleTsBelowThreshold(idleMs: number): boolean {
  * (the full wakeful→dreaming→consolidating loop). This makes the brain
  * state indicator change visibly as the agent works through backlog items.
  */
-export function App({ orch, model, provider }: AppProps): JSX.Element {
+export function App({ orch, model }: AppProps): JSX.Element {
   const { events } = useOrchestratorEvents(orch);
   const { exit } = useApp();
   const [exitArmed, setExitArmed] = useState(false);
-  const [conversation, setConversation] = useState<readonly ConversationMessage[]>([]);
-  const [chatPending, setChatPending] = useState(false);
 
   // Idle tracking — lastActivity bumps on every user submit and every
   // orchestrator event (so an in-progress voyage counts as activity).
@@ -126,7 +115,6 @@ export function App({ orch, model, provider }: AppProps): JSX.Element {
   // backlog is empty.
   useEffect(() => {
     const handle = setInterval(() => {
-      if (chatPending) return;
       if (pendingApproval !== null) return;
       if (voyageActive) return;
       if (!autoVoyageArmedRef.current) return;
@@ -139,7 +127,7 @@ export function App({ orch, model, provider }: AppProps): JSX.Element {
       });
     }, IDLE_POLL_MS);
     return () => clearInterval(handle);
-  }, [chatPending, pendingApproval, voyageActive, lastActivity, orch]);
+  }, [pendingApproval, voyageActive, lastActivity, orch]);
 
   const phase: 'idle' | 'running' | 'awaiting-approval' =
     pendingApproval !== null
@@ -179,41 +167,34 @@ export function App({ orch, model, provider }: AppProps): JSX.Element {
     autoVoyageArmedRef.current = true;
 
     // Slash commands are reserved for future TUI commands (/dream, /status,
-    // /clear). For now they fall through to chat.
+    // /clear). For now they fall through to the unified voyage path.
     if (text.startsWith('/')) {
       // TODO: dispatch slash commands here
     }
 
     // If a voyage is already running, treat the input as a steering message
-    // injected into the next iteration — regardless of chat vs goal. Mid-
-    // voyage is not the moment to start a parallel conversation.
+    // injected into the next iteration. Mid-voyage is not the moment to
+    // start a parallel conversation.
     if (voyageActive) {
       orch.injectMessage(text);
       return;
     }
 
-    const kind = classifyInput(text);
-
-    if (kind === 'goal') {
-      void orch.runVoyage({ seedGoal: text });
-      return;
-    }
-
-    // Conversation path — direct LLM round, no waypoint pipeline.
-    setConversation((prev) => [...prev, makeUserMessage(text)]);
-    setChatPending(true);
-    try {
-      const reply = await chatWithProvider(provider, text);
-      setConversation((prev) => [...prev, makeAssistantMessage(reply)]);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setConversation((prev) => [
-        ...prev,
-        makeAssistantMessage(`(chat failed: ${msg})`),
-      ]);
-    } finally {
-      setChatPending(false);
-    }
+    // UNIFIED PATH — every non-slash input enters the same agent runtime.
+    // There is no longer a separate "chat" code path. The orchestrator owns
+    // both code-task and conversational inputs:
+    //   - Code tasks ("fix X", "add Y") run the full engineer strategy with
+    //     tools, checkpoint, verify, etc.
+    //   - Conversational inputs ("hi", "who are you") flow through the same
+    //     engineer prompt, which has a CONVERSATION CASE section. The agent
+    //     replies once, the orchestrator's consecutiveTextOnly threshold is
+    //     lowered to 1 via the conversational hint, and the waypoint ends
+    //     cleanly as 'abandoned' (no work, no harm).
+    //
+    // This kills the "two minds" anti-pattern where chat path lacked
+    // identity injection (causing the GLM/Z.ai identity leak on 2026-07-20).
+    // Identity is now continuous because there is only one path.
+    void orch.runVoyage({ seedGoal: text });
   }
 
   return (
@@ -226,11 +207,7 @@ export function App({ orch, model, provider }: AppProps): JSX.Element {
         <Text color={theme.text.secondary}>voyage console</Text>
       </Box>
 
-      <ChatPanel
-        events={events}
-        conversation={conversation}
-        chatPending={chatPending}
-      />
+      <ChatPanel events={events} />
 
       {pendingApproval !== null && (
         <ApprovalGate

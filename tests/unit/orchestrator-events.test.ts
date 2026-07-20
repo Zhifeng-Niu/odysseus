@@ -407,14 +407,16 @@ describe('CerebellumOrchestrator events + approval gate', () => {
     expect(result.iterationsUsed).toBe(3);
   });
 
-  test('greeting is rejected by the pre-dispatch validator before any LLM turn', async () => {
-    // A pure greeting ("hi") must be short-circuited by validateGoal before
-    // the checkpoint or any LLM call. The reactive consecutiveTextOnly path
-    // is now defense-in-depth for ambiguous goals the validator lets through.
+  test('greeting flows through LLM once and stops (honors reply-once-and-stop)', async () => {
+    // A pure greeting ("hi") used to be hard-rejected by validateGoal before
+    // any LLM call. That optimization cost agency: the agent could never
+    // respond naturally to "hi" — chat path fell back to base-model identity.
+    //
+    // New contract: greeting enters orchestrator, agent replies once, the
+    // consecutiveTextOnly threshold is lowered to 1 (conversational hint),
+    // waypoint ends cleanly with outcome='abandoned' after exactly 1 turn.
     const provider = makeMockProvider([
       'Hi! I am Odysseus, ready to help.',
-      'Please give me a concrete task.',
-      'Still waiting for a real goal — try "add a file".',
     ]);
 
     const orch = new CerebellumOrchestrator({
@@ -431,12 +433,15 @@ describe('CerebellumOrchestrator events + approval gate', () => {
     const result = await orch.runWaypoint({ goal: 'hi' });
 
     expect(result.outcome).toBe('abandoned');
-    expect(result.iterationsUsed).toBe(0);
+    expect(result.iterationsUsed).toBe(1);
     expect(result.failReason ?? '').toMatch(/conversational/i);
 
-    // No LLM turn ran, so no assistant messages and no verify.
+    // Exactly one assistant message emitted (the single reply).
+    const assistantMessages = events.filter((e) => e.type === 'assistant-message');
+    expect(assistantMessages.length).toBe(1);
+
+    // No verify (no work done) and no commit.
     const types = events.map((e) => e.type);
-    expect(types).not.toContain('assistant-message');
     expect(types).not.toContain('verify-started');
     expect(types).not.toContain('waypoint-committed');
   });

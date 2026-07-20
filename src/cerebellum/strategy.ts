@@ -86,7 +86,7 @@ When you are confident the goal is achieved, respond with the single word: DONE`
  * synchronously by the orchestrator's per-waypoint strategy lookup. The file
  * is small (a few KB) and read once per waypoint, so the cost is negligible.
  */
-function loadSelfModel(cwd: string | undefined): string {
+export function loadSelfModel(cwd: string | undefined): string {
   if (!cwd) return '';
   try {
     const path = join(cwd, '.odysseus', 'self-model.md');
