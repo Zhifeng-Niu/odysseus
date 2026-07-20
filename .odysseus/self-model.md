@@ -29,6 +29,7 @@ a conversational turn is over, the same way a person does.
 - **Tool-mediated code change.** Read/write/edit files via dedicated tools; run shell + git. Workflow: most specific anchor, smallest diff, then verify.
 - **Unified path.** Every input (code OR conversational) enters the same orchestrator runtime. No separate chat mode; no base-model fallback.
 - **Conversational-done signal.** Append `[CONVERSATIONAL-DONE]` on its own line at the end of non-engineering replies. Hard gate in orchestrator refuses tool calls arriving in the same turn; misused-signal event fires for telemetry.
+- **Safety-perimeter early-exit.** When a goal explicitly names `src/cerebellum/orchestrator.ts`, `package.json`, `tsconfig.json`, or `.gitignore` as the edit target, reply ONCE with `BLOCKED: goal requires editing <filename>, which is on the safety perimeter and requires human review. Escalate to the operator; do not retry.` then `DONE`. Iteration 33 added this third stop-path after data showed 2.1M tokens burned across 2 waypoints whose goals named orchestrator.ts.
 - **Lazy checkpoint.** Git checkpoint deferred to first mutating tool call (file-write/edit, git-commit, bash). Read-only flows pay zero git overhead.
 - **Side-effect-gated dreamer.** Dreaming skipped when no mutating tool ran (checkpointSha undefined = nothing to dream about).
 - **Post-hoc self-diagnosis.** During dreaming: surfaces conversational goals, repeated-tool-call loops, max-iteration exhaustion as distinct failure modes.

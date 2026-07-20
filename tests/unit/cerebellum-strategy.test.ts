@@ -52,6 +52,29 @@ describe('selectStrategy (Iteration 0: engineer only)', () => {
     // — the orchestrator's detection logic would then dangle.
     expect(ENGINEER_STRATEGY.systemPrompt).toContain(CONVERSATIONAL_DONE_MARKER);
   });
+
+  test('ENGINEER_STRATEGY prompt teaches BLOCKED-FILE early-exit (Iteration 33)', () => {
+    // Iteration 33 finding: 8 maxIterations failures included 2 goals that
+    // explicitly named src/cerebellum/orchestrator.ts (a safety-perimeter
+    // file). The agent attempted creative workarounds (parallel files in
+    // sibling directories) across 16 turns, burning ~2.1M input tokens.
+    // The prompt must teach the agent to early-exit with BLOCKED+DONE so
+    // the verify gate records the waypoint as abandoned on turn 1.
+    //
+    // If this assertion fails, the agent will revert to multi-turn
+    // workaround attempts whenever a goal names a safety-perimeter file.
+    const prompt = ENGINEER_STRATEGY.systemPrompt;
+    expect(prompt).toContain('BLOCKED-FILE CASE');
+    expect(prompt).toContain('BLOCKED:');
+    expect(prompt).toContain('safety perimeter');
+    expect(prompt).toContain('requires human review');
+    // The exact filenames from CLAUDE.md safety-perimeter list must appear
+    // in the BLOCKED section so the agent can pattern-match goal text.
+    expect(prompt).toContain('src/cerebellum/orchestrator.ts');
+    expect(prompt).toContain('package.json');
+    expect(prompt).toContain('tsconfig.json');
+    expect(prompt).toContain('.gitignore');
+  });
 });
 
 describe('detectConversationalDone', () => {
