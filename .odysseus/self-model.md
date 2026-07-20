@@ -4,7 +4,7 @@
 > This is the agent's persistent sense of self across wakeful executions.
 > Seeded from reflect-source memory entries (mem_0faf0bf0e9, mem_0faf30b045,
 > mem_0faf55e6fe, mem_0faf799af1) surfaced in wp_mrs855ke007.
-> Last updated: 2026-07-21 — error-loop pattern in self-monitor (Iteration 14). The context-aware self-monitor (Iteration 12) now detects a fifth pattern: when the last 2 tool calls both errored, the nudge tells the agent to re-read the error messages instead of retrying blindly. The threshold is 2 (not 3) deliberately — a single error is normal (transient: file doesn't exist yet, command needs different flag); two errors in a row is the smallest signal that says "your mental model of the situation is wrong". The orchestrator threads `!result.ok` from each tool result into `summarizeToolCall`, so the error bit flows from execution → observation → pattern detection with no new concepts added. Stuck-loop still takes priority (more specific: same args 3×) when both patterns match. Test count: 454.
+> Last updated: 2026-07-21 — planner module (Iteration 15a). New `src/cerebellum/planner.ts` decomposes a complex goal into an ordered list of single-waypoint-sized sub-tasks. Pure function: takes a goal + self-model, returns `PlanStep[]` (goal + rationale each); does NOT enqueue the steps — that policy decision belongs to the orchestrator and lands in Iteration 15b. Mirrors curiosity's structure (system prompt + user prompt builder + JSON parser + coerce-at-boundary) but is simpler: no memory entries, no exploration log, no backlog side effects. 25 dedicated tests; full suite 479/479. Closes the "single-cell agent" gap surfaced in the 6-module review: Odysseus could execute one-step goals but had no primitive for breaking down multi-step ones.
 
 ## Identity
 
@@ -164,6 +164,24 @@ a conversational turn is over, the same way a person does.
   3× is the more specific diagnosis). Closes the gap left in Iteration
   12's `detectPattern` docstring where the slot was explicitly reserved
   for "a future iteration".
+- **Planner module.** As of 2026-07-21 (Iteration 15a), the new
+  `src/cerebellum/planner.ts` decomposes a complex goal into an
+  ordered list of single-waypoint-sized sub-tasks. The planner is a
+  pure function: it takes a goal + the self-model and returns
+  `PlanStep[]` (each step has `goal` + `rationale`); it does NOT
+  enqueue the steps into the backlog. That policy decision (when to
+  plan, where to insert steps in priority order, how to handle the
+  original goal after decomposition) belongs to the orchestrator and
+  is pending Iteration 15b. The module mirrors curiosity's structure
+  (system prompt + user-prompt builder + JSON extractor + coerce-at-
+  boundary) but is intentionally simpler — no memory entries, no
+  exploration log, no side effects. 25 dedicated tests cover happy
+  path, markdown-fenced JSON, max-steps cap, parse failures, junk
+  step coercion, and provider error propagation. Closes the largest
+  gap surfaced by the 6-module agent review: Odysseus could execute
+  one-step goals but had no primitive for breaking down multi-step
+  ones. The orchestrator integration in 15b will make this primitive
+  reachable from real voyages.
 - **Test-gated self-verification.** As of 2026-07-21 (Iteration 13),
   the verify gate runs the full vitest suite (442 tests) after every
   waypoint, not just `tsc --noEmit`. The `tests` layer in
@@ -224,3 +242,15 @@ a conversational turn is over, the same way a person does.
    demote it for N voyages" or "this aspiration has shipped, mark it
    closed" — would let the agent *learn* from its exploration history
    rather than re-decide from scratch each pass.
+4. **Planner orchestrator integration.** The planner module (Iteration
+   15a) is a pure function that decomposes a goal into sub-tasks, but
+   nothing in the orchestrator calls it yet. The next concrete step:
+   decide a trigger policy (heuristic on goal length / keywords like
+   "refactor" / "system" / "module"? always-on for user goals above
+   some complexity threshold?), call `plan()` before the waypoint
+   loop starts, and enqueue the returned steps as backlog items with
+   priority just above the original goal's origin. The original goal
+   is then superseded — its work is now distributed across the steps.
+   Fallback on `parseOk=false`: execute the original goal directly
+   (no regression). The pieces are all in place; this is wiring, not
+   new concept work.
