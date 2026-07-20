@@ -2,7 +2,7 @@ import { appendFile, mkdir } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { TraceRecord } from '../trace/jsonl.js';
-import { normalizeGoal } from './dreamer.js';
+import { normalizeGoal } from './dreamer-dedup.js';
 
 /**
  * Exploration log — append-only record of every goal curiosity has ever

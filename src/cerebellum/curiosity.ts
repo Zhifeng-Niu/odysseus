@@ -14,7 +14,7 @@ import { writeMemory as writeMemoryEntry } from './memory.js';
 import {
   isDuplicateGoal,
   buildSucceededGoalSet,
-} from './dreamer.js';
+} from './dreamer-dedup.js';
 import {
   appendExploration,
   loadRecentExplorationsSync,

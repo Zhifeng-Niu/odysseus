@@ -5,11 +5,13 @@ import { join } from 'node:path';
 import type { LLMProvider, LLMCompletion } from '../../src/llm/provider.js';
 import {
   dream,
+  buildUserPrompt,
+} from '../../src/cerebellum/dreamer.js';
+import {
   normalizeGoal,
   isDuplicateGoal,
   buildSucceededGoalSet,
-  buildUserPrompt,
-} from '../../src/cerebellum/dreamer.js';
+} from '../../src/cerebellum/dreamer-dedup.js';
 import { listBacklog } from '../../src/cerebellum/backlog.js';
 import { listPendingReview, shouldAutoApprove, autoApproveAllPendingReview } from '../../src/cerebellum/pending-review.js';
 import { readMemory } from '../../src/cerebellum/memory.js';

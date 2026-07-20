@@ -6,6 +6,11 @@ import { type EnqueueOptions } from './backlog.js';
 import { enqueuePendingReview, autoApproveAllPendingReview, shouldAutoApprove } from './pending-review.js';
 import { writeMemory as writeMemoryEntry } from './memory.js';
 import { DREAM_SYSTEM_PROMPT } from './prompts.js';
+import {
+  normalizeGoal,
+  isDuplicateGoal,
+  buildSucceededGoalSet,
+} from './dreamer-dedup.js';
 
 /**
  * Dreaming state — free-association over recent trace + memory.
@@ -85,79 +90,6 @@ interface ParsedDream {
 
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
-}
-
-/**
- * Normalize a goal string for dedup comparison. Strips punctuation and case,
- * collapses whitespace. Does NOT remove stop-words — verb choice ("add" vs
- * "fix" vs "refactor") carries signal about intent.
- */
-export function normalizeGoal(goal: string): string {
-  return goal
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function goalTokens(goal: string): Set<string> {
-  const tokens = normalizeGoal(goal)
-    .split(' ')
-    .filter((t) => t.length > 1);
-  return new Set(tokens);
-}
-
-/**
- * Decide whether `newGoal` duplicates any goal in `existing`. Two strategies:
- *
- *   1. Exact match after normalization (catches whitespace/case variants).
- *   2. Jaccard token similarity ≥ 0.5 (catches reworded variants like
- *      "add retry to glm" vs "add retry logic to glm provider").
- *
- * Threshold of 0.5 is deliberately low — false positives are cheaper than
- * false negatives in a self-evolution backlog (better to skip one good item
- * than to enqueue five near-duplicates that all execute the same change).
- */
-export function isDuplicateGoal(
-  newGoal: string,
-  existing: ReadonlySet<string>
-): boolean {
-  const normalized = normalizeGoal(newGoal);
-  if (normalized.length === 0) return false;
-  if (existing.has(normalized)) return true;
-
-  const newTokens = goalTokens(newGoal);
-  if (newTokens.size === 0) return false;
-
-  for (const raw of existing) {
-    const existingNorm = normalizeGoal(raw);
-    if (existingNorm === normalized) return true;
-    const existingTokens = goalTokens(raw);
-    if (existingTokens.size === 0) continue;
-    let intersection = 0;
-    for (const t of newTokens) {
-      if (existingTokens.has(t)) intersection += 1;
-    }
-    const union = new Set([...newTokens, ...existingTokens]).size;
-    if (union === 0) continue;
-    if (intersection / union >= 0.5) return true;
-  }
-  return false;
-}
-
-/**
- * Build the set of goals already completed successfully. The dreamer refuses
- * to re-enqueue anything in this set, so the backlog cannot accumulate
- * "add retry", "add retry logic", "add a retry", ... variants across dreams.
- */
-export function buildSucceededGoalSet(trace: readonly TraceRecord[]): Set<string> {
-  const set = new Set<string>();
-  for (const r of trace) {
-    if (r.outcome === 'success' && r.goal.trim().length > 0) {
-      set.add(r.goal);
-    }
-  }
-  return set;
 }
 
 function parsePriority(v: unknown): number | undefined {
