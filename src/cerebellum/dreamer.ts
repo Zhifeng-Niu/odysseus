@@ -11,6 +11,7 @@ import {
   isDuplicateGoal,
   buildSucceededGoalSet,
 } from './dreamer-dedup.js';
+import { extractJsonObject } from './extract-json.js';
 
 /**
  * Dreaming state — free-association over recent trace + memory.
@@ -130,35 +131,10 @@ function coerceMemoryEntry(raw: unknown): DreamMemoryEntry | null {
 }
 
 /**
- * Extract a JSON object from an LLM response. Handles:
- * - raw JSON
- * - JSON wrapped in markdown code fences
- * - JSON preceded/followed by prose (finds the first { ... } block)
- *
- * Returns { parseOk: false, error } if no valid JSON is found.
+ * Extract a JSON object from an LLM response. Handles raw JSON,
+ * markdown-fenced JSON, and JSON embedded in prose. Delegates to
+ * the shared extract-json module (Iteration 38 extraction).
  */
-function extractJson(content: string): { ok: true; value: ParsedDream } | { ok: false; error: string } {
-  const trimmed = content.trim();
-  // Strip markdown code fences if present.
-  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
-  const candidate = fenceMatch?.groups?.[0] ?? trimmed;
-  // Find the first balanced { ... } block (best-effort, doesn't handle nested quotes perfectly).
-  const start = candidate.indexOf('{');
-  const end = candidate.lastIndexOf('}');
-  if (start < 0 || end <= start) {
-    return { ok: false, error: 'no JSON object found in response' };
-  }
-  const slice = candidate.slice(start, end + 1);
-  try {
-    const parsed = JSON.parse(slice) as ParsedDream;
-    return { ok: true, value: parsed };
-  } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : 'JSON.parse failed',
-    };
-  }
-}
 
 export function buildUserPrompt(input: DreamInput): string {
   const recent = input.recentTrace.length === 0
@@ -266,7 +242,7 @@ export async function dream(input: DreamInput): Promise<DreamOutput> {
     maxTokens: 1500,
   });
 
-  const extracted = extractJson(completion.content);
+  const extracted = extractJsonObject<ParsedDream>(completion.content);
   if (!extracted.ok) {
     return {
       backlogItemsAdded: 0,

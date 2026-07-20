@@ -33,11 +33,11 @@ interface FileCap {
 const FILE_CAPS: readonly FileCap[] = [
   {
     filename: 'dreamer.ts',
-    lineCap: 410,
+    lineCap: 390,
     rationale:
-      'Iteration 36 brought dreamer.ts from 545 → 402. Cap at 410 to lock progress. ' +
-      'Next extraction target: buildUserPrompt (~95 lines) or the JSON parser (~60 lines). ' +
-      'When the next extraction lands, lower this cap.',
+      'Iteration 38 extracted extractJson to extract-json.ts: 402 → 378. ' +
+      'Cap at 390 to lock progress. Next extraction target: buildUserPrompt ' +
+      '(~95 lines, depends on MemoryCategory/MemoryEntry types).',
   },
   {
     filename: 'prompts.ts',
@@ -55,11 +55,20 @@ const FILE_CAPS: readonly FileCap[] = [
   },
   {
     filename: 'voyage-stats.ts',
-    lineCap: 305,
+    lineCap: 299,
     rationale:
       'Iteration 37 added computeIncrementalTokens (delta from voyage-cumulative). ' +
-      'Current 300 lines. Cap at 305 — at CLAUDE.md <300 ceiling. If percentile or ' +
-      'another aggregation joins, extract a voyage-stats-aggregate module first.',
+      'Current 291 lines. Cap at 299 — strictly under CLAUDE.md <300 ceiling. ' +
+      'Any growth that crosses 300 must extract a module first (e.g. a ' +
+      'voyage-stats-aggregate or voyage-stats-format split).',
+  },
+  {
+    filename: 'extract-json.ts',
+    lineCap: 80,
+    rationale:
+      'Iteration 38 — shared extractJsonObject<T> generic. Current 44 lines. ' +
+      'Cap at 80 — pure function, should stay tight. Any larger and it is ' +
+      'probably absorbing validation logic that belongs elsewhere.',
   },
 ];
 

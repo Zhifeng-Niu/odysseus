@@ -21,6 +21,7 @@ import {
   joinWithTraceOutcomes,
   formatExplorationsMarkdown,
 } from './exploration-log.js';
+import { extractJsonObject } from './extract-json.js';
 
 /**
  * Curiosity phase — forward-looking exploration of self-model aspirations.
@@ -262,32 +263,10 @@ function coerceMemoryEntry(raw: unknown): CuriosityMemoryEntry | null {
 }
 
 /**
- * Extract a JSON object from an LLM response. Handles raw JSON, markdown
- * fenced JSON, and JSON embedded in prose. Mirror of dreamer.ts:extractJson
- * — duplicated intentionally so curiosity.ts stays self-contained.
+ * Extract a JSON object from an LLM response. Delegates to the shared
+ * extract-json module (Iteration 38 extraction — previously a copy of
+ * dreamer.ts:extractJson, but the duplication became technical debt).
  */
-function extractJson(
-  content: string,
-): { ok: true; value: ParsedCuriosity } | { ok: false; error: string } {
-  const trimmed = content.trim();
-  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
-  const candidate = fenceMatch?.groups?.[0] ?? trimmed;
-  const start = candidate.indexOf('{');
-  const end = candidate.lastIndexOf('}');
-  if (start < 0 || end <= start) {
-    return { ok: false, error: 'no JSON object found in response' };
-  }
-  const slice = candidate.slice(start, end + 1);
-  try {
-    const parsed = JSON.parse(slice) as ParsedCuriosity;
-    return { ok: true, value: parsed };
-  } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : 'JSON.parse failed',
-    };
-  }
-}
 
 export function buildCuriosityUserPrompt(input: CuriosityInput): string {
   const selfModel = loadSelfModelForCuriosity(input.rootDir);
@@ -374,7 +353,7 @@ export async function curiosity(input: CuriosityInput): Promise<CuriosityOutput>
     maxTokens: 1800, // cap reflects current self-model + memory title footprint; bump if truncated JSON reappears
   });
 
-  const extracted = extractJson(completion.content);
+  const extracted = extractJsonObject<ParsedCuriosity>(completion.content);
   if (!extracted.ok) {
     return {
       backlogItemsAdded: 0,
