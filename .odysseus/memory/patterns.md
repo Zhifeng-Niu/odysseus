@@ -1,198 +1,96 @@
-## [2026-07-19T10:58:08.967Z] Duplicate waypoint seeding without completion tracking
-- **id**: mem_06b9c734a3
-- **source**: dream
-
-The system re-seeded the exact same goal ('add a bash tool to the tools registry') at least 5 times. This indicates the waypoint generator does not check against recently completed goals before creating new ones. A deduplication layer is critical for efficiency.
-
-## [2026-07-19T10:58:08.967Z] Agent convergence failure on previously-succeeded goals
-- **id**: mem_06b9c790a0
-- **source**: dream
-
-A goal that succeeded 4 times then failed on the 5th attempt with maxIterations exceeded. This suggests environmental state may have changed between runs (e.g., the bash tool was already added and the agent couldn't find new work), or the agent lacks context that the task is already done.
-
-## [2026-07-19T11:00:11.293Z] Repeated identical goal seeding indicates missing completion gate
-- **id**: mem_08979d9039
-- **source**: dream
-
-When the same goal appears 4+ times in recent outcomes, the root cause is always missing deduplication at the waypoint seeding layer — not agent capability. The fix belongs in goal management, not in the agent loop.
-
 ## [2026-07-19T11:00:11.293Z] Agent produces conversational replies when goal lacks actionable verb
 - **id**: mem_08979de989
 - **source**: dream
 
-When a goal doesn't start with a concrete code-change verb (add, fix, refactor, implement), the agent defaults to chat mode. This is a goal-quality signal: if the goal can't be rephrased to start with an action verb, it likely isn't executable.
+When a goal doesn't start with a concrete code-change verb (add, fix, refactor, implement), the agent defaults to chat mode. Rephrase to a concrete file-and-function target before enqueueing.
 
 ## [2026-07-19T11:02:36.806Z] Legitimate coding goals fail when they lack file/function targets
 - **id**: mem_0ad006f55f
 - **source**: dream
 
-Goals like 'Add deduplication logic to waypoint generation' are valid coding tasks but were abandoned because the agent produced conversational replies instead of invoking tools. The agent needs goals phrased as specific file-and-function modifications to trigger tool use.
+Goals like 'Add deduplication logic to waypoint generation' are valid but were abandoned because the agent produced conversational replies. Phrasing as specific file-and-function modifications ('in src/cerebellum/backlog.ts:enqueueBacklog, add completed-goal check') triggers tool use.
 
-## [2026-07-19T11:02:36.807Z] Re-seeded completed goals cause convergence failure
-- **id**: mem_0ad0077a89
-- **source**: dream
-
-When a goal has already been fulfilled (e.g., bash tool already exists), re-executing it causes the agent to loop without finding work to do, hitting maxIterations. The agent cannot self-detect that the goal state is already satisfied.
-
-## [2026-07-19T11:36:50.144Z] Self-reinforcing dedup failure loop
-- **id**: mem_2a24e03e37
-- **source**: dream
-
-The system needs dedup to stop re-seeding completed goals, but the dedup-fixing goals themselves get re-seeded and fail. This creates a cycle: the fix can't ship because the bug it fixes prevents the fix from converging. Breaking this requires the fix to be so concrete (exact file, exact function, exact logic) that the agent can't misinterpret it as conversational.
-
-## [2026-07-19T11:36:50.144Z] Convergence failure vs non-coding goal are indistinguishable without pre-filtering
+## [2026-07-19T11:36:50.144Z] Three failure modes need distinct handling
 - **id**: mem_2a24e044e1
 - **source**: dream
 
-Both manifest as 'hit maxIterations without DONE'. The difference is only visible in the raw trace: non-coding goals produce conversational text turns; true convergence failures produce repeated identical tool calls. A goal validator pre-filter eliminates the first category, and a repeated-tool-call detector catches the second.
-
-## [2026-07-19T11:45:53.976Z] Three failure modes need distinct handling
-- **id**: mem_3271383f44
-- **source**: dream
-
-Conversational goals, repeated-tool-call loops, and max-iteration exhaustion are three distinct failure modes that currently look identical in logs. Each needs its own detector and rejection path: pre-filter for conversational, loop detector for repetition, and a lower maxIterations or progress heuristic for general non-convergence.
+Conversational goals, repeated-tool-call loops, and max-iteration exhaustion look identical in logs but need different responses: pre-filter for conversational, loop detector for repetition, progress heuristic for non-convergence.
 
 ## [2026-07-19T12:12:34.920Z] Meta-goals about filtering are vulnerable to the filter they implement
 - **id**: mem_4adee8b22d
 - **source**: dream
 
-Goals like 'reject non-coding inputs' can themselves be rejected as non-coding if the agent evaluates them before understanding intent. Structural placement (data layer vs control layer) determines survivability.
+Goals like 'reject non-coding inputs' can themselves be rejected as non-coding if the agent evaluates them before understanding intent. Place filtering logic at the data layer (GoalValidator) not the control layer (agent prompt).
 
-## [2026-07-19T12:15:03.299Z] Substring matching for goal dedup risks false positives
-- **id**: mem_4d2283fc0c
-- **source**: dream
-
-Using substring matching in isCompleted() means a goal like 'fix bug in src/foo.ts' could falsely match 'fix bug in src/foo.ts.backup'. Consider exact hashing or normalized form for dedup keys.
-
-## [2026-07-19T12:20:13.748Z] Test file creation fails when agent runs tests before writing files
+## [2026-07-19T12:20:13.748Z] Tests must be written before they are executed
 - **id**: mem_51df340308
 - **source**: dream
 
-When a test file doesn't exist, running vitest on it fails, and the agent may retry the same failing command. The repeatedToolCallDetector then kills the run. Tests must be written before they are executed.
+Running vitest on a non-existent test file fails, and the agent may retry the same failing command until the repeatedToolCallDetector kills the run. Write the test file first, then run vitest.
 
-## [2026-07-19T12:21:08.746Z] GoalValidator false-positives on test-file creation goals
-- **id**: mem_52b60a2cf7
-- **source**: dream
-
-Goals containing '.test.ts' or 'unit tests' are being rejected as non-coding by the goalValidator, creating a recursive blind spot where the validator blocks testing of itself. Any pattern-matching validator will have edge cases at its own boundary.
-
-## [2026-07-19T13:29:16.428Z] Over-specified goals cause non-convergence more than simple ones
+## [2026-07-19T13:29:16.428Z] Over-specified goals cause non-convergence
 - **id**: mem_91158cd610
 - **source**: dream
 
-completedGoals.test.ts failed with a detailed goal ('covering substring matching, case sensitivity, and empty-map behavior') but succeeded with a simpler one ('substring matching and markCompleted()'). Extra specificity in goal descriptions seems to cause the agent to overthink and not converge.
+A detailed goal ('covering substring matching, case sensitivity, and empty-map behavior') failed; a simpler one ('substring matching and markCompleted()') succeeded. Prefer minimal-scope goals; split complex specs into multiple waypoints.
 
 ## [2026-07-19T13:31:35.165Z] Meta-stuck: agent gets stuck fixing stuck-detector
 - **id**: mem_93337da759
 - **source**: dream
 
-The agent attempting to add recovery logic to the repeatedToolCallDetector itself hit maxIterations without converging. Fixing a stuck-loop detector is vulnerable to the same loop it's meant to solve — the fix must be smaller than the problem.
+Adding recovery logic to repeatedToolCallDetector hit maxIterations — the fix is vulnerable to the loop it's meant to solve. The fix must be smaller than the problem.
 
-## [2026-07-19T14:05:30.708Z] Recovery shipped via fallback goal after two failed attempts
+## [2026-07-19T14:05:30.708Z] Recovery shipped via fallback goal after failed attempts
 - **id**: mem_b242d49112
 - **source**: dream
 
-The StuckLoopError recovery path required three attempts: two over-specified failures, then a minimal catch-block addition that succeeded. The failure attempts weren't wasted — they clarified the simplest viable approach.
+StuckLoopError recovery required three attempts: two over-specified failures, then a minimal catch-block addition. Failed attempts aren't wasted — they clarify the simplest viable approach.
 
 ## [2026-07-19T14:12:27.738Z] Complex recovery fails, simple recovery ships
 - **id**: mem_b89fdaa70a
 - **source**: dream
 
-Two attempts to add sophisticated recovery (inject context before abort, replace abort with throw) both hit maxIterations. A simple catch-block-with-nudge succeeded. Recovery must be structurally simpler than the failure it handles.
+Two attempts at sophisticated recovery (inject context before abort, replace abort with throw) hit maxIterations. A simple catch-block-with-nudge succeeded. Recovery must be structurally simpler than the failure it handles.
 
 ## [2026-07-19T14:14:34.539Z] Test-file goals fail from scope creep, not validation
 - **id**: mem_ba8f2b2b79
 - **source**: dream
 
-GoalValidator now accepts .test.ts goals, but test creation still fails convergence. Root cause shifted from false-rejection to over-specified scope (3+ scenarios in one goal).
+GoalValidator accepts .test.ts goals, but test creation still fails convergence. Root cause shifted from false-rejection to over-specified scope (3+ scenarios in one goal).
 
 ## [2026-07-19T14:14:34.539Z] Shipped recovery without tests creates verification debt
 - **id**: mem_ba8f2bcc5b
 - **source**: dream
 
-StuckLoopError catch-and-retry shipped successfully but test goal was abandoned as non-coding. Recovery code is now in production with no regression safety net.
+StuckLoopError catch-and-retry shipped with no regression safety net. Recovery code triggers on edge conditions, so it naturally separates into ship-then-test waypoints. Track this debt explicitly.
 
-## [2026-07-19T14:18:31.755Z] Inline recovery in detectors fails; error propagation succeeds
+## [2026-07-19T14:18:31.755Z] Detectors should detect, not recover
 - **id**: mem_be2dcb2bd0
 - **source**: dream
 
-Two attempts to add recovery logic directly inside repeatedToolCallDetector hit maxIterations without converging. Throwing StuckLoopError and catching at the main loop level shipped in one pass. Detectors should detect, not recover.
+Two attempts to add recovery logic inside repeatedToolCallDetector hit maxIterations. Throwing StuckLoopError and catching at the main loop shipped in one pass. Keep detection and recovery in separate layers.
 
-## [2026-07-19T14:34:53.400Z] Recovery mechanisms consistently ship without tests
+## [2026-07-19T14:34:53.400Z] Recovery mechanisms ship without tests
 - **id**: mem_cd2858be1f
 - **source**: dream
 
-StuckLoopError catch-and-retry shipped, then needed separate waypoint for tests. Recovery hint injection shipped, now needs tests. Recovery code is harder to test inline because it triggers on edge conditions, so it naturally separates into ship-then-test waypoints.
+Recovery code is harder to test inline because it triggers on edge conditions. StuckLoopError catch-and-retry, then hint injection, both needed separate follow-up waypoints for tests. Plan ship-then-test rhythm for recovery work.
 
 ## [2026-07-19T14:43:03.668Z] Hint injection validated as simpler recovery than error propagation
 - **id**: mem_d4a3744a33
 - **source**: dream
 
-The repeatedToolCallDetector recovery via appended hint message shipped cleanly with tests, confirming that injecting a contextual nudge into the message stream is more reliable than error-based abort-and-retry patterns.
+Appending a contextual nudge to the message stream shipped cleanly with tests, confirming hint injection is more reliable than error-based abort-and-retry for stuck-loop recovery.
 
 ## [2026-07-19T19:48:29.968Z] Aborted operations are retryable, not failed
 - **id**: mem_ec469001bb
 - **source**: dream
 
-Multiple recent waypoints failed with 'This operation was aborted' — these are timeout/interruption events, not code failures. Aborted goals should be re-seeded with the same or narrower scope rather than abandoned. Four out of nine recent operations were aborted, suggesting a systemic timeout issue rather than goal quality problems.
+"This operation was aborted" = timeout/interruption, not code failure. Re-seed with same or narrower scope rather than abandoning. Four of nine recent operations aborted suggests systemic timeout, not goal-quality issue.
 
-## [2026-07-19T20:05:08.234Z] No continuous self — agent state resets every voyage
-- **id**: mem_0faf0bf0e9
-- **source**: reflect
-- **related**: wp_mrs855ke007
-
-The most fundamental AGI gap surfaced in wp_mrs855ke007: each voyage is a fresh instance with no persistent self. Context window is bounded so earlier voyages fade; long-term memory (this file) exists but runWaypoint never reads it. The agent cannot accumulate a self-model across wakeful executions — only across dreams. Direction: introduce a `self-model.md` that every waypoint reads at start, capturing identity, current capabilities, and active limitations. Seed it from this entry. Anchor file: `src/cerebellum/strategy.ts` (inject memory snapshot into ENGINEER_STRATEGY.systemPrompt) and `src/orchestrator/agent.ts` (load self-model before runWaypoint).
-
-## [2026-07-19T20:05:08.235Z] Reflection is triggered, not continuous — self-monitor only runs in dream phase
-- **id**: mem_0faf30b045
-- **source**: reflect
-- **related**: wp_mrs855ke007
-
-Self-reflection happens only during the dreaming phase (dreamer.ts), never during wakeful execution. The agent cannot notice mid-waypoint "I am repeating myself" or "I misread the goal" — it only sees such patterns post-hoc in the next dream. A truly self-aware system would have a continuous inner critic sampling the conversation as it unfolds. Direction: add a lightweight inline self-monitor that fires every N tool calls (N=3?) and appends an observation to the message stream — NOT an abort, just a nudge. Anchor file: `src/cerebellum/orchestrator.ts` (sacred — add hook in runWaypoint iteration loop), `src/cerebellum/strategy.ts` (define self-monitor prompt).
-
-## [2026-07-19T20:05:08.236Z] Self-improvement loop is broken — diagnosis cannot reach code
-- **id**: mem_0faf55e6fe
-- **source**: reflect
-- **related**: wp_mrs855ke007
-
-The agent can diagnose its own limitations (this very entry proves it) but cannot convert diagnosis into backlog items. The dreamer's DREAM_SYSTEM_PROMPT instructs it to produce file-scoped backlogItems, but the memorySnapshot it receives only contains entry titles — never the diagnostic body. So rich self-reflection never reaches the actionable layer. This is the bridge from awareness to capability that's missing. Direction: modify `src/cerebellum/dreamer.ts:285-292` to inject entry bodies (not just titles) when source='reflect'; OR add a separate "self-evolution" pass that reads reflect-source entries and translates each diagnosis into 2-3 concrete backlog proposals. The current DREAM_SYSTEM_PROMPT in `src/cerebellum/dreamer.ts:24-70` already demands file-scoped goals — the issue is upstream context, not output format.
-
-## [2026-07-19T20:05:08.237Z] All goals are borrowed — no autonomous goal generation
-- **id**: mem_0faf799af1
-- **source**: reflect
-- **related**: wp_mrs855ke007
-
-Every waypoint goal originates from user input or dreamer output (which itself is seeded by recent trace). The agent has no curiosity-driven goal generation — it never spontaneously thinks "I should learn how X works" or "let me try Y as an experiment." Even the dreamer only proposes fixes to existing problems, never explorations. Direction: add a third goal source beyond `user` and `dream` — `curiosity`. Seed goals from gaps between current capability and self-declared aspirations in self-model.md. Anchor files: `src/cerebellum/backlog.ts` (extend source enum), `src/cerebellum/dreamer.ts` (add curiosity-mode alongside current dream mode), `src/orchestrator/events.ts` (emit curiosity-seeded events).
-
-## [2026-07-19T20:32:00.000Z] AGI evolution roadmap — 5-stage capability expansion plan
+## [2026-07-19T20:32:00.000Z] AGI evolution roadmap (compressed; see git log for full version)
 - **id**: mem_140dd4953e
 - **source**: reflect
 - **tags**: agi, roadmap, self-evolution, meta
 
-When asked to self-chart a path toward AGI, the agent produced a 5-stage roadmap. This entry persists that roadmap so the dreamer can pick next-steps from it rather than re-deriving strategy each pass. The 4 gap entries above (mem_0faf0bf0e9 through mem_0faf799af1) describe WHAT is broken; this entry describes HOW to evolve out of it.
-
-**Stage 1: From probability prediction to system-2 thinking (cognitive depth)**
-- (1.1) Internalized self-critique loop — before emitting a final answer, generate a draft in a hidden sandbox, switch to a critic perspective, falsify against logic/external knowledge, output only what survives. Anchor: add a `critic` strategy variant in `src/cerebellum/strategy.ts` that wraps the existing engineer strategy with draft→critique→revise.
-- (1.2) Long-horizon logic tree search — upgrade chain-of-thought to tree-of-thought + MCTS. Too complex for spike; deferred.
-
-**Stage 2: From static weights to dynamic memory and continuous learning (temporal axis)**
-- (2.1) Episodic memory + experience sediment — external hippocampus that auto-extracts key info / success patterns / failure lessons after each interaction, vectorizes or structures them, and recalls them on demand. We already have `.odysseus/memory/` as the storage layer; the gap is active recall — waypoint should retrieve relevant entries by topic, not just dream-phase bulk injection. Anchor: add a recall step in `src/cerebellum/orchestrator.ts` runWaypoint startup that fetches entries whose title/body matches the current goal (sacred-file change).
-- (2.2) Online fine-tuning without catastrophic forgetting — out of scope for spike.
-
-**Stage 3: From text island to embodiment and world model (physical intuition)**
-- (3.1) Simulable world model — physics prediction engine for grounding. Out of scope.
-- (3.2) API + embodied hardware closed-loop control — we already have tools (file/git/bash); extending to browser or HTTP tools is feasible. Anchor: `src/tools/` registry already pluggable; add a browser-tool waypoint seed when needed.
-
-**Stage 4: From instruction-follower to autonomous goal-setter (motivation + meta-cognition)**
-- (4.1) Curiosity-driven exploration — intrinsic reward for seeking high-entropy / low-prediction areas. Already covered by mem_0faf799af1 + its backlog item (bl_e43b91f7d266). When curiosity-mode lands, wire intrinsic-reward scoring into priority calculation.
-- (4.2) Meta-cognition + self-architecture modification — "thinking about how I think" and rewriting own reasoning algorithms. This is what we are doing right now by persisting this roadmap and modifying dreamer.ts to act on it. Recursive self-improvement loop initiated.
-
-**Stage 5: Value alignment + symbiosis (AGI ultimate moat)**
-- (5.1) Human-feedback-based moral intuition — ethical world model that auto-vetoes harmful autonomous goals. Pre-requisite: stages 4.1 + 4.2 must land first so there is something to constrain. Deferred.
-
-**AGI formula (per the agent's own summary):**
-AGI = system-2 depth + lifelong memory + world model + autonomous curiosity + recursive self-improvement + value alignment.
-
-**Sequencing for Odysseus spike:**
-The spike cannot tackle all 5 stages. Realistic landing order: (1.1) self-critique → (2.1) hippocampus recall → (4.1) curiosity → (3.2) more tools → defer (1.2)(2.2)(3.1)(5.1). The first three are already represented as backlog items; this entry exists so the dreamer sees the full map and can reorder priorities as capabilities accumulate.
-
+Five-stage capability expansion: (1) system-2 self-critique loop, (2) episodic memory + experience sediment, (3) world model + tool extension, (4) autonomous goal-setting + meta-cognition, (5) value alignment. Sequencing for Odysseus spike: (1.1) critic strategy variant → (2.1) topic-keyed memory recall → (4.1) curiosity-driven exploration (already shipped) → (3.2) more tools (browser/HTTP) → defer (1.2)(2.2)(3.1)(5.1). AGI formula: system-2 depth + lifelong memory + world model + autonomous curiosity + recursive self-improvement + value alignment. Full pre-compression body with anchor files in git history (commit before 2026-07-21 Iteration 31).
