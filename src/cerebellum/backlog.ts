@@ -157,9 +157,34 @@ export async function enqueueBacklog(
   if (trimmedGoal.length === 0) {
     throw new Error('backlog goal cannot be empty');
   }
+  // Iteration 18 — user-origin items bypass every dedup check.
+  //
+  // The three checks below (isSeedExhausted, isRetryExhausted, isCompleted)
+  // exist to prevent the dreamer/reflection loop from endlessly re-enqueueing
+  // flaky or already-done work. They are correct for autonomous-origin items
+  // (dream, reflect, curiosity, system, plan).
+  //
+  // But when origin === 'user', the item is an explicit, intentional request
+  // from the operator. Silently dropping it because the same string was seen
+  // before breaks the agent's most fundamental contract: when a user sends
+  // input, the agent MUST respond. Without this bypass, resending "你好" or
+  // any prior message causes enqueueBacklog to return a phantom item without
+  // writing to the file, peekBacklog returns null on the next tick, and
+  // voyage-idle fires immediately — the user sees zero response. From their
+  // perspective the agent has died.
+  //
+  // If the user re-sends the exact same goal, that is itself signal: either
+  // the prior response was unsatisfying, or they lost track of state. Either
+  // way the agent must produce another waypoint. The dedup machinery stays
+  // in place for autonomous origins.
+  if (origin === 'user') {
+    return enqueueUserOrigin(rootDir, trimmedGoal, options);
+  }
+
   // Block re-seeding when this goal has already been attempted
   // MAX_SEED_ATTEMPTS times regardless of outcome (success/failure/abandon).
   if (isSeedExhausted(trimmedGoal)) {
+    recordSkippedEnqueue(trimmedGoal, origin, 'seed-exhausted');
     return {
       id: options?.id ?? generateBacklogId(),
       goal: trimmedGoal,
@@ -177,6 +202,7 @@ export async function enqueueBacklog(
     console.warn(
       `[backlog] blocking re-seed: retry counter exhausted (${getRetryCount(trimmedGoal)}/${MAX_RETRY_ATTEMPTS}) for goal: "${trimmedGoal}"`
     );
+    recordSkippedEnqueue(trimmedGoal, origin, 'retry-exhausted');
     return {
       id: options?.id ?? generateBacklogId(),
       goal: trimmedGoal,
@@ -191,6 +217,7 @@ export async function enqueueBacklog(
   // Skip enqueueing when this goal has already been recorded as completed by
   // markCompleted — prevents the voyage loop from re-seeding done work.
   if (isCompleted(trimmedGoal)) {
+    recordSkippedEnqueue(trimmedGoal, origin, 'already-completed');
     return {
       id: options?.id ?? generateBacklogId(),
       goal: trimmedGoal,
@@ -221,6 +248,107 @@ export async function enqueueBacklog(
   };
   await saveBacklogFile(rootDir, nextFile);
   return item;
+}
+
+/**
+ * User-origin enqueue path — bypasses all dedup checks.
+ *
+ * See the comment at the top of `enqueueBacklog` for the rationale: the
+ * dedup registry is for autonomous-loop protection, not for filtering user
+ * input. This helper still increments the retry counter (so the autonomous
+ * loops can observe "this goal has been seen N times" via getRetryCount)
+ * but always writes to the backlog file.
+ *
+ * The retry counter increment is informational here, not a gate — a user
+ * resending the same input 50 times should still get 50 waypoints. The
+ * counter just lets other modules see the activity.
+ */
+async function enqueueUserOrigin(
+  rootDir: string,
+  trimmedGoal: string,
+  options?: EnqueueOptions
+): Promise<BacklogItem> {
+  incrementRetryCounter(trimmedGoal);
+  const file = await loadBacklogFile(rootDir);
+  const item: BacklogItem = {
+    id: options?.id ?? generateBacklogId(),
+    goal: trimmedGoal,
+    origin: 'user',
+    priority: options?.priority ?? defaultPriorityForOrigin('user'),
+    createdAt: options?.createdAt ?? new Date().toISOString(),
+    ...(options?.sourceWaypointId !== undefined
+      ? { sourceWaypointId: options.sourceWaypointId }
+      : {}),
+  };
+  const nextFile: BacklogFile = {
+    version: 1,
+    items: [...file.items, item],
+  };
+  await saveBacklogFile(rootDir, nextFile);
+  return item;
+}
+
+// ---------------------------------------------------------------------------
+// Skipped-enqueue registry — observability for silently-dropped enqueues.
+//
+// Iteration 18. Before this, when an autonomous-origin enqueue hit one of
+// the three dedup early-returns, the drop was invisible: the function
+// returned a phantom BacklogItem and only a console.warn (in the retry-
+// exhausted branch) signalled the skip. The other two branches were
+// completely silent.
+//
+// This registry captures every skip so future regressions (e.g. an
+// autonomous loop that's stuck re-trying the same goal and getting silently
+// dropped) are diagnosable. Mirrors the shape of `rejectedGoals` below.
+// ---------------------------------------------------------------------------
+
+/** Why an enqueue was skipped by the dedup checks. */
+export type SkipReason = 'seed-exhausted' | 'retry-exhausted' | 'already-completed';
+
+/** A record of an enqueue that was silently dropped by the dedup checks. */
+export interface SkippedEnqueue {
+  /** The goal description that was skipped. */
+  readonly goal: string;
+  /** The origin of the enqueue attempt. */
+  readonly origin: BacklogOrigin;
+  /** Why it was skipped. */
+  readonly reason: SkipReason;
+  /** Epoch millis when the skip was recorded. */
+  readonly skippedAt: number;
+}
+
+const skippedEnqueues: SkippedEnqueue[] = [];
+
+/**
+ * Records that an enqueue of `goal` from `origin` was silently dropped due
+ * to `reason`. Called from the three dedup early-return paths in
+ * `enqueueBacklog`.
+ *
+ * Not deduplicated — every skip is recorded. A loop that's stuck retrying
+ * the same goal 100 times produces 100 entries, which is exactly the
+ * signal an operator wants when diagnosing "why is the voyage idle but
+ * the dreamer keeps emitting proposals?"
+ */
+function recordSkippedEnqueue(goal: string, origin: BacklogOrigin, reason: SkipReason): void {
+  skippedEnqueues.push({
+    goal,
+    origin,
+    reason,
+    skippedAt: Date.now(),
+  });
+}
+
+/**
+ * Returns a snapshot of all silently-dropped enqueues in chronological order.
+ * Consumers use this to surface dedup activity in the TUI and voyage summary.
+ */
+export function listSkippedEnqueues(): readonly SkippedEnqueue[] {
+  return skippedEnqueues;
+}
+
+/** Test helper: clears all recorded skipped enqueues. */
+export function clearSkippedEnqueues(): void {
+  skippedEnqueues.length = 0;
 }
 
 /**

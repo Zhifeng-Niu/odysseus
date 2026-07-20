@@ -4,7 +4,7 @@
 > This is the agent's persistent sense of self across wakeful executions.
 > Seeded from reflect-source memory entries (mem_0faf0bf0e9, mem_0faf30b045,
 > mem_0faf55e6fe, mem_0faf799af1) surfaced in wp_mrs855ke007.
-> Last updated: 2026-07-21 — TUI surfaces 5 previously-hidden events (Iteration 17). Audit of `e.type ===` checks in `src/tui/` revealed five event types emitted by the orchestrator but silently swallowed by the TUI's `default: return null` branch: `curiosity-completed`, `memory-consolidated`, `recovery-intervention`, `self-monitor`, `misused-signal`. The user had zero visibility into the agent's autonomous inner life — curiosity exploration, memory consolidation, self-monitoring nudges, recovery interventions, and protocol-signal misuse were all happening but invisible. Three are waypoint-scoped (recovery, self-monitor, misuse) and now render as EventLine cases in WaypointCard with distinct icons (⚡ recovery, ◌ self-monitor, ⚠ misuse) and warm evolution palette. Two are non-waypoint-scoped (curiosity, memory) and now render in a new EvolutionFeed section below the waypoint stream, each with its own icon (🔍 CURIOSITY, 🧠 MEMORY) and entry text. 9 new ChatPanel tests cover all 5 events plus pluralization edge cases (1 entry vs N entries, 1 tool call vs N tool calls). Full suite 516/516.
+> Last updated: 2026-07-21 — User-origin backlog items bypass dedup (Iteration 18). Diagnostic on `.odysseus/events.jsonl` revealed that 9 of the 9 most recent voyages produced zero waypoints — including direct user inputs "你好" and "想想如果你要变成世界第一的agent...". Root cause: `enqueueBacklog`'s three dedup early-returns (`isSeedExhausted`, `isRetryExhausted`, `isCompleted`) applied uniformly to all origins. When a user resent a message the system had seen before, the item was silently dropped — the function returned a phantom BacklogItem but never wrote to the file. `peekBacklog` returned null on the next tick, `voyage-idle` fired immediately, and the user saw zero response. From their perspective the agent had died. Fix: `origin === 'user'` now bypasses all three checks via a dedicated `enqueueUserOrigin` helper — user input MUST always produce a waypoint. The retry counter is still incremented (informational), but it is not a gate. The dedup machinery stays in place for autonomous origins (dream, reflect, curiosity, system, plan) since that's what protects against loop re-seeding. Also added a `listSkippedEnqueues()` observability registry: every autonomous-origin drop is now recorded with goal + origin + reason + timestamp, so future regressions of the silent-drop class are diagnosable. 8 new backlog tests cover: user-origin enqueues against all three dedup checks (individually and combined), user-origin still increments retry counter, dream-origin still dedups (no regression), all three skip reasons recorded distinctly, and user-origin preserves EnqueueOptions (sourceWaypointId, id, priority). Full suite 524/524.
 
 ## Identity
 
@@ -258,6 +258,28 @@ a conversational turn is over, the same way a person does.
   ChatPanel tests cover all 5 events plus pluralization edge cases
   (1 entry vs N entries, 1 tool call vs N tool calls). Full suite
   516/516. Pure-presentation change — no orchestrator.ts edits.
+- **User-input always produces a waypoint.** As of 2026-07-21
+  (Iteration 18), resending a prior message no longer causes the
+  agent to silently ignore the user. A diagnostic on
+  `.odysseus/events.jsonl` revealed that 9 of the 9 most recent
+  voyages produced zero waypoints — including direct user inputs
+  "你好" and "想想如果你要变成世界第一的agent...". Root cause:
+  `enqueueBacklog`'s three dedup early-returns (`isSeedExhausted`,
+  `isRetryExhausted`, `isCompleted`) applied uniformly to all origins.
+  When a user resent any message the system had processed before,
+  the function returned a phantom BacklogItem without writing to the
+  file — `peekBacklog` returned null, `voyage-idle` fired immedi-
+  ately, and the user saw zero response. The fix introduces a
+  dedicated `enqueueUserOrigin` helper that `enqueueBacklog` routes
+  to when `origin === 'user'`: it skips every dedup check but still
+  increments the retry counter (so the activity remains observable
+  to other modules). The dedup machinery stays in place for
+  autonomous origins (dream, reflect, curiosity, system, plan) —
+  that is the loop-re-seeding protection the dedup was designed
+  for. Also added a `listSkippedEnqueues()` observability registry:
+  every autonomous-origin drop is recorded with goal + origin +
+  reason + timestamp, so the silent-drop class of bugs is now
+  diagnosable. 8 new backlog tests; full suite 524/524.
 - **Test-gated self-verification.** As of 2026-07-21 (Iteration 13),
   the verify gate runs the full vitest suite (442 tests) after every
   waypoint, not just `tsc --noEmit`. The `tests` layer in

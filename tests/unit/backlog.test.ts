@@ -13,7 +13,17 @@ import {
   incrementRetryCounter,
   isRetryExhausted,
   clearRetryCounters,
+  listSkippedEnqueues,
+  clearSkippedEnqueues,
 } from '../../src/cerebellum/backlog.js';
+import {
+  markCompleted,
+  clearCompletedGoals,
+} from '../../src/cerebellum/completedGoals.js';
+import {
+  incrementSeedAttempt,
+  clearSeedAttempts,
+} from '../../src/cerebellum/seedAttempts.js';
 
 describe('backlog queue', () => {
   let rootDir: string;
@@ -293,5 +303,161 @@ describe('enqueueBacklog – retry counter blocks re-seed after 3 attempts', () 
     await dequeueBacklog(rootDir);
     // Dequeue does NOT touch the retry counter (it touches seedAttempts).
     expect(getRetryCount('track dequeue')).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Iteration 18 — user-origin items bypass every dedup check.
+//
+// Bug: resending a prior message (e.g. "你好" twice) caused enqueueBacklog
+// to silently drop the item via isCompleted / isSeedExhausted /
+// isRetryExhausted. The backlog stayed empty, peekBacklog returned null,
+// and voyage-idle fired immediately — the user saw zero response.
+//
+// Fix: origin === 'user' bypasses all three checks. User input MUST always
+// produce a waypoint. The dedup registry stays in place for autonomous
+// origins (dream, reflect, curiosity, system, plan).
+//
+// Also adds a skipped-enqueue registry so future regressions of the
+// autonomous-path drops are diagnosable.
+// ---------------------------------------------------------------------------
+describe('Iteration 18 — user-origin bypasses dedup checks', () => {
+  let rootDir: string;
+
+  beforeEach(async () => {
+    clearRetryCounters();
+    clearCompletedGoals();
+    clearSeedAttempts();
+    clearSkippedEnqueues();
+    rootDir = await mkdtemp(join(tmpdir(), 'ody-bl-'));
+  });
+
+  afterEach(async () => {
+    await rm(rootDir, { recursive: true, force: true });
+  });
+
+  test('user-origin enqueues even when isCompleted returns true', async () => {
+    // Simulate "你好" having been completed in a prior voyage.
+    markCompleted('你好', 'prior voyage responded with greeting');
+    expect(await sizeBacklog(rootDir)).toBe(0);
+
+    // User resends the same message — must still enqueue.
+    const item = await enqueueBacklog(rootDir, '你好', 'user');
+    expect(item.goal).toBe('你好');
+    expect(await sizeBacklog(rootDir)).toBe(1);
+
+    // The skipped registry must NOT record this — user-origin skips are
+    // impossible by construction. If this entry appears, the bypass is
+    // broken.
+    expect(listSkippedEnqueues()).toHaveLength(0);
+  });
+
+  test('user-origin enqueues even when isSeedExhausted returns true', async () => {
+    // Exhaust the seed counter — autonomous origins would be blocked.
+    incrementSeedAttempt('refactor this');
+    incrementSeedAttempt('refactor this');
+    incrementSeedAttempt('refactor this');
+
+    // User re-request must still enqueue.
+    const item = await enqueueBacklog(rootDir, 'refactor this', 'user');
+    expect(item.goal).toBe('refactor this');
+    expect(await sizeBacklog(rootDir)).toBe(1);
+    expect(listSkippedEnqueues()).toHaveLength(0);
+  });
+
+  test('user-origin enqueues even when isRetryExhausted returns true', async () => {
+    // Exhaust the retry counter — autonomous origins would be blocked.
+    for (let i = 0; i < 5; i++) {
+      incrementRetryCounter('add login page');
+    }
+
+    // User re-request must still enqueue.
+    const item = await enqueueBacklog(rootDir, 'add login page', 'user');
+    expect(item.goal).toBe('add login page');
+    expect(await sizeBacklog(rootDir)).toBe(1);
+    expect(listSkippedEnqueues()).toHaveLength(0);
+  });
+
+  test('user-origin enqueues when ALL THREE dedup checks would trip', async () => {
+    // Make every check return true simultaneously.
+    markCompleted('fix bug', 'done');
+    incrementSeedAttempt('fix bug');
+    incrementSeedAttempt('fix bug');
+    incrementSeedAttempt('fix bug');
+    for (let i = 0; i < 5; i++) {
+      incrementRetryCounter('fix bug');
+    }
+
+    // User input must still enqueue.
+    const item = await enqueueBacklog(rootDir, 'fix bug', 'user');
+    expect(item.goal).toBe('fix bug');
+    expect(await sizeBacklog(rootDir)).toBe(1);
+    expect(listSkippedEnqueues()).toHaveLength(0);
+  });
+
+  test('user-origin still increments the retry counter (informational)', async () => {
+    // The retry counter is a per-goal activity signal. A user resending
+    // the same input 50 times should produce 50 increments — so other
+    // modules can observe the activity. The counter is informational for
+    // user-origin, NOT a gate.
+    expect(getRetryCount('repeat me')).toBe(0);
+    await enqueueBacklog(rootDir, 'repeat me', 'user');
+    expect(getRetryCount('repeat me')).toBe(1);
+    await enqueueBacklog(rootDir, 'repeat me', 'user');
+    expect(getRetryCount('repeat me')).toBe(2);
+  });
+
+  test('dream-origin is still deduped (no regression on autonomous path)', async () => {
+    // Sanity: the bypass is user-only. Autonomous origins must still hit
+    // every dedup check exactly as before.
+    markCompleted('dream goal', 'done');
+    const item = await enqueueBacklog(rootDir, 'dream goal', 'dream');
+    // Returns phantom item but does NOT write.
+    expect(item).toBeDefined();
+    expect(await sizeBacklog(rootDir)).toBe(0);
+    // And the skip IS recorded — that's the observability signal.
+    const skipped = listSkippedEnqueues();
+    expect(skipped).toHaveLength(1);
+    expect(skipped[0]!.goal).toBe('dream goal');
+    expect(skipped[0]!.origin).toBe('dream');
+    expect(skipped[0]!.reason).toBe('already-completed');
+  });
+
+  test('skipped registry records all three skip reasons distinctly', async () => {
+    // Trigger each dedup path with a different autonomous origin.
+    markCompleted('completed-goal', 'done');
+    incrementSeedAttempt('seed-exhausted-goal');
+    incrementSeedAttempt('seed-exhausted-goal');
+    incrementSeedAttempt('seed-exhausted-goal');
+    for (let i = 0; i < 5; i++) {
+      incrementRetryCounter('retry-exhausted-goal');
+    }
+
+    await enqueueBacklog(rootDir, 'completed-goal', 'dream');
+    await enqueueBacklog(rootDir, 'seed-exhausted-goal', 'reflect');
+    await enqueueBacklog(rootDir, 'retry-exhausted-goal', 'curiosity');
+
+    const skipped = listSkippedEnqueues();
+    expect(skipped).toHaveLength(3);
+    const reasons = new Set(skipped.map((s) => s.reason));
+    expect(reasons).toEqual(
+      new Set(['already-completed', 'seed-exhausted', 'retry-exhausted'])
+    );
+  });
+
+  test('user-origin preserves sourceWaypointId when provided', async () => {
+    // The bypass path must still honor all EnqueueOptions.
+    const item = await enqueueBacklog(rootDir, 'user with provenance', 'user', {
+      sourceWaypointId: 'wp_abc123',
+      id: 'bl_fixed',
+      priority: 25,
+    });
+    expect(item.sourceWaypointId).toBe('wp_abc123');
+    expect(item.id).toBe('bl_fixed');
+    expect(item.priority).toBe(25);
+
+    const dequeued = await dequeueBacklog(rootDir);
+    expect(dequeued?.sourceWaypointId).toBe('wp_abc123');
+    expect(dequeued?.priority).toBe(25);
   });
 });
