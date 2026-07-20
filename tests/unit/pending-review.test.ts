@@ -10,6 +10,7 @@ import {
   rejectPendingReview,
   shouldAutoApprove,
   autoApproveAllPendingReview,
+  PendingReviewFilteredError,
 } from '../../src/cerebellum/pending-review.js';
 import {
   clearRetryCounters,
@@ -153,6 +154,8 @@ describe('pending-review — approve / reject', () => {
 
   beforeEach(async () => {
     clearRetryCounters();
+    clearSkippedEnqueues();
+    clearCompletedGoals();
     rootDir = await mkdtemp(join(tmpdir(), 'ody-pr-ar-'));
   });
 
@@ -198,6 +201,63 @@ describe('pending-review — approve / reject', () => {
   test('reject returns false for unknown id (no error)', async () => {
     const removed = await rejectPendingReview(rootDir, 'pr_doesnotexist');
     expect(removed).toBe(false);
+  });
+
+  test('approve does NOT remove from pending when enqueueBacklog throws (outbox)', async () => {
+    // Iteration 23 — the original approvePendingReview reordered the
+    // operations as save-then-enqueue, so any enqueueBacklog failure mode
+    // (validation error, I/O error) would delete the pending item without
+    // ever putting it in backlog. The fix restores outbox ordering:
+    // enqueue first, delete only after success.
+    //
+    // We force a throw by writing a pending-review.json with a whitespace-
+    // goal that passes file validation but fails enqueueBacklog's
+    // `goal cannot be empty` guard.
+    await writeFile(
+      join(rootDir, 'pending-review.json'),
+      JSON.stringify({
+        version: 1,
+        items: [
+          { id: 'pr_bad', goal: '   ', origin: 'dream', priority: 100, createdAt: '2026-07-21T00:00:00.000Z' },
+        ],
+      }),
+      'utf8'
+    );
+
+    await expect(approvePendingReview(rootDir, 'pr_bad')).rejects.toThrow(/empty/);
+
+    // The throwing enqueueBacklog must NOT have removed the item from
+    // pending — operator needs to see what failed and why.
+    const remaining = await listPendingReview(rootDir);
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]!.id).toBe('pr_bad');
+  });
+
+  test('approve surfaces dedup-filtered phantom via PendingReviewFilteredError', async () => {
+    // Iteration 23 — when enqueueBacklog returns a phantom (dedup filtered),
+    // approve must NOT silently treat it as success. The original code
+    // returned an ApproveResult with a phantom backlog item, having already
+    // deleted the pending item — data loss with a happy-path-looking return.
+    //
+    // Fix: detect the phantom via listSkippedEnqueues(), do NOT remove the
+    // pending item, and throw a typed PendingReviewFilteredError so callers
+    // can distinguish "user error (filtered)" from "system error (throw)".
+    markCompleted('done goal', 'prior voyage');
+    const item = await enqueuePendingReview(rootDir, 'done goal', 'dream');
+
+    const err = await approvePendingReview(rootDir, item.id).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(PendingReviewFilteredError);
+    expect((err as PendingReviewFilteredError).reason).toBe('already-completed');
+    expect((err as PendingReviewFilteredError).pendingItem.id).toBe(item.id);
+
+    // Item stays in pending — operator can decide to reject manually.
+    const remaining = await listPendingReview(rootDir);
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]!.goal).toBe('done goal');
+
+    // The backlog file must NOT contain the phantom.
+    const backlogItems = await listBacklog(rootDir);
+    expect(backlogItems.find((i) => i.goal === 'done goal')).toBeUndefined();
   });
 });
 

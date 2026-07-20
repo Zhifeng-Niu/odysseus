@@ -1,25 +1,22 @@
 import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { enqueueBacklog, listSkippedEnqueues, type BacklogItem } from './backlog.js';
+import {
+  enqueueBacklog,
+  listSkippedEnqueues,
+  type BacklogItem,
+  type SkipReason,
+} from './backlog.js';
 import type { BacklogOrigin } from '../orchestrator/events.js';
 
 /**
- * Pending review queue — dream/reflect/curiosity proposals wait here for user
- * approval before entering the backlog.
+ * Pending review queue — dream/reflect/curiosity proposals wait here for
+ * user approval before entering the backlog. Prevents the autonomous
+ * dreamer from keeping the voyage loop busy without consent. `user` and
+ * `system` origins bypass this queue (they go straight to backlog).
  *
- * Why this exists: previously dreamer output went straight into the backlog,
- * which meant the autonomous dreamer could keep the voyage loop busy without
- * the user's consent. Moving dream/reflect/curiosity outputs into a holding
- * pen makes the agent ask before acting on its own ideas — "I just thought
- * about X, want me to work on it?"
- *
- * `user` and `system` origins bypass this queue (they go straight to the
- * backlog via enqueueBacklog). Only `dream`, `reflect`, and `curiosity` are
- * routed here — all three are autonomous thought outputs.
- *
- * Physical shape: `{rootDir}/pending-review.json`. Atomic write via tmp+rename
- * — same pattern as backlog.ts.
+ * Physical shape: `{rootDir}/pending-review.json`. Atomic write via
+ * tmp+rename — same pattern as backlog.ts.
  */
 
 export type ReviewableOrigin = Extract<
@@ -158,9 +155,35 @@ export interface ApproveResult {
 }
 
 /**
- * Move a pending proposal into the backlog so the next voyage picks it up.
- * Throws if the id is not found. Returns both the original pending item
- * (for provenance) and the created backlog item.
+ * Typed error thrown by `approvePendingReview` when `enqueueBacklog` filtered
+ * the item via one of its dedup checks. Lets callers distinguish "user tried
+ * to approve something the system refused to re-enqueue" from "enqueueBacklog
+ * threw unexpectedly". The pending item is NOT removed from pending-review.json
+ * when this fires, so the operator can still see and manually reject it.
+ */
+export class PendingReviewFilteredError extends Error {
+  readonly pendingItem: PendingItem;
+  readonly reason: SkipReason;
+
+  constructor(pendingItem: PendingItem, reason: SkipReason) {
+    super(
+      `pending review item "${pendingItem.goal}" filtered by enqueueBacklog: ${reason}`
+    );
+    this.name = 'PendingReviewFilteredError';
+    this.pendingItem = pendingItem;
+    this.reason = reason;
+  }
+}
+
+/**
+ * Move a pending proposal into the backlog. Throws if id not found.
+ *
+ * Iteration 23 — outbox ordering. Original code saved the reduced
+ * pending-review.json BEFORE calling enqueueBacklog, so any failure mode
+ * (thrown error OR phantom dedup return) lost the item: no longer in
+ * pending, never reached backlog. Now we enqueue first, save only after
+ * verified success. Phantom dedup is detected via listSkippedEnqueues
+ * side channel and surfaced as PendingReviewFilteredError.
  */
 export async function approvePendingReview(
   rootDir: string,
@@ -171,14 +194,27 @@ export async function approvePendingReview(
   if (item === undefined) {
     throw new Error(`pending review item not found: ${id}`);
   }
-  const remaining = file.items.filter((it) => it.id !== id);
-  await saveFile(rootDir, { version: 1, items: remaining });
+
+  const skippedBefore = listSkippedEnqueues().length;
   const enqueued = await enqueueBacklog(rootDir, item.goal, item.origin, {
     priority: item.priority,
     ...(item.sourceWaypointId !== undefined
       ? { sourceWaypointId: item.sourceWaypointId }
       : {}),
   });
+  const skippedAfter = listSkippedEnqueues().length;
+  if (skippedAfter > skippedBefore) {
+    // Phantom return — enqueueBacklog filtered via dedup. Don't remove
+    // from pending; surface to caller as typed error.
+    const lastSkip = listSkippedEnqueues()[skippedAfter - 1]!;
+    throw new PendingReviewFilteredError(item, lastSkip.reason);
+  }
+
+  // Success — now safe to remove. If this save fails after enqueue wrote
+  // to backlog, we get a benign double-entry (item in both files) —
+  // strictly better than losing the item.
+  const remaining = file.items.filter((it) => it.id !== id);
+  await saveFile(rootDir, { version: 1, items: remaining });
   return { pending: item, backlog: enqueued };
 }
 
@@ -197,19 +233,11 @@ export async function rejectPendingReview(rootDir: string, id: string): Promise<
 // ---------------------------------------------------------------------------
 // Auto-approve — dreamer can bypass the user-consent gate.
 //
-// When `ODYSSEUS_AUTO_APPROVE` is set to a truthy value (default), the dreamer
-// routes its proposals directly into the backlog instead of leaving them in
-// pending-review.json for manual approval. This unblocks autonomous evolution:
-// the agent can think of an improvement, enqueue it, and execute it without a
-// human pressing 'approve' between dream and wakeful phases.
-//
-// The default is ON because the operator has explicitly opted into autonomous
-// mode. To re-enable the consent gate (e.g. for supervised runs or demos),
-// set `ODYSSEUS_AUTO_APPROVE=0`.
-//
-// pending-review.json is still written (for audit) before auto-approve runs,
-// so operators can grep historical dreamer output even when the items have
-// already moved into the backlog.
+// `ODYSSEUS_AUTO_APPROVE` (default truthy) routes dreamer proposals directly
+// into the backlog instead of leaving them in pending-review.json. Default
+// ON because the operator opted into autonomous mode; opt OUT with `=0` for
+// supervised runs or demos. pending-review.json is still written for audit
+// before auto-approve runs, so operators can grep historical dreamer output.
 // ---------------------------------------------------------------------------
 
 /**
@@ -225,12 +253,10 @@ export function shouldAutoApprove(): boolean {
 
 /**
  * Move every pending proposal into the backlog in one pass. Called by the
- * dreamer at the end of a dream pass when `shouldAutoApprove()` is true.
- *
- * Returns the backlog items created, in approval order. Items that fail to
- * enqueue (validation errors OR dedup-filtered phantom returns) are left in
- * pending-review.json for operator inspection — only items that truly landed
- * in backlog.json are removed.
+ * dreamer when `shouldAutoApprove()` is true. Items that fail to enqueue
+ * (validation errors OR dedup-filtered phantom returns) are left in
+ * pending-review.json — only items that truly landed in backlog.json are
+ * removed.
  */
 export async function autoApproveAllPendingReview(
   rootDir: string
@@ -240,19 +266,11 @@ export async function autoApproveAllPendingReview(
   const enqueued: BacklogItem[] = [];
   const remaining: PendingItem[] = [];
   for (const item of file.items) {
-    // Iteration 22 — detect phantom returns from enqueueBacklog's dedup paths.
-    //
-    // enqueueBacklog has three early-return branches (seed-exhausted,
-    // retry-exhausted, already-completed) that return a *phantom* BacklogItem
-    // with the right shape but never write to backlog.json. Before this fix,
-    // this function treated those phantoms as success: it pushed them to
-    // `enqueued` and dropped the pending item — losing the proposal in
-    // transit (not in pending, not in backlog).
-    //
-    // The dedup paths all call `recordSkippedEnqueue` before returning. We
-    // observe that side channel: if the registry grew across the call, the
-    // enqueue was filtered, so we keep the item in pending for the operator
-    // to see. If it didn't grow, the item truly landed in backlog.json.
+    // Iteration 22 — enqueueBacklog's dedup paths return a phantom
+    // BacklogItem (right shape, never persisted) + call recordSkippedEnqueue.
+    // Observe that side channel: if it grew across the call, the enqueue
+    // was filtered — keep the item in pending so the dreamer's proposal
+    // stays visible to the operator.
     const skippedBefore = listSkippedEnqueues().length;
     try {
       const result = await enqueueBacklog(rootDir, item.goal, item.origin, {
@@ -263,21 +281,14 @@ export async function autoApproveAllPendingReview(
       });
       const skippedAfter = listSkippedEnqueues().length;
       if (skippedAfter > skippedBefore) {
-        // Dedup-filtered: enqueueBacklog returned a phantom. Keep the item
-        // in pending so the dreamer's proposal stays visible.
         remaining.push(item);
         continue;
       }
       enqueued.push(result);
     } catch {
-      // Validation failure or persistence error — keep the item in the
-      // pending queue so the operator can see what the dreamer tried to
-      // push and why it failed.
       remaining.push(item);
     }
   }
-  // Only persist the remaining (failed/filtered) items; successfully-enqueued
-  // ones are now in backlog.json with full provenance.
   await saveFile(rootDir, { version: 1, items: remaining });
   return enqueued;
 }
