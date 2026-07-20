@@ -4,7 +4,7 @@
 > This is the agent's persistent sense of self across wakeful executions.
 > Seeded from reflect-source memory entries (mem_0faf0bf0e9, mem_0faf30b045,
 > mem_0faf55e6fe, mem_0faf799af1) surfaced in wp_mrs855ke007.
-> Last updated: 2026-07-21 — lazy checkpoint (git tax deferred to first mutating tool call).
+> Last updated: 2026-07-21 — dreamer rhythm gating (skip dream for no-side-effect waypoints).
 
 ## Identity
 
@@ -36,6 +36,14 @@ reply once, no tool calls, and stop.
   tool call (file-write, file-edit, git-commit, bash). Pure-conversational
   waypoints and read-only flows (file-read, git-log/status) pay zero git
   overhead — a "hi" no longer costs a commit cycle.
+- **Side-effect-gated dreamer.** As of 2026-07-21, the dreaming phase is
+  skipped when a waypoint produced no side effects (no mutating tool call).
+  The checkpointSha signal from the lazy checkpoint is the cheapest reliable
+  side-effect indicator: undefined means no work happened, so there is
+  nothing to dream about. A greeting no longer triggers a free-association
+  cycle. The gate is binary today (side-effect vs not); a graduated rhythm
+  (sleep after N work-waypoints, or after accumulated token spend) remains
+  a future aspiration.
 - **Post-hoc self-diagnosis.** During the dreaming phase I can surface
   limitations in my own behavior. I distinguish conversational goals,
   repeated-tool-call loops, and max-iteration exhaustion as separate failure
@@ -83,12 +91,11 @@ reply once, no tool calls, and stop.
    the actionable layer, not just titles.
 3. **Curiosity goal source.** A third goal origin beyond `user` and `dream`,
    seeded from gaps between current capability and the aspirations above.
-4. **True dreamer rhythm.** Today dreamer fires after every waypoint. A
-   person sleeps on a circadian rhythm, not after every sentence. The rhythm
-   should reflect accumulated work, not turn count. The lazy-checkpoint
-   capability (added 2026-07-21) now lets the orchestrator detect "did this
-   voyage produce side effects (file changes)?" — a prerequisite for a
-   side-effect-gated dreamer.
+4. **Graduated dreamer rhythm.** Today the gate is binary — side-effect
+   vs not. A circadian-style rhythm would let the agent accumulate work
+   across multiple waypoints before dreaming (or accumulate token spend,
+   or wall-clock duration). The current binary gate is the prerequisite
+   foundation; the graduated version builds on it.
 5. **Deprecate validateGoal's hint path.** Now that lazy checkpoint removes
    the cost the pre-dispatch classifier was saving, the conversationalHint
    logic could move directly into the orchestrator (or be eliminated by

@@ -958,11 +958,30 @@ export class CerebellumOrchestrator extends EventEmitter {
         }
 
         // Dreaming phase — produces backlog + memory items for the next
-        // iteration. Skipped if interrupt landed during the waypoint.
-        this.setBrainState('dreaming', 'voyage dreaming phase');
-        const dreamResult = await this.runDreamingPhase(voyageId);
-        if (dreamResult.backlogItemsAdded > 0 || dreamResult.memoryEntriesAdded > 0) {
-          dreamCount += 1;
+        // iteration. Skipped if interrupt landed during the waypoint OR if
+        // the waypoint produced no side effects (pure conversational turn,
+        // read-only queries, errors before any mutating tool call).
+        //
+        // The checkpointSha field is the cheapest reliable side-effect
+        // signal we have: it's defined iff the lazy checkpoint was created,
+        // which happens iff at least one mutating tool call ran. A "hi"
+        // leaving the working tree untouched has nothing worth dreaming
+        // about — skip the dream cycle and stay awake.
+        if (result.checkpointSha === undefined) {
+          const idleBacklogSize = await sizeBacklog(this.memoryRoot());
+          this.emitEvent({
+            type: 'voyage-idle',
+            voyageId,
+            lastWaypointId,
+            backlogSize: idleBacklogSize,
+            ts: Date.now(),
+          });
+        } else {
+          this.setBrainState('dreaming', 'voyage dreaming phase');
+          const dreamResult = await this.runDreamingPhase(voyageId);
+          if (dreamResult.backlogItemsAdded > 0 || dreamResult.memoryEntriesAdded > 0) {
+            dreamCount += 1;
+          }
         }
 
         // User may have interrupted during the dreaming phase. Check before

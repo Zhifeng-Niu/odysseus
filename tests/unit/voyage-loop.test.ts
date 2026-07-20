@@ -524,4 +524,46 @@ describe('CerebellumOrchestrator voyage loop', () => {
     await expect(readFile(join(workdir, 'seed.ts'), 'utf8')).resolves.toContain('s = 0');
     await expect(readFile(join(workdir, 'followup.ts'), 'utf8')).resolves.toContain('f = 1');
   });
+
+  test('voyage skips dream phase when waypoint produced no side effects (lazy checkpoint gate)', async () => {
+    // The lazy-checkpoint signal lets the voyage loop tell whether a waypoint
+    // actually did work. A pure-conversational waypoint ("hi") never creates
+    // a checkpoint, so checkpointSha stays undefined and the dream phase is
+    // skipped. A person doesn't sleep after every sentence — neither should
+    // the agent.
+    const provider = makeMockProvider([
+      // Waypoint: a single text reply, no tool calls. conversationalHint
+      // fires (no action verb) so the orchestrator stops after one reply.
+      'Hi! I am Odysseus. What would you like to build?',
+    ]);
+
+    const orch = new CerebellumOrchestrator({
+      cwd: workdir,
+      provider,
+      registry,
+      tracePath,
+      verifyLayers: ['syntax'],
+      autoApprove: true,
+    });
+    const events = subscribe(orch);
+
+    const result = await orch.runVoyage({ seedGoal: 'hello' });
+
+    // Waypoint ran and ended as abandoned (conversational stop).
+    expect(result.waypoints.length).toBe(1);
+    expect(result.waypoints[0]!.outcome).toBe('abandoned');
+    // No checkpoint was created → no checkpointSha in the result.
+    expect(result.waypoints[0]!.checkpointSha).toBeUndefined();
+
+    // Dream phase was SKIPPED — no dream-completed event.
+    const types = events.map((e) => e.type);
+    expect(types).not.toContain('dream-completed');
+
+    // Brain never entered dreaming state.
+    const dreamStateChanges = events.filter(
+      (e): e is Extract<OrchestratorEvent, { type: 'brain-state-changed' }> =>
+        e.type === 'brain-state-changed' && e.to === 'dreaming'
+    );
+    expect(dreamStateChanges.length).toBe(0);
+  });
 });
