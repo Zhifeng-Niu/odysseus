@@ -84,12 +84,36 @@ export async function runVerify(input: VerifyInput): Promise<VerifyOutput> {
       }
     }
     if (layer === 'progress') {
-      // `git status --porcelain` prints one line per working-tree entry
-      // that differs from HEAD (staged, unstaged, and untracked). Empty
-      // output means the waypoint produced no file effect at all — the
-      // false-success pattern we're blocking. A non-zero exit means git
-      // itself failed (not a repo, corrupt HEAD, etc.) — treat as fail
-      // rather than silently letting the commit through.
+      // Iteration 21 — HEAD-aware progress detection.
+      //
+      // Iteration 20's initial implementation only checked the working
+      // tree. That was correct for the common case (agent writes files,
+      // commitWaypoint commits them) but wrong for an important edge
+      // case: when the agent itself calls `git commit` during the
+      // waypoint, the working tree ends up clean by verify time, even
+      // though real work happened. The original implementation would
+      // fail this case, triggering orchestrator.ts:911's rollback path
+      // and LOSING the agent's manually-committed work. That's a worse
+      // failure mode than the false-success pattern we were trying to
+      // block.
+      //
+      // The fix uses HEAD's subject as the signal. The orchestrator's
+      // lazy-checkpoint path creates a `checkpoint/wp_*-start` commit
+      // at the first mutating tool call. If HEAD's subject still IS
+      // a checkpoint-start, the agent made no commits this waypoint —
+      // progress must come from the working tree. If HEAD's subject is
+      // anything else, HEAD moved past the checkpoint (or no checkpoint
+      // was created), so real progress exists regardless of working
+      // tree state.
+      const headR = await execFileNoThrow(
+        'git',
+        ['log', '-1', '--format=%s'],
+        { cwd: input.cwd, env: input.env ?? process.env },
+      );
+      const headSubject = headR.exitCode === 0 ? headR.stdout.trim() : '';
+      const headIsCheckpoint =
+        headSubject.startsWith('checkpoint/') && headSubject.endsWith('-start');
+
       const r = await execFileNoThrow('git', ['status', '--porcelain'], {
         cwd: input.cwd,
         env: input.env ?? process.env,
@@ -97,12 +121,17 @@ export async function runVerify(input: VerifyInput): Promise<VerifyOutput> {
       if (r.exitCode !== 0) {
         results.progress = 'fail';
         details.push(`--- progress ---\n${r.stdout}\n${r.stderr}`);
-      } else if (r.stdout.trim().length === 0) {
+      } else if (headIsCheckpoint && r.stdout.trim().length === 0) {
+        // HEAD is the checkpoint-start AND working tree is clean → the
+        // agent did nothing. This is the false-success pattern.
         results.progress = 'fail';
         details.push(
-          '--- progress ---\nwaypoint produced no file changes (empty working tree)'
+          '--- progress ---\nwaypoint produced no file changes and no commits since checkpoint'
         );
       } else {
+        // Either HEAD moved past the checkpoint (agent committed) OR
+        // the working tree has changes (agent wrote files). Both count
+        // as real progress.
         results.progress = 'pass';
       }
     }

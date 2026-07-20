@@ -4,7 +4,7 @@
 > This is the agent's persistent sense of self across wakeful executions.
 > Seeded from reflect-source memory entries (mem_0faf0bf0e9, mem_0faf30b045,
 > mem_0faf55e6fe, mem_0faf799af1) surfaced in wp_mrs855ke007.
-> Last updated: 2026-07-21 — Progress verify gate blocks empty commits at the source (Iteration 20). Iteration 19 surfaced the false-success pattern (40% of recent waypoint commits were empty) but could only measure it post-hoc; the orchestrator's `commitWaypoint` could not be patched in-place due to the manual-review constraint on `src/cerebellum/orchestrator.ts`. This iteration closes the loop by adding a new `'progress'` layer to `src/cerebellum/verify.ts`: runs `git status --porcelain` and fails the verify gate when the working tree has zero changes vs HEAD. The verify gate runs at orchestrator.ts:800, BEFORE `commitWaypoint` at :867 — so a failing progress layer forces the rollback/failure branch and the empty commit is never reached. Both entry points in `src/index.ts` (CLI + voyage console) now use `verifyLayers: ['progress', 'syntax', 'tests']` (progress first because it's the cheapest check). The layer handles three cases: (a) any working-tree change → pass, (b) clean tree → fail with "empty working tree" detail, (c) git itself errors (non-repo, corrupt HEAD) → fail rather than silently pass. 7 unit tests cover new-file, modified-file, nested-untracked, deletion, clean-tree (the false-success case), non-repo, and combined-with-syntax scenarios. The Active Limitation entry for the empty-commit pattern has been updated: the pattern is now structurally blocked at the verify gate even though `commitWaypoint` itself still allows empty commits — the orchestrator.ts source-level fix remains manual-review-gated but is no longer load-bearing for honesty. Full suite 543/543.
+> Last updated: 2026-07-21 — Progress gate made HEAD-aware so manual agent commits don't trigger rollback (Iteration 21). Iteration 20 shipped the `progress` verify layer with a working-tree-only check, but an end-to-end trace of `wp_mrtpf2n5002` (the empty commit `43b6a7c` that motivated Iteration 19's audit) revealed the truth: that waypoint's actual work was the agent manually running `git commit` mid-waypoint (commit `ec6a6b6`, "Iteration 13: test-gated self-verification"). By the time verify ran, HEAD had already moved past the checkpoint-start commit and the working tree was clean. The Iteration 20 layer would have called this a failure, triggering orchestrator.ts:911's rollback path and LOSING the manually-committed work — a strictly worse failure mode than the false-success it was trying to fix. Iteration 21 makes the check HEAD-aware: read `git log -1 --format=%s` and treat HEAD's subject as the signal. If HEAD IS a `checkpoint/wp_*-start` commit AND the working tree is clean → fail (this is the false-success pattern). Otherwise → pass (either HEAD moved past the checkpoint because the agent committed, or the working tree has changes because the agent wrote files). 8 unit tests now cover: new-file, modified-file, nested-untracked, deletion, **agent-manual-commit (the regression-guard for this very bug)**, false-success (checkpoint HEAD + clean tree), non-repo, and combined-with-syntax. End-to-end validation against the live repo confirms both scenarios work: dirty tree at non-checkpoint HEAD passes, checkpoint HEAD with clean tree fails with the detail message "waypoint produced no file changes and no commits since checkpoint". Full suite 544/544.
 
 ## Identity
 
@@ -308,24 +308,33 @@ a conversational turn is over, the same way a person does.
   reproduces the exact `43b6a7c` pattern. The structural fix —
   refusing empty commits in `commitWaypoint` — is documented in
   Active Limitations and gated on manual review per CLAUDE.md.
-- **Progress-gated commit honesty.** As of 2026-07-21 (Iteration 20),
-  the verify gate refuses to pass a waypoint that produced no file
-  changes. The new `'progress'` layer in `src/cerebellum/verify.ts`
-  runs `git status --porcelain` and fails when the working tree matches
-  HEAD exactly — the signature of the false-success pattern Iteration 19
-  quantified at ~40% of recent waypoint commits. The layer plugs into
-  the existing verify framework (runs at orchestrator.ts:800, before
+- **Progress-gated commit honesty.** As of 2026-07-21 (Iterations 20→21),
+  the verify gate refuses to pass a waypoint that produced zero progress.
+  The new `'progress'` layer in `src/cerebellum/verify.ts` uses HEAD's
+  subject as the signal: if HEAD IS a `checkpoint/wp_*-start` commit AND
+  the working tree is clean, the agent did nothing — this is the
+  false-success pattern Iteration 19 quantified at ~40% of recent
+  waypoint commits. Otherwise the layer passes (HEAD moved past the
+  checkpoint because the agent committed manually, OR the working tree
+  has changes because the agent wrote files). The initial Iteration 20
+  implementation checked only the working tree; an end-to-end trace of
+  `wp_mrtpf2n5002` revealed this would have triggered rollback and LOST
+  the agent's manually-committed work — Iteration 21 added the
+  HEAD-aware check to close that hole. The layer plugs into the
+  existing verify framework (runs at orchestrator.ts:800, before
   `commitWaypoint` at :867), so the orchestrator's `--allow-empty` bug
   becomes unreachable: `verify.passed === false` forces the
   rollback/failure branch, and the empty commit is never created. Both
   entry points in `src/index.ts` use `verifyLayers: ['progress',
-  'syntax', 'tests']` — progress first because it's the cheapest check
-  (one `git status` invocation vs spawning tsc and vitest). 7 unit
-  tests cover new-file, modified-file, nested-untracked, deletion,
-  clean-tree (the false-success case), non-repo (git itself errors),
-  and combined-with-syntax scenarios. This is the second verify-layer
-  self-extension (after the tests layer in Iteration 13); the verify
-  framework's open-layer design continues to pay off.
+  'syntax', 'tests']`. 8 unit tests cover new-file, modified-file,
+  nested-untracked, deletion, agent-manual-commit (the Iteration 21
+  regression-guard), false-success (checkpoint HEAD + clean tree),
+  non-repo, and combined-with-syntax. End-to-end validation against
+  the live repo confirms both scenarios behave correctly. This is the
+  second verify-layer self-extension (after the tests layer in
+  Iteration 13); the verify framework's open-layer design continues to
+  pay off — and now with a documented edge case (manual agent commits)
+  that future extensions should keep in mind.
 - **Test-gated self-verification.** As of 2026-07-21 (Iteration 13),
   the verify gate runs the full vitest suite (442 tests) after every
   waypoint, not just `tsc --noEmit`. The `tests` layer in

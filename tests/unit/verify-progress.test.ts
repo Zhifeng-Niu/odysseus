@@ -6,17 +6,23 @@ import { execFileNoThrow } from '../../src/util/exec.js';
 import { runVerify } from '../../src/cerebellum/verify.js';
 
 /**
- * Iteration 20 — progress verify layer.
+ * Iteration 20→21 — progress verify layer.
  *
  * Blocks the "empty-commit false-success" pattern by failing the verify
- * gate when the working tree has no changes vs HEAD. These tests pin the
- * layer's contract:
- *   - passes when there is ANY working-tree change (added/modified/deleted/untracked)
- *   - fails when the tree matches HEAD exactly
- *   - fails when git itself fails (non-repo, corrupt HEAD)
+ * gate when the waypoint produced zero progress. Progress is defined as
+ * EITHER the working tree has changes vs HEAD OR HEAD itself has moved
+ * past the checkpoint commit (i.e., the agent manually committed).
  *
- * Each test owns its own tempdir + git repo so the porcelain output is
- * deterministic and isolated from the Odysseus repo's own state.
+ * Iteration 21 added the HEAD-aware check after realizing the original
+ * (working-tree-only) implementation would have triggered rollback and
+ * LOST the agent's manually-committed work — strictly worse than the
+ * bug it was trying to fix.
+ *
+ * Tests pin the contract:
+ *   - passes when there is ANY working-tree change
+ *   - passes when HEAD has moved past the checkpoint (agent committed)
+ *   - fails when HEAD is still the checkpoint AND the tree is clean
+ *   - fails when git itself errors (non-repo, corrupt HEAD)
  */
 async function initRepo(dir: string): Promise<void> {
   await execFileNoThrow('git', ['init'], { cwd: dir });
@@ -27,6 +33,20 @@ async function initRepo(dir: string): Promise<void> {
   await writeFile(join(dir, 'README.md'), 'initial\n');
   await execFileNoThrow('git', ['add', 'README.md'], { cwd: dir });
   await execFileNoThrow('git', ['commit', '-m', 'initial'], { cwd: dir });
+}
+
+/** Creates a `checkpoint/wp_*-start` commit so HEAD looks like the
+ * orchestrator's lazy-checkpoint output. Required to test the
+ * false-success case (HEAD is checkpoint AND tree is clean). */
+async function makeCheckpointCommit(
+  cwd: string,
+  waypointId: string
+): Promise<void> {
+  await execFileNoThrow(
+    'git',
+    ['commit', '--allow-empty', '-m', `checkpoint/${waypointId}-start`],
+    { cwd }
+  );
 }
 
 describe('runVerify — progress layer', () => {
@@ -56,8 +76,6 @@ describe('runVerify — progress layer', () => {
   });
 
   test('passes when a new file sits in a nested untracked directory', async () => {
-    // Regression guard: mkdir + file mirrors how the agent's FileWrite tool
-    // creates files in subdirectories. porcelain must pick this up.
     await mkdir(join(cwd, 'src', 'deep'), { recursive: true });
     await writeFile(join(cwd, 'src', 'deep', 'mod.ts'), 'export const y = 2;\n');
     const result = await runVerify({ cwd, layers: ['progress'] });
@@ -72,15 +90,38 @@ describe('runVerify — progress layer', () => {
     expect(result.results.progress).toBe('pass');
   });
 
-  test('fails when the working tree matches HEAD exactly (false-success case)', async () => {
-    // This is the exact pattern Iteration 19 surfaced: commitWaypoint hits
-    // `git diff --cached --quiet` with exit 0 and appends --allow-empty.
-    // The progress layer must reject this BEFORE the commit path is taken.
+  test('passes when agent manually committed (HEAD moved past checkpoint, clean tree)', async () => {
+    // Reproduces the wp_mrtpf2n5002 scenario: orchestrator creates a
+    // checkpoint/wp_X-start commit, agent modifies files AND commits
+    // them manually (e.g., via BashTool). By verify time the working
+    // tree is clean but HEAD is no longer the checkpoint-start commit.
+    // This MUST pass — otherwise the orchestrator would roll back and
+    // lose the agent's manual commit.
+    await makeCheckpointCommit(cwd, 'wp_manual001');
+    await writeFile(join(cwd, 'work.ts'), 'export const done = true;\n');
+    await execFileNoThrow('git', ['add', '-A'], { cwd });
+    await execFileNoThrow(
+      'git',
+      ['commit', '-m', 'feat: real work committed manually by agent'],
+      { cwd }
+    );
+
+    const result = await runVerify({ cwd, layers: ['progress'] });
+    expect(result.passed).toBe(true);
+    expect(result.results.progress).toBe('pass');
+  });
+
+  test('fails when HEAD is checkpoint-start AND working tree is clean (false-success)', async () => {
+    // The exact pattern Iteration 19 surfaced: checkpoint created, agent
+    // does nothing, verify runs with HEAD still on the checkpoint commit
+    // and no working-tree changes.
+    await makeCheckpointCommit(cwd, 'wp_empty001');
+
     const result = await runVerify({ cwd, layers: ['progress'] });
     expect(result.passed).toBe(false);
     expect(result.results.progress).toBe('fail');
     expect(result.detail).toMatch(/progress/);
-    expect(result.detail).toMatch(/empty working tree/);
+    expect(result.detail).toMatch(/no commits since checkpoint/);
   });
 
   test('fails when git itself errors (not a git repo)', async () => {
@@ -97,11 +138,12 @@ describe('runVerify — progress layer', () => {
     }
   });
 
-  test('combines with syntax layer — progress fail short-circuits the gate', async () => {
+  test('combines with syntax layer — progress fail blocks the gate', async () => {
     // Even when syntax would pass, a progress failure must fail the overall
     // gate. This is the property that blocks the empty-commit path: the
     // orchestrator checks `verify.passed` (not per-layer state) before
     // calling commitWaypoint.
+    await makeCheckpointCommit(cwd, 'wp_combined001');
     const result = await runVerify({ cwd, layers: ['syntax', 'progress'] });
     expect(result.passed).toBe(false);
     expect(result.results.progress).toBe('fail');
