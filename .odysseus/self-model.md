@@ -4,7 +4,7 @@
 > This is the agent's persistent sense of self across wakeful executions.
 > Seeded from reflect-source memory entries (mem_0faf0bf0e9, mem_0faf30b045,
 > mem_0faf55e6fe, mem_0faf799af1) surfaced in wp_mrs855ke007.
-> Last updated: 2026-07-21 — Progress gate made HEAD-aware so manual agent commits don't trigger rollback (Iteration 21). Iteration 20 shipped the `progress` verify layer with a working-tree-only check, but an end-to-end trace of `wp_mrtpf2n5002` (the empty commit `43b6a7c` that motivated Iteration 19's audit) revealed the truth: that waypoint's actual work was the agent manually running `git commit` mid-waypoint (commit `ec6a6b6`, "Iteration 13: test-gated self-verification"). By the time verify ran, HEAD had already moved past the checkpoint-start commit and the working tree was clean. The Iteration 20 layer would have called this a failure, triggering orchestrator.ts:911's rollback path and LOSING the manually-committed work — a strictly worse failure mode than the false-success it was trying to fix. Iteration 21 makes the check HEAD-aware: read `git log -1 --format=%s` and treat HEAD's subject as the signal. If HEAD IS a `checkpoint/wp_*-start` commit AND the working tree is clean → fail (this is the false-success pattern). Otherwise → pass (either HEAD moved past the checkpoint because the agent committed, or the working tree has changes because the agent wrote files). 8 unit tests now cover: new-file, modified-file, nested-untracked, deletion, **agent-manual-commit (the regression-guard for this very bug)**, false-success (checkpoint HEAD + clean tree), non-repo, and combined-with-syntax. End-to-end validation against the live repo confirms both scenarios work: dirty tree at non-checkpoint HEAD passes, checkpoint HEAD with clean tree fails with the detail message "waypoint produced no file changes and no commits since checkpoint". Full suite 544/544.
+> Last updated: 2026-07-21 — Silent-loss bug in `autoApproveAllPendingReview` fixed (Iteration 22). The dreamer's bulk-approve path was treating phantom `enqueueBacklog` returns as success: when a pending proposal matched the `already-completed` / `retry-exhausted` / `seed-exhausted` dedup filter, `enqueueBacklog` returned a `BacklogItem` with the right shape but never wrote to `backlog.json`, and `autoApproveAllPendingReview` happily pushed that phantom to its result list and dropped the pending item — losing the proposal in transit (not in pending-review.json, not in backlog.json). Iteration 22 detects the phantom by observing `listSkippedEnqueues()` across the call: if the registry grew, the enqueue was filtered, and the item stays in pending-review.json for the operator to see. 24 unit tests now lock the `pending-review.ts` contract (the module had no dedicated test file before — coverage came only via voyage-loop integration tests), including a regression guard for this very bug. Full suite 568/568. Progress gate made HEAD-aware so manual agent commits don't trigger rollback (Iteration 21). Iteration 20 shipped the `progress` verify layer with a working-tree-only check, but an end-to-end trace of `wp_mrtpf2n5002` (the empty commit `43b6a7c` that motivated Iteration 19's audit) revealed the truth: that waypoint's actual work was the agent manually running `git commit` mid-waypoint (commit `ec6a6b6`, "Iteration 13: test-gated self-verification"). By the time verify ran, HEAD had already moved past the checkpoint-start commit and the working tree was clean. The Iteration 20 layer would have called this a failure, triggering orchestrator.ts:911's rollback path and LOSING the manually-committed work — a strictly worse failure mode than the false-success it was trying to fix. Iteration 21 makes the check HEAD-aware: read `git log -1 --format=%s` and treat HEAD's subject as the signal. If HEAD IS a `checkpoint/wp_*-start` commit AND the working tree is clean → fail (this is the false-success pattern). Otherwise → pass (either HEAD moved past the checkpoint because the agent committed, or the working tree has changes because the agent wrote files). 8 unit tests now cover: new-file, modified-file, nested-untracked, deletion, **agent-manual-commit (the regression-guard for this very bug)**, false-success (checkpoint HEAD + clean tree), non-repo, and combined-with-syntax. End-to-end validation against the live repo confirms both scenarios work: dirty tree at non-checkpoint HEAD passes, checkpoint HEAD with clean tree fails with the detail message "waypoint produced no file changes and no commits since checkpoint".
 
 ## Identity
 
@@ -308,6 +308,32 @@ a conversational turn is over, the same way a person does.
   reproduces the exact `43b6a7c` pattern. The structural fix —
   refusing empty commits in `commitWaypoint` — is documented in
   Active Limitations and gated on manual review per CLAUDE.md.
+- **Pending-review silent-loss guard.** As of 2026-07-21 (Iteration 22),
+  the dreamer's bulk-approve path (`autoApproveAllPendingReview` in
+  `src/cerebellum/pending-review.ts`) no longer silently drops proposals
+  that hit a dedup filter. Background: `enqueueBacklog` has three
+  early-return branches (`already-completed`, `retry-exhausted`,
+  `seed-exhausted`) that return a phantom `BacklogItem` — same shape as
+  a real one, but `backlog.json` is never written. Before Iteration 22,
+  `autoApproveAllPendingReview` treated that phantom as success: pushed
+  it to the result list and removed the pending item. The proposal was
+  lost in transit (no longer in pending-review.json, never in
+  backlog.json), making dreamer output unattributable. The fix observes
+  `listSkippedEnqueues()` (the Iteration 18 observability registry)
+  across the call: if it grew, the enqueue was filtered, and the item
+  stays in pending-review.json for the operator to inspect. 24 unit
+  tests now lock the `pending-review.ts` contract — the module
+  previously had no dedicated test file (coverage came only via
+  voyage-loop integration tests), so this iteration also closes that
+  coverage gap. Tests cover: basic enqueue/list/size, id format,
+  default priority per origin, corrupt-JSON resilience, approve/reject
+  semantics, the `ODYSSEUS_AUTO_APPROVE` env var contract, and the
+  `autoApproveAllPendingReview` guarantees (empty-queue no-op, moves
+  all valid items, preserves provenance, leaves throwing AND
+  dedup-filtered items in pending). A related latent bug in
+  `approvePendingReview` (same phantom-return pattern, single-item
+  path) is noted for a future iteration — its blast radius is smaller
+  because the user explicitly initiated the approve.
 - **Progress-gated commit honesty.** As of 2026-07-21 (Iterations 20→21),
   the verify gate refuses to pass a waypoint that produced zero progress.
   The new `'progress'` layer in `src/cerebellum/verify.ts` uses HEAD's

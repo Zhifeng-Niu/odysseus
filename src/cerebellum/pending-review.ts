@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { enqueueBacklog, type BacklogItem } from './backlog.js';
+import { enqueueBacklog, listSkippedEnqueues, type BacklogItem } from './backlog.js';
 import type { BacklogOrigin } from '../orchestrator/events.js';
 
 /**
@@ -228,8 +228,9 @@ export function shouldAutoApprove(): boolean {
  * dreamer at the end of a dream pass when `shouldAutoApprove()` is true.
  *
  * Returns the backlog items created, in approval order. Items that fail to
- * enqueue (e.g. validation errors) are left in pending-review.json for
- * operator inspection — only successfully-enqueued items are removed.
+ * enqueue (validation errors OR dedup-filtered phantom returns) are left in
+ * pending-review.json for operator inspection — only items that truly landed
+ * in backlog.json are removed.
  */
 export async function autoApproveAllPendingReview(
   rootDir: string
@@ -239,6 +240,20 @@ export async function autoApproveAllPendingReview(
   const enqueued: BacklogItem[] = [];
   const remaining: PendingItem[] = [];
   for (const item of file.items) {
+    // Iteration 22 — detect phantom returns from enqueueBacklog's dedup paths.
+    //
+    // enqueueBacklog has three early-return branches (seed-exhausted,
+    // retry-exhausted, already-completed) that return a *phantom* BacklogItem
+    // with the right shape but never write to backlog.json. Before this fix,
+    // this function treated those phantoms as success: it pushed them to
+    // `enqueued` and dropped the pending item — losing the proposal in
+    // transit (not in pending, not in backlog).
+    //
+    // The dedup paths all call `recordSkippedEnqueue` before returning. We
+    // observe that side channel: if the registry grew across the call, the
+    // enqueue was filtered, so we keep the item in pending for the operator
+    // to see. If it didn't grow, the item truly landed in backlog.json.
+    const skippedBefore = listSkippedEnqueues().length;
     try {
       const result = await enqueueBacklog(rootDir, item.goal, item.origin, {
         priority: item.priority,
@@ -246,6 +261,13 @@ export async function autoApproveAllPendingReview(
           ? { sourceWaypointId: item.sourceWaypointId }
           : {}),
       });
+      const skippedAfter = listSkippedEnqueues().length;
+      if (skippedAfter > skippedBefore) {
+        // Dedup-filtered: enqueueBacklog returned a phantom. Keep the item
+        // in pending so the dreamer's proposal stays visible.
+        remaining.push(item);
+        continue;
+      }
       enqueued.push(result);
     } catch {
       // Validation failure or persistence error — keep the item in the
@@ -254,8 +276,8 @@ export async function autoApproveAllPendingReview(
       remaining.push(item);
     }
   }
-  // Only persist the remaining (failed) items; successfully-enqueued ones
-  // are now in backlog.json with full provenance.
+  // Only persist the remaining (failed/filtered) items; successfully-enqueued
+  // ones are now in backlog.json with full provenance.
   await saveFile(rootDir, { version: 1, items: remaining });
   return enqueued;
 }
