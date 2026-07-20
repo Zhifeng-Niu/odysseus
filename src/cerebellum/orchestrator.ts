@@ -211,34 +211,45 @@ export class CerebellumOrchestrator extends EventEmitter {
     // still works for ambiguous code tasks.
     const conversationalHint = !validation.valid;
 
-    // CHECKPOINT
-    const checkpoint = await createCheckpoint({
-      cwd: this.config.cwd,
-      label: `${waypoint.id}-start`,
-    });
-    if (!checkpoint.ok) {
-      const abandoned = markAbandoned(waypoint, `checkpoint failed: ${checkpoint.error}`);
-      await this.trace(abandoned, null, null);
-      this.emitEvent({
-        type: 'waypoint-failed',
-        waypointId: waypoint.id,
-        error: `checkpoint failed: ${checkpoint.error}`,
-        ts: Date.now(),
+    // LAZY CHECKPOINT — deferred until the first mutating tool call.
+    //
+    // History: the eager checkpoint at waypoint start taxed every input —
+    // including pure-conversational ones like "hi" or "who are you" — with
+    // a git add -A + commit cycle. That was waste: nothing the agent does
+    // in response to "hi" will ever need rolling back. The lazy checkpoint
+    // pays the git tax only when the agent actually reaches for a mutating
+    // tool (file-write, file-edit, git-commit, bash). Read-only flows
+    // (file-read, git-log/status/diff/rev-parse) and pure-text conversational
+    // replies never trigger a checkpoint.
+    //
+    // Failure mode shift: if checkpoint creation fails on the first mutating
+    // call, the error is surfaced to the LLM as a tool result rather than
+    // abandoning the waypoint. This lets the agent recover — e.g. trying a
+    // different approach or reporting DONE with a diagnostic. Bonus: a
+    // non-git cwd no longer breaks conversational inputs, only mutating ones.
+    //
+    // Implementation note: the checkpoint is wrapped in a holder object so
+    // that TypeScript's control-flow analysis doesn't narrow it back to
+    // `null` after the `ensureCheckpoint` closure runs. Assigning to a
+    // property (`cp.current = ...`) is opaque to narrowing, so the rest of
+    // the function sees `{ sha: string } | null` correctly.
+    const cp: { current: { sha: string } | null } = { current: null };
+    const ensureCheckpoint = async (): Promise<
+      { ok: true; sha: string } | { ok: false; error: string }
+    > => {
+      if (cp.current !== null) return { ok: true, sha: cp.current.sha };
+      const created = await createCheckpoint({
+        cwd: this.config.cwd,
+        label: `${waypoint.id}-start`,
       });
-      return {
-        waypoint: abandoned,
-        outcome: 'abandoned',
-        ...(abandoned.failureReason !== undefined
-          ? { failReason: abandoned.failureReason }
-          : {}),
-        iterationsUsed: 0,
-        tokensConsumed: { input: 0, output: 0 },
-      };
-    }
-    this.state.allowedShas.add(checkpoint.sha);
+      if (!created.ok) return created;
+      cp.current = { sha: created.sha };
+      this.state.allowedShas.add(created.sha);
+      return { ok: true, sha: created.sha };
+    };
 
     // ACT — LLM ↔ Tool loop
-    const active = markActive({ ...waypoint, checkpointSha: checkpoint.sha });
+    const active = markActive(waypoint); // checkpointSha filled in lazily
     // maxIter is now optional — undefined means "run until DONE, interrupt,
     // conversational stop, or repeated-tool-call detection". The loop body
     // has explicit breaks on each of those conditions, so undefined is safe.
@@ -407,6 +418,33 @@ export class CerebellumOrchestrator extends EventEmitter {
               args,
               ts: Date.now(),
             });
+
+            // LAZY CHECKPOINT — just before dispatching a mutating tool,
+            // ensure a checkpoint exists. Pure-conversational waypoints
+            // never reach this branch; read-only tools (file-read, git-log)
+            // skip it via mayMutate=false. Only the first mutating call in
+            // a waypoint actually pays the git tax.
+            if (this.config.registry.mayMutate(call.function.name, args)) {
+              const ensured = await ensureCheckpoint();
+              if (!ensured.ok) {
+                const cpErr = `checkpoint creation failed: ${ensured.error}`;
+                this.emitEvent({
+                  type: 'tool-call-completed',
+                  waypointId: waypoint.id,
+                  callId,
+                  result: `ERROR: ${cpErr}`,
+                  ok: false,
+                  ts: Date.now(),
+                });
+                history.push({
+                  role: 'tool',
+                  content: `ERROR: ${cpErr}. Cannot safely run ${call.function.name} without a rollback point.`,
+                  toolCallId: call.id,
+                });
+                continue;
+              }
+            }
+
             const result = await this.config.registry.dispatch(call.function.name, args, {
               cwd: this.config.cwd,
             });
@@ -503,14 +541,16 @@ export class CerebellumOrchestrator extends EventEmitter {
       //
       // interrupted keeps its dedicated waypoint-rolled-back event so the TUI
       // can distinguish "user pressed Ctrl+C" from "LLM blew up".
-      await rollbackTo({
-        cwd: this.config.cwd,
-        sha: checkpoint.sha,
-        allowedShas: Array.from(this.state.allowedShas),
-      });
+      if (cp.current !== null) {
+        await rollbackTo({
+          cwd: this.config.cwd,
+          sha: cp.current.sha,
+          allowedShas: Array.from(this.state.allowedShas),
+        });
+      }
       this.pendingApprovals.delete(waypoint.id);
       const failed = markFailure(active, reason, iterationsUsed);
-      await this.trace(failed, checkpoint.sha, null);
+      await this.trace(failed, cp.current?.sha ?? null, null);
 
       if (interrupted) {
         this.emitEvent({
@@ -532,7 +572,7 @@ export class CerebellumOrchestrator extends EventEmitter {
       return {
         waypoint: failed,
         outcome: 'failure',
-        checkpointSha: checkpoint.sha,
+        ...(cp.current?.sha !== undefined ? { checkpointSha: cp.current.sha } : {}),
         failReason: reason,
         iterationsUsed,
         tokensConsumed: { input: this.state.totalInput, output: this.state.totalOutput },
@@ -578,12 +618,14 @@ export class CerebellumOrchestrator extends EventEmitter {
       }
 
       const abandoned = markAbandoned(active, reason);
-      await rollbackTo({
-        cwd: this.config.cwd,
-        sha: checkpoint.sha,
-        allowedShas: Array.from(this.state.allowedShas),
-      });
-      await this.trace(abandoned, checkpoint.sha, null);
+      if (cp.current !== null) {
+        await rollbackTo({
+          cwd: this.config.cwd,
+          sha: cp.current.sha,
+          allowedShas: Array.from(this.state.allowedShas),
+        });
+      }
+      await this.trace(abandoned, cp.current?.sha ?? null, null);
       this.emitEvent({
         type: 'waypoint-rolled-back',
         waypointId: waypoint.id,
@@ -594,7 +636,7 @@ export class CerebellumOrchestrator extends EventEmitter {
       return {
         waypoint: abandoned,
         outcome: 'abandoned',
-        checkpointSha: checkpoint.sha,
+        ...(cp.current?.sha !== undefined ? { checkpointSha: cp.current.sha } : {}),
         failReason: reason,
         iterationsUsed,
         tokensConsumed: { input: this.state.totalInput, output: this.state.totalOutput },
@@ -611,7 +653,7 @@ export class CerebellumOrchestrator extends EventEmitter {
           ? `hit maxIterations (${maxIter}) without DONE — agent did not converge`
           : 'loop exited without DONE and without an explicit stop — this should be unreachable for engineer strategy';
       const failed = markFailure(active, failReason, iterationsUsed);
-      await this.trace(failed, checkpoint.sha, null);
+      await this.trace(failed, cp.current?.sha ?? null, null);
       this.emitEvent({
         type: 'waypoint-failed',
         waypointId: waypoint.id,
@@ -621,7 +663,7 @@ export class CerebellumOrchestrator extends EventEmitter {
       return {
         waypoint: failed,
         outcome: 'failure',
-        checkpointSha: checkpoint.sha,
+        ...(cp.current?.sha !== undefined ? { checkpointSha: cp.current.sha } : {}),
         failReason,
         iterationsUsed,
         tokensConsumed: { input: this.state.totalInput, output: this.state.totalOutput },
@@ -665,14 +707,16 @@ export class CerebellumOrchestrator extends EventEmitter {
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
           const interrupted = err instanceof InterruptedError;
-          await rollbackTo({
-            cwd: this.config.cwd,
-            sha: checkpoint.sha,
-            allowedShas: Array.from(this.state.allowedShas),
-          });
+          if (cp.current !== null) {
+            await rollbackTo({
+              cwd: this.config.cwd,
+              sha: cp.current.sha,
+              allowedShas: Array.from(this.state.allowedShas),
+            });
+          }
           this.pendingApprovals.delete(waypoint.id);
           const failed = markFailure(active, reason, iterationsUsed);
-          await this.trace(failed, checkpoint.sha, null);
+          await this.trace(failed, cp.current?.sha ?? null, null);
           if (interrupted) {
             this.emitEvent({
               type: 'waypoint-rolled-back',
@@ -692,7 +736,7 @@ export class CerebellumOrchestrator extends EventEmitter {
           return {
             waypoint: failed,
             outcome: 'failure',
-            checkpointSha: checkpoint.sha,
+            ...(cp.current?.sha !== undefined ? { checkpointSha: cp.current.sha } : {}),
             failReason: reason,
             iterationsUsed,
             tokensConsumed: { input: this.state.totalInput, output: this.state.totalOutput },
@@ -707,7 +751,7 @@ export class CerebellumOrchestrator extends EventEmitter {
           `verify passed but commit failed: ${commit.error}`,
           iterationsUsed
         );
-        await this.trace(failed, checkpoint.sha, null);
+        await this.trace(failed, cp.current?.sha ?? null, null);
         this.emitEvent({
           type: 'waypoint-failed',
           waypointId: waypoint.id,
@@ -717,7 +761,7 @@ export class CerebellumOrchestrator extends EventEmitter {
         return {
           waypoint: failed,
           outcome: 'failure',
-          checkpointSha: checkpoint.sha,
+          ...(cp.current?.sha !== undefined ? { checkpointSha: cp.current.sha } : {}),
           ...(failed.failureReason !== undefined
             ? { failReason: failed.failureReason }
             : {}),
@@ -727,7 +771,7 @@ export class CerebellumOrchestrator extends EventEmitter {
       }
       const succeeded = markSuccess(active, commit.sha, iterationsUsed);
       markCompleted(waypoint.goal, commit.sha);
-      await this.trace(succeeded, checkpoint.sha, commit.sha);
+      await this.trace(succeeded, cp.current?.sha ?? null, commit.sha);
       this.emitEvent({
         type: 'waypoint-committed',
         waypointId: waypoint.id,
@@ -744,21 +788,27 @@ export class CerebellumOrchestrator extends EventEmitter {
       };
     }
 
-    // VERIFY FAILED — rollback
-    const rollback = await rollbackTo({
-      cwd: this.config.cwd,
-      sha: checkpoint.sha,
-      allowedShas: Array.from(this.state.allowedShas),
-    });
+    // VERIFY FAILED — rollback (if a checkpoint exists). If the agent
+    // never made a mutating tool call, checkpoint is still null; the
+    // working tree wasn't touched by this waypoint, so there is nothing
+    // to roll back. The verify failure is still reported as a waypoint
+    // failure — pre-existing breakage in the repo doesn't get a free pass.
     let failReason = verify.detail ?? 'verify failed';
-    if (!rollback.ok) {
-      failReason = `verify failed AND rollback failed: ${rollback.error}. Original: ${failReason}`;
+    if (cp.current !== null) {
+      const rollback = await rollbackTo({
+        cwd: this.config.cwd,
+        sha: cp.current.sha,
+        allowedShas: Array.from(this.state.allowedShas),
+      });
+      if (!rollback.ok) {
+        failReason = `verify failed AND rollback failed: ${rollback.error}. Original: ${failReason}`;
+      }
     }
     if (lastAssistantContent && failReason.includes('syntax')) {
       failReason = `${failReason}\nLast assistant message: ${lastAssistantContent.slice(0, 200)}`;
     }
     const failed = markFailure(active, failReason, iterationsUsed);
-    await this.trace(failed, checkpoint.sha, null);
+    await this.trace(failed, cp.current?.sha ?? null, null);
     this.emitEvent({
       type: 'waypoint-rolled-back',
       waypointId: waypoint.id,
@@ -769,7 +819,7 @@ export class CerebellumOrchestrator extends EventEmitter {
     return {
       waypoint: failed,
       outcome: 'failure',
-      checkpointSha: checkpoint.sha,
+      ...(cp.current?.sha !== undefined ? { checkpointSha: cp.current.sha } : {}),
       failReason,
       iterationsUsed,
       tokensConsumed: { input: this.state.totalInput, output: this.state.totalOutput },

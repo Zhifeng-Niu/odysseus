@@ -24,6 +24,15 @@ export class GitTool implements Tool {
     required: ['operation'],
   };
 
+  /**
+   * Only `commit` mutates the repo. log/status/rev-parse/diff are read-only
+   * and safe to run without a checkpoint, which lets the orchestrator skip
+   * the git tax for read-only conversational turns (e.g. "what's in the log?").
+   */
+  mutates(args: Record<string, unknown>): boolean {
+    return String(args.operation ?? '') === 'commit';
+  }
+
   async execute(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
     const op = String(args.operation ?? '') as GitOperation;
     try {

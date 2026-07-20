@@ -6,7 +6,8 @@ import { execFileNoThrow } from '../../src/util/exec.js';
 import { CerebellumOrchestrator } from '../../src/cerebellum/orchestrator.js';
 import type { LLMProvider, LLMCompletion, LLMCompleteOptions } from '../../src/llm/provider.js';
 import { ToolRegistry } from '../../src/tools/registry.js';
-import { FileWriteTool } from '../../src/tools/file.js';
+import { FileWriteTool, FileReadTool } from '../../src/tools/file.js';
+import { GitTool } from '../../src/tools/git.js';
 import {
   listRejectedGoals,
   clearRejectedGoals,
@@ -16,6 +17,17 @@ async function initRepo(dir: string): Promise<void> {
   await execFileNoThrow('git', ['init'], { cwd: dir });
   await execFileNoThrow('git', ['config', 'user.email', 't@t.t'], { cwd: dir });
   await execFileNoThrow('git', ['config', 'user.name', 'T'], { cwd: dir });
+}
+
+async function countCommits(dir: string): Promise<number> {
+  const result = await execFileNoThrow('git', ['rev-list', '--count', 'HEAD'], { cwd: dir });
+  if (result.exitCode !== 0) return 0;
+  return Number(result.stdout.trim());
+}
+
+async function initialCommit(dir: string, msg: string): Promise<void> {
+  await execFileNoThrow('git', ['add', '-A'], { cwd: dir });
+  await execFileNoThrow('git', ['commit', '-m', msg, '--allow-empty'], { cwd: dir });
 }
 
 function extractToolCalls(content: string): unknown {
@@ -458,5 +470,126 @@ describe('CerebellumOrchestrator', () => {
     // is just "short-circuit cleanly, don't burn an LLM call".
     const rejected = listRejectedGoals();
     expect(rejected.length).toBe(0);
+  });
+
+  test('lazy checkpoint: pure conversational reply creates NO git commit', async () => {
+    // Before lazy checkpoint, every waypoint — even a "hi" — paid the
+    // git tax: an eager checkpoint commit at start. That waste is gone now.
+    // A conversational reply should leave the commit log untouched.
+    await initialCommit(workdir, 'baseline');
+    const baselineCommits = await countCommits(workdir);
+
+    const provider = makeMockProvider(['Hi! I am Odysseus.']);
+    const orch = new CerebellumOrchestrator({
+      cwd: workdir,
+      provider,
+      registry,
+      tracePath,
+      verifyLayers: ['syntax'],
+    });
+
+    const result = await orch.runWaypoint({ goal: 'hello' });
+
+    expect(result.outcome).toBe('abandoned');
+    // No checkpoint, no commit, no trace of git activity.
+    expect(await countCommits(workdir)).toBe(baselineCommits);
+    expect(result.checkpointSha).toBeUndefined();
+  });
+
+  test('lazy checkpoint: read-only tools do NOT trigger a checkpoint commit', async () => {
+    // Read-only tools (file-read, git-log) by themselves must not create
+    // a checkpoint. The checkpoint is reserved for the first mutating call.
+    await initialCommit(workdir, 'baseline');
+    const baselineCommits = await countCommits(workdir);
+
+    // Set up a file for the agent to read.
+    const readPath = join(workdir, 'existing.ts');
+    await writeFile(readPath, 'export const v = 1;\n');
+
+    // Register the read-only tools.
+    const readOnlyRegistry = new ToolRegistry();
+    readOnlyRegistry.register(new FileReadTool());
+    readOnlyRegistry.register(new GitTool());
+
+    // Agent sequence: file-read, then git-log, then a text reply (no DONE).
+    // The conversational hint fires (no action verb in goal) so one text
+    // reply ends the waypoint.
+    const provider = makeMockProvider([
+      JSON.stringify({
+        toolCalls: [
+          {
+            id: 'call_read',
+            type: 'function',
+            function: { name: 'file-read', arguments: JSON.stringify({ path: readPath }) },
+          },
+        ],
+      }),
+      JSON.stringify({
+        toolCalls: [
+          {
+            id: 'call_log',
+            type: 'function',
+            function: { name: 'git', arguments: JSON.stringify({ operation: 'log', limit: 5 }) },
+          },
+        ],
+      }),
+      'I see one commit in the log.',
+    ]);
+
+    const orch = new CerebellumOrchestrator({
+      cwd: workdir,
+      provider,
+      registry: readOnlyRegistry,
+      tracePath,
+      verifyLayers: ['syntax'],
+    });
+
+    const result = await orch.runWaypoint({ goal: 'what can you tell me about this repo' });
+
+    // Even though the agent called tools, none were mutating → no checkpoint.
+    expect(await countCommits(workdir)).toBe(baselineCommits);
+    expect(result.checkpointSha).toBeUndefined();
+  });
+
+  test('lazy checkpoint: first mutating tool call creates the checkpoint', async () => {
+    // The checkpoint is created lazily, only when a mutating tool is about
+    // to run. Verify by counting commits: baseline + 1 checkpoint + 1 final
+    // commit (success path) = baseline + 2.
+    await initialCommit(workdir, 'baseline');
+    const baselineCommits = await countCommits(workdir);
+
+    const provider = makeMockProvider([
+      JSON.stringify({
+        toolCalls: [
+          {
+            id: 'call_write',
+            type: 'function',
+            function: {
+              name: 'file-write',
+              arguments: JSON.stringify({
+                path: join(workdir, 'lazy.ts'),
+                content: 'export const v = 1;',
+              }),
+            },
+          },
+        ],
+      }),
+      'DONE',
+    ]);
+
+    const orch = new CerebellumOrchestrator({
+      cwd: workdir,
+      provider,
+      registry,
+      tracePath,
+      verifyLayers: ['syntax'],
+    });
+
+    const result = await orch.runWaypoint({ goal: 'add lazy.ts' });
+
+    expect(result.outcome).toBe('success');
+    // baseline + lazy checkpoint + final commit = baseline + 2.
+    expect(await countCommits(workdir)).toBe(baselineCommits + 2);
+    expect(result.checkpointSha).toBeDefined();
   });
 });

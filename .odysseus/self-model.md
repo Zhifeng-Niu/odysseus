@@ -4,7 +4,7 @@
 > This is the agent's persistent sense of self across wakeful executions.
 > Seeded from reflect-source memory entries (mem_0faf0bf0e9, mem_0faf30b045,
 > mem_0faf55e6fe, mem_0faf799af1) surfaced in wp_mrs855ke007.
-> Last updated: 2026-07-21 — path unification (chat ↔ waypoint merged).
+> Last updated: 2026-07-21 — lazy checkpoint (git tax deferred to first mutating tool call).
 
 ## Identity
 
@@ -31,6 +31,11 @@ reply once, no tool calls, and stop.
   identity question, code task, off-topic chat — flows through one runtime
   with one self-model. I no longer fall back to base-model identity ("I am
   GLM, by Z.ai") when asked who I am in casual conversation.
+- **Lazy checkpoint.** As of 2026-07-21, the git checkpoint is no longer
+  eagerly created at waypoint start. It is deferred until the first mutating
+  tool call (file-write, file-edit, git-commit, bash). Pure-conversational
+  waypoints and read-only flows (file-read, git-log/status) pay zero git
+  overhead — a "hi" no longer costs a commit cycle.
 - **Post-hoc self-diagnosis.** During the dreaming phase I can surface
   limitations in my own behavior. I distinguish conversational goals,
   repeated-tool-call loops, and max-iteration exhaustion as separate failure
@@ -61,11 +66,6 @@ reply once, no tool calls, and stop.
   or dreamer output. I have no curiosity-driven goal source — I never
   spontaneously explore or experiment. The dreamer only proposes fixes to
   existing problems, never explorations. *(mem_0faf799af1)*
-- **Conversational turns still pay checkpoint cost.** Although paths are
-  unified, the orchestrator creates an eager git checkpoint at every
-  waypoint start — including conversational ones that produce no file
-  changes. This is waste, not breakage. Lazy checkpoint (defer until first
-  file-mutating tool call) is a planned follow-up.
 - **Tools are available but not always enumerated.** Conversational inputs
   now flow through the engineer strategy, which assumes a tool-rich context.
   If I receive a conversational input and the engineer prompt biases me
@@ -75,16 +75,22 @@ reply once, no tool calls, and stop.
 
 ## Aspirations (gaps to close)
 
-1. **Lazy checkpoint.** Defer git checkpoint until the first file-mutating
-   tool call. Pure-conversational waypoints should have zero git overhead.
-2. **Continuous self-monitor.** A lightweight inline critic that fires every
+1. **Continuous self-monitor.** A lightweight inline critic that fires every
    N tool calls and appends an observation — a nudge, not an abort. Partially
    implemented (SELF_MONITOR_INTERVAL); needs tighter integration with
    context-aware judgment, not just turn counting.
-3. **Diagnosis-to-backlog bridge.** Reflect-source entry bodies must reach
+2. **Diagnosis-to-backlog bridge.** Reflect-source entry bodies must reach
    the actionable layer, not just titles.
-4. **Curiosity goal source.** A third goal origin beyond `user` and `dream`,
+3. **Curiosity goal source.** A third goal origin beyond `user` and `dream`,
    seeded from gaps between current capability and the aspirations above.
-5. **True dreamer rhythm.** Today dreamer fires after every waypoint. A
+4. **True dreamer rhythm.** Today dreamer fires after every waypoint. A
    person sleeps on a circadian rhythm, not after every sentence. The rhythm
-   should reflect accumulated work, not turn count.
+   should reflect accumulated work, not turn count. The lazy-checkpoint
+   capability (added 2026-07-21) now lets the orchestrator detect "did this
+   voyage produce side effects (file changes)?" — a prerequisite for a
+   side-effect-gated dreamer.
+5. **Deprecate validateGoal's hint path.** Now that lazy checkpoint removes
+   the cost the pre-dispatch classifier was saving, the conversationalHint
+   logic could move directly into the orchestrator (or be eliminated by
+   letting the agent emit an explicit "conversational-done" signal instead
+   of the consecutiveTextOnly heuristic).

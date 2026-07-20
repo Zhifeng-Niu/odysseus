@@ -31,6 +31,23 @@ export class ToolRegistry {
     }));
   }
 
+  /**
+   * Whether a tool with the given args may mutate the filesystem or repo
+   * state. Used by the orchestrator's lazy-checkpoint path to decide whether
+   * a checkpoint is needed before dispatch. Unknown tools return false — the
+   * orchestrator treats unknown tools as errors during dispatch, so they
+   * never reach the mutate check at runtime.
+   *
+   * Conservative default: tools that omit `mutates` are treated as mutating
+   * (return true). This errs on the side of paying the checkpoint cost when
+   * in doubt, rather than risking an un-checkpointed mutation.
+   */
+  mayMutate(name: string, args: Record<string, unknown>): boolean {
+    const tool = this.tools.get(name);
+    if (!tool) return false;
+    return tool.mutates ? tool.mutates(args) : true;
+  }
+
   async dispatch(
     name: string,
     args: Record<string, unknown>,

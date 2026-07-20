@@ -13,6 +13,10 @@ export class FileReadTool implements Tool {
     required: ['path'],
   };
 
+  mutates(): boolean {
+    return false;
+  }
+
   async execute(args: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> {
     const path = String(args.path ?? '');
     if (!path) return { ok: false, error: 'path required' };
