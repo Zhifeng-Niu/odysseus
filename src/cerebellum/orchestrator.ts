@@ -559,7 +559,7 @@ export class CerebellumOrchestrator extends EventEmitter {
             // action, high-count no-DONE). The orchestrator records the
             // sequence; self-monitor.ts owns the pattern detection.
             toolCallCount += 1;
-            recentToolCalls.push(summarizeToolCall(call.function.name, args));
+            recentToolCalls.push(summarizeToolCall(call.function.name, args, !result.ok));
             // Rolling window — drop the oldest entry once we exceed the cap.
             // The window size is owned by self-monitor.ts so heuristics and
             // window stay in sync.

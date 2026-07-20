@@ -21,10 +21,17 @@
  * extracted from the call's args. The pair is enough for the nudge to
  * name concrete behavior ("3× file-read(src/a.ts, src/b.ts, src/c.ts)")
  * instead of an abstract count.
+ *
+ * `error` is set when the orchestrator observed the tool result as a
+ * failure (result.ok === false). Used by detectErrorLoop to spot
+ * repeated-failure patterns ("last 2 calls errored — re-read the
+ * error before the next call"). Optional for backward compatibility
+ * with callers that don't yet thread the error bit.
  */
 export interface ToolCallObservation {
   readonly tool: string;
   readonly target?: string;
+  readonly error?: boolean;
 }
 
 /**
@@ -46,9 +53,19 @@ export const SELF_MONITOR_WINDOW = 6;
  *   - { file_path: '...' } → alternate spelling (Anthropic-style)
  *   - { command: '...' }   → bash — truncate to keep nudge readable
  *   - { message: '...' }   → git-commit
+ *
+ * The optional `isError` bit (Iteration 14) carries the tool's execution
+ * outcome — when true, the returned observation has `error: true`, which
+ * detectErrorLoop uses to spot repeated-failure patterns. Callers that
+ * don't yet track tool outcome can omit it; the resulting observation
+ * behaves identically to pre-Iteration-14 behavior.
  */
-export function summarizeToolCall(toolName: string, args: unknown): ToolCallObservation {
-  if (!isObject(args)) return { tool: toolName };
+export function summarizeToolCall(
+  toolName: string,
+  args: unknown,
+  isError?: boolean,
+): ToolCallObservation {
+  if (!isObject(args)) return makeObs(toolName, undefined, isError);
   // Prefer `path`, fall back to `file_path`. Both spellings appear
   // across our own tool registry and the Anthropic-style spec.
   const path = typeof args.path === 'string'
@@ -57,15 +74,38 @@ export function summarizeToolCall(toolName: string, args: unknown): ToolCallObse
       ? args.file_path
       : undefined;
   if (path !== undefined && path.trim().length > 0) {
-    return { tool: toolName, target: truncatePath(path) };
+    return makeObs(toolName, truncatePath(path), isError);
   }
   if (typeof args.command === 'string' && args.command.trim().length > 0) {
-    return { tool: toolName, target: truncate(args.command.trim(), 40) };
+    return makeObs(toolName, truncate(args.command.trim(), 40), isError);
   }
   if (typeof args.message === 'string' && args.message.trim().length > 0) {
-    return { tool: toolName, target: truncate(args.message.trim(), 30) };
+    return makeObs(toolName, truncate(args.message.trim(), 30), isError);
   }
-  return { tool: toolName };
+  return makeObs(toolName, undefined, isError);
+}
+
+/**
+ * Build a ToolCallObservation with optional target and optional error
+ * flag. Centralizing the shape here keeps the exactOptionalPropertyTypes
+ * checker happy — we never produce `{ error: undefined }`, only either
+ * `{ error: true }` or no `error` field at all.
+ */
+function makeObs(
+  tool: string,
+  target: string | undefined,
+  isError: boolean | undefined,
+): ToolCallObservation {
+  if (target !== undefined && isError === true) {
+    return { tool, target, error: true };
+  }
+  if (target !== undefined) {
+    return { tool, target };
+  }
+  if (isError === true) {
+    return { tool, error: true };
+  }
+  return { tool };
 }
 
 function isObject(v: unknown): v is Record<string, unknown> {
@@ -111,9 +151,9 @@ function truncate(s: string, max: number): string {
  *      file-write, bash). Agent is exploring but hasn't started
  *      producing. Suggest picking an anchor.
  *
- *   4. ERROR-LOOP — last 2 calls both errored (signal carried in
- *      ToolCallObservation when caller marks it). Out of scope for the
- *      pure signature; future extension.
+ *   4. ERROR-LOOP — last 2 calls both errored. The agent is retrying
+ *      without diagnosing; the cost of one more blind retry is much
+ *      higher than the cost of re-reading the error message.
  *
  *   5. HIGH-COUNT NO-DONE — totalCallCount ≥ 9 and no DONE in recent.
  *      The agent has spent real budget; nudge toward smaller diff.
@@ -138,7 +178,9 @@ export function detectPattern(
   const breadth = detectBreadthWithoutAction(recent);
   if (breadth !== null) return breadth;
 
-  // 4. (reserved for error-loop in a future iteration)
+  // 4. ERROR-LOOP — last 2 calls both errored (Iteration 14).
+  const errorLoop = detectErrorLoop(recent);
+  if (errorLoop !== null) return errorLoop;
 
   // 5. HIGH-COUNT NO-DONE.
   if (totalCallCount >= 9) {
@@ -206,6 +248,36 @@ function detectBreadthWithoutAction(recent: readonly ToolCallObservation[]): str
     );
   }
   return null;
+}
+
+/**
+ * ERROR-LOOP — last 2 calls in the window both errored. The agent is
+ * likely retrying without diagnosis. Strong nudge: stop, re-read the
+ * error message, change approach. Distinct from STUCK LOOP (which
+ * fires at 3× same-call): error-loop fires earlier — at the second
+ * consecutive failure, regardless of whether the tool/target match.
+ *
+ * Threshold of 2 (not 3) is deliberate. A single error is normal
+ * (transient: file doesn't exist yet, command needs different flag).
+ * Two errors in a row is the smallest pattern that says "your mental
+ * model of the situation is wrong" — the agent should diagnose, not
+ * retry. Waiting for 3 would waste one more tool call against a
+ * broken approach.
+ */
+function detectErrorLoop(recent: readonly ToolCallObservation[]): string | null {
+  if (recent.length < 2) return null;
+  const last = recent[recent.length - 1]!;
+  const prev = recent[recent.length - 2]!;
+  if (last.error !== true || prev.error !== true) return null;
+  // Name both failing calls concretely so the LLM can recognize them.
+  const lastLabel = formatEntry(last);
+  const prevLabel = formatEntry(prev);
+  return (
+    `Last 2 tool calls errored (${prevLabel}, ${lastLabel}). ` +
+    `Don't retry blindly — re-read the error messages above and change ` +
+    `your approach. The same call with the same args will likely fail ` +
+    `the same way.`
+  );
 }
 
 /**

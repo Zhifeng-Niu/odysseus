@@ -11,6 +11,10 @@ function call(tool: string, target?: string): ToolCallObservation {
   return target !== undefined ? { tool, target } : { tool };
 }
 
+function callErr(tool: string, target?: string): ToolCallObservation {
+  return target !== undefined ? { tool, target, error: true } : { tool, error: true };
+}
+
 describe('self-monitor', () => {
   describe('SELF_MONITOR_WINDOW', () => {
     test('window is 6 (keeps nudge on one screen line)', () => {
@@ -65,6 +69,33 @@ describe('self-monitor', () => {
     test('short paths are not truncated', () => {
       const obs = summarizeToolCall('file-read', { path: 'package.json' });
       expect(obs.target).toBe('package.json');
+    });
+
+    test('isError=true (3rd arg) adds error: true to observation', () => {
+      const obs = summarizeToolCall('file-read', { path: 'a.ts' }, true);
+      expect(obs.tool).toBe('file-read');
+      expect(obs.target).toBe('a.ts');
+      expect(obs.error).toBe(true);
+    });
+
+    test('isError=false is treated as "no error" (error field omitted)', () => {
+      // exactOptionalPropertyTypes: must not produce { error: undefined }
+      const obs = summarizeToolCall('file-read', { path: 'a.ts' }, false);
+      expect(obs.error).toBeUndefined();
+      expect(obs.tool).toBe('file-read');
+      expect(obs.target).toBe('a.ts');
+    });
+
+    test('isError omitted behaves identically to isError=false', () => {
+      const obs = summarizeToolCall('file-read', { path: 'a.ts' });
+      expect(obs.error).toBeUndefined();
+    });
+
+    test('error flag works on tool-only observations (no target)', () => {
+      const obs = summarizeToolCall('git-status', {}, true);
+      expect(obs.tool).toBe('git-status');
+      expect(obs.target).toBeUndefined();
+      expect(obs.error).toBe(true);
     });
   });
 
@@ -175,6 +206,96 @@ describe('self-monitor', () => {
       // writeCount > 0 so breadth check doesn't fire.
       // No same-tool streak. Returns null at low count.
       expect(detectPattern(recent, 3)).toBeNull();
+    });
+  });
+
+  describe('detectPattern — error-loop (Iteration 14)', () => {
+    test('last 2 calls both errored → error-loop signal', () => {
+      const recent = [
+        call('file-read', 'a.ts'),
+        callErr('file-edit', 'b.ts'),
+        callErr('file-edit', 'b.ts'),
+      ];
+      const pattern = detectPattern(recent, 3);
+      expect(pattern).toContain('errored');
+      expect(pattern).toContain('re-read');
+      // Concrete failing calls named.
+      expect(pattern).toContain('file-edit');
+    });
+
+    test('error-loop fires even when the 2 failing calls target different things', () => {
+      // Distinct from stuck-loop — error-loop doesn't require same args.
+      const recent = [
+        call('file-read', 'a.ts'),
+        callErr('file-edit', 'b.ts'),
+        callErr('bash', 'npm test'),
+      ];
+      const pattern = detectPattern(recent, 3);
+      expect(pattern).toContain('errored');
+      // Both failing tools named so LLM can recognize them.
+      expect(pattern).toContain('file-edit');
+      expect(pattern).toContain('bash');
+    });
+
+    test('only 1 error in last 2 calls → no error-loop (single error is normal)', () => {
+      const recent = [
+        call('file-read', 'a.ts'),
+        callErr('file-edit', 'b.ts'),
+        call('file-read', 'c.ts'),
+      ];
+      // Last call did NOT error — no error-loop.
+      // No other pattern matches either (no 3-streak, has write).
+      expect(detectPattern(recent, 3)).toBeNull();
+    });
+
+    test('2 errors earlier in window but last call succeeded → no error-loop', () => {
+      const recent = [
+        callErr('file-read', 'a.ts'),
+        callErr('file-read', 'b.ts'),
+        call('file-read', 'c.ts'),
+      ];
+      // The 2 errors are not the *last* 2 calls.
+      // But this triggers same-tool streak (3 file-reads) — streak wins.
+      const pattern = detectPattern(recent, 3);
+      expect(pattern).not.toContain('errored');
+      expect(pattern).toContain('file-read');
+    });
+
+    test('stuck-loop takes priority over error-loop', () => {
+      // Same call, same target, 3x, all erroring.
+      // Stuck-loop is the more specific diagnosis ("same args 3x").
+      const recent = [
+        callErr('bash', 'npm test'),
+        callErr('bash', 'npm test'),
+        callErr('bash', 'npm test'),
+      ];
+      const pattern = detectPattern(recent, 3);
+      expect(pattern).toContain('stuck loop');
+      expect(pattern).not.toContain('errored');
+    });
+
+    test('error-loop with only 1 entry in window → no signal (need 2)', () => {
+      expect(detectPattern([callErr('bash')], 1)).toBeNull();
+    });
+
+    test('error-loop fires at low call count (2 calls, both errored)', () => {
+      // Don't require totalCallCount ≥ some threshold — 2 errors is
+      // already a strong signal regardless of total budget spent.
+      const recent = [
+        callErr('bash', 'npm test'),
+        callErr('bash', 'npm run build'),
+      ];
+      const pattern = detectPattern(recent, 2);
+      expect(pattern).toContain('errored');
+    });
+
+    test('error message warns against blind retry', () => {
+      const recent = [
+        callErr('bash', 'npm test'),
+        callErr('bash', 'npm test'),
+      ];
+      const pattern = detectPattern(recent, 2);
+      expect(pattern).toContain('same args will likely fail');
     });
   });
 

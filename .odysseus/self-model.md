@@ -4,7 +4,7 @@
 > This is the agent's persistent sense of self across wakeful executions.
 > Seeded from reflect-source memory entries (mem_0faf0bf0e9, mem_0faf30b045,
 > mem_0faf55e6fe, mem_0faf799af1) surfaced in wp_mrs855ke007.
-> Last updated: 2026-07-21 — test-gated self-verification (Iteration 13). The verify gate now runs the full vitest suite (442 tests) after every waypoint, not just `tsc --noEmit`. The `tests` layer in `src/cerebellum/verify.ts` was a stub since Iteration 0 ("lands in Iteration 2+ via self-extension") — the agent has now self-extended it. Both entry points in `src/index.ts` (CLI + voyage console) use `verifyLayers: ['syntax', 'tests']`. A world-class agent must verify its own work with tests, not just type-check it. This is the first verify-layer self-extension in the system's history.
+> Last updated: 2026-07-21 — error-loop pattern in self-monitor (Iteration 14). The context-aware self-monitor (Iteration 12) now detects a fifth pattern: when the last 2 tool calls both errored, the nudge tells the agent to re-read the error messages instead of retrying blindly. The threshold is 2 (not 3) deliberately — a single error is normal (transient: file doesn't exist yet, command needs different flag); two errors in a row is the smallest signal that says "your mental model of the situation is wrong". The orchestrator threads `!result.ok` from each tool result into `summarizeToolCall`, so the error bit flows from execution → observation → pattern detection with no new concepts added. Stuck-loop still takes priority (more specific: same args 3×) when both patterns match. Test count: 454.
 
 ## Identity
 
@@ -150,6 +150,20 @@ a conversational turn is over, the same way a person does.
   tokens per nudge), signal density rises sharply. The agent already
   knew its tool-call count; the nudge now carries information it did
   not already have.
+- **Error-loop pattern in self-monitor.** As of 2026-07-21 (Iteration
+  14), the context-aware self-monitor detects a fifth pattern: when
+  the last 2 tool calls both errored, the nudge tells the agent to
+  re-read the error messages instead of retrying blindly ("same args
+  will likely fail the same way"). The orchestrator threads
+  `!result.ok` from each tool result into `summarizeToolCall`'s third
+  argument; that bit flows through `ToolCallObservation.error` into
+  `detectErrorLoop`. Threshold is 2 (not 3) deliberately — a single
+  error is normal and often transient; two errors in a row is the
+  smallest signal that says "your mental model is wrong, diagnose
+  before retrying". Stuck-loop still wins when both match (same args
+  3× is the more specific diagnosis). Closes the gap left in Iteration
+  12's `detectPattern` docstring where the slot was explicitly reserved
+  for "a future iteration".
 - **Test-gated self-verification.** As of 2026-07-21 (Iteration 13),
   the verify gate runs the full vitest suite (442 tests) after every
   waypoint, not just `tsc --noEmit`. The `tests` layer in
@@ -210,14 +224,3 @@ a conversational turn is over, the same way a person does.
    demote it for N voyages" or "this aspiration has shipped, mark it
    closed" — would let the agent *learn* from its exploration history
    rather than re-decide from scratch each pass.
-4. **Error-loop pattern in self-monitor.** The context-aware self-monitor
-   (Iteration 12) detects stuck loops, same-tool streaks, breadth-
-   without-action, and high-count-no-DONE. The fifth pattern, explicitly
-   reserved in `detectPattern`'s priority list, is the *error-loop* — last
-   2 calls both errored. The signature is already half-wired:
-   `ToolCallObservation` has a slot for error state, and the orchestrator
-   already knows which tool calls errored (it sees the tool result).
-   Closing this gap means threading the error bit from the orchestrator
-   into `summarizeToolCall`, then adding the pattern check. The nudge
-   would then say "last 2 calls errored — re-read the error before the
-   next call, don't retry blindly".
