@@ -190,11 +190,7 @@ a conversational turn is over, the same way a person does.
 
 ## Aspirations (gaps to close)
 
-1. **Continuous self-monitor.** A lightweight inline critic that fires every
-   N tool calls and appends an observation — a nudge, not an abort. Partially
-   implemented (SELF_MONITOR_INTERVAL); needs tighter integration with
-   context-aware judgment, not just turn counting.
-2. **Graduated dreamer rhythm.** Today the gate is binary — side-effect
+1. **Graduated dreamer rhythm.** Today the gate is binary — side-effect
    vs not. A circadian-style rhythm would let the agent accumulate work
    across multiple waypoints before dreaming (or accumulate token spend,
    or wall-clock duration). The current binary gate is the prerequisite
@@ -202,15 +198,26 @@ a conversational turn is over, the same way a person does.
    surfaced by curiosity on 2026-07-21: add a `workWaypointCounter` to
    voyage state in orchestrator.ts, increment on side-effect waypoints,
    skip dream phase until the counter reaches 3, reset after dreaming.
-3. **Denser voyage-internal memory.** The voyage log (Iteration 10) carries
+2. **Denser voyage-internal memory.** The voyage log (Iteration 10) carries
    the *outline* of recent voyages (goal + outcome), but the conversation
    that produced each outcome is lost at voyage end. A compressed
    transcript or a tool-call-level diff summary would let the next voyage
    skip "what did I try" rediscovery and go straight to "what's next".
-4. **Exploration-outcome feedback loop.** The exploration log (Iteration 11)
+3. **Exploration-outcome feedback loop.** The exploration log (Iteration 11)
    records each proposal and surfaces prior outcomes in the next prompt,
    but the LLM still decides heuristically whether to re-propose. A
    closed-loop signal — "this aspiration's last 3 explorations all failed,
    demote it for N voyages" or "this aspiration has shipped, mark it
    closed" — would let the agent *learn* from its exploration history
    rather than re-decide from scratch each pass.
+4. **Error-loop pattern in self-monitor.** The context-aware self-monitor
+   (Iteration 12) detects stuck loops, same-tool streaks, breadth-
+   without-action, and high-count-no-DONE. The fifth pattern, explicitly
+   reserved in `detectPattern`'s priority list, is the *error-loop* — last
+   2 calls both errored. The signature is already half-wired:
+   `ToolCallObservation` has a slot for error state, and the orchestrator
+   already knows which tool calls errored (it sees the tool result).
+   Closing this gap means threading the error bit from the orchestrator
+   into `summarizeToolCall`, then adding the pattern check. The nudge
+   would then say "last 2 calls errored — re-read the error before the
+   next call, don't retry blindly".
