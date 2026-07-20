@@ -53,6 +53,12 @@ import {
 import { readMemory, writeMemory, type MemoryEntry } from './memory.js';
 import { markCompleted } from './completedGoals.js';
 import { RepeatedToolCallDetector } from './repeated-tool-call-detector.js';
+import {
+  summarizeToolCall,
+  buildSelfMonitorObservation,
+  SELF_MONITOR_WINDOW,
+  type ToolCallObservation,
+} from './self-monitor.js';
 import type { MemoryCategory } from '../orchestrator/events.js';
 
 export interface OrchestratorConfig {
@@ -307,8 +313,16 @@ export class CerebellumOrchestrator extends EventEmitter {
     // misread the goal?") and self-correct before burning the rest of its
     // iteration budget. It is NOT an abort — the loop continues normally;
     // the nudge merely gives the LLM a chance to reflect mid-waypoint.
+    //
+    // As of 2026-07-21 (Iteration 12) the nudge is CONTEXT-AWARE: the
+    // recentToolCalls rolling window records each call's tool + target
+    // signature, and buildSelfMonitorObservation names the specific
+    // pattern detected (stuck loop, same-tool streak, breadth without
+    // action, high-count no-DONE). The old fixed "am I repeating?"
+    // string is gone — the agent already knew its call count.
     const SELF_MONITOR_INTERVAL = 3;
     let toolCallCount = 0;
+    const recentToolCalls: ToolCallObservation[] = [];
 
     try {
       for (let iter = 1; maxIter === undefined || iter <= maxIter; iter++) {
@@ -538,14 +552,22 @@ export class CerebellumOrchestrator extends EventEmitter {
             // rest of its iteration budget. Closes the "reflection is
             // triggered, not continuous" gap: self-awareness now runs during
             // wakeful execution, not only in the dream phase.
+            //
+            // As of Iteration 12 the nudge is CONTEXT-AWARE: it lists the
+            // recent tool-call sequence and names the specific pattern
+            // detected (stuck loop, same-tool streak, breadth without
+            // action, high-count no-DONE). The orchestrator records the
+            // sequence; self-monitor.ts owns the pattern detection.
             toolCallCount += 1;
+            recentToolCalls.push(summarizeToolCall(call.function.name, args));
+            // Rolling window — drop the oldest entry once we exceed the cap.
+            // The window size is owned by self-monitor.ts so heuristics and
+            // window stay in sync.
+            while (recentToolCalls.length > SELF_MONITOR_WINDOW) {
+              recentToolCalls.shift();
+            }
             if (toolCallCount % SELF_MONITOR_INTERVAL === 0) {
-              const observation =
-                `[self-monitor] You've made ${toolCallCount} tool calls so far on this ` +
-                `waypoint. Briefly check yourself before continuing: am I repeating ` +
-                `the same action expecting a different result? Did I misread the goal ` +
-                `or skip a constraint? Is there a simpler path I'm overlooking? ` +
-                `Resume your work — this is a nudge, not an interruption.`;
+              const observation = buildSelfMonitorObservation(recentToolCalls, toolCallCount);
               history.push({ role: 'user', content: observation });
               this.emitEvent({
                 type: 'self-monitor',
