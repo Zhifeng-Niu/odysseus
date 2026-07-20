@@ -80,6 +80,24 @@ export const theme = {
     meta: palette.subtext0,
   },
 
+  // ─── Self-evolution (curiosity, memory, self-monitor) ────────────
+  // Iteration 17 — surface previously-hidden events. These describe the
+  // agent's autonomous inner life: curiosity exploration, memory
+  // consolidation, self-monitor nudges, recovery interventions, and
+  // protocol-signal misuse. Palette picks:
+  //   - pink/flamingo for curiosity (warm, forward-looking)
+  //   - green for memory (growth, accumulation)
+  //   - peach for self-monitor (attention, nudge)
+  //   - maroon for recovery (alert, but not failure-red)
+  //   - red for misuse (protocol violation, must be loud)
+  evolution: {
+    curiosity: palette.pink,
+    memory: palette.green,
+    selfMonitor: palette.peach,
+    recovery: palette.maroon,
+    misuse: palette.red,
+  },
+
   // ─── Tool calls ──────────────────────────────────────────────────
   toolCall: {
     name: palette.sapphire,

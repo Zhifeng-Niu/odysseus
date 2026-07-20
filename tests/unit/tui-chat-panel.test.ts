@@ -231,4 +231,209 @@ describe('ChatPanel — planner observability (Iteration 16)', () => {
     const out = renderChatPanel([]);
     expect(out).toContain('Chat with the agent');
   });
+
+  // ─── Iteration 17: surface hidden self-evolution events ─────────
+  describe('EvolutionFeed (curiosity + memory events)', () => {
+    test('renders CURIOSITY banner when curiosity-completed fires', () => {
+      const events: OrchestratorEvent[] = [
+        {
+          type: 'curiosity-completed',
+          voyageId: 'v1',
+          backlogItemsAdded: 2,
+          memoryEntriesAdded: 1,
+          durationMs: 4200,
+          ts: 1000,
+        },
+      ];
+      const out = renderChatPanel(events);
+      expect(out).toContain('CURIOSITY');
+      expect(out).toContain('+2 backlog');
+      expect(out).toContain('+1 memory');
+      expect(out).toContain('4.2s');
+      expect(out).toContain('Self-evolution');
+    });
+
+    test('renders MEMORY banner when memory-consolidated fires', () => {
+      const events: OrchestratorEvent[] = [
+        {
+          type: 'memory-consolidated',
+          category: 'patterns',
+          entryCount: 5,
+          bytesWritten: 2310,
+          ts: 1000,
+        },
+      ];
+      const out = renderChatPanel(events);
+      expect(out).toContain('MEMORY');
+      expect(out).toContain('patterns');
+      expect(out).toContain('5 entries');
+      expect(out).toContain('2.3KB');
+    });
+
+    test('MEMORY singular form for 1 entry', () => {
+      const events: OrchestratorEvent[] = [
+        {
+          type: 'memory-consolidated',
+          category: 'lessons',
+          entryCount: 1,
+          bytesWritten: 512,
+          ts: 1000,
+        },
+      ];
+      const out = renderChatPanel(events);
+      expect(out).toContain('1 entry'); // not "1 entries"
+      expect(out).not.toContain('1 entries');
+    });
+
+    test('CURIOSITY omits "+N memory" when memoryEntriesAdded=0', () => {
+      const events: OrchestratorEvent[] = [
+        {
+          type: 'curiosity-completed',
+          voyageId: 'v1',
+          backlogItemsAdded: 1,
+          memoryEntriesAdded: 0,
+          durationMs: 800,
+          ts: 1000,
+        },
+      ];
+      const out = renderChatPanel(events);
+      expect(out).toContain('+1 backlog');
+      expect(out).not.toContain('+0 memory');
+      expect(out).toContain('800ms');
+    });
+
+    test('multiple evolution events render in feed order', () => {
+      const events: OrchestratorEvent[] = [
+        {
+          type: 'curiosity-completed',
+          voyageId: 'v1',
+          backlogItemsAdded: 1,
+          memoryEntriesAdded: 0,
+          durationMs: 500,
+          ts: 1000,
+        },
+        {
+          type: 'memory-consolidated',
+          category: 'dreams',
+          entryCount: 3,
+          bytesWritten: 100,
+          ts: 2000,
+        },
+        {
+          type: 'curiosity-completed',
+          voyageId: 'v1',
+          backlogItemsAdded: 2,
+          memoryEntriesAdded: 0,
+          durationMs: 300,
+          ts: 3000,
+        },
+      ];
+      const out = renderChatPanel(events);
+      // All three surface
+      expect(out).toContain('CURIOSITY');
+      expect(out).toContain('MEMORY');
+      // Order check: "Self-evolution" header appears before any entry
+      const headerIdx = out.indexOf('Self-evolution');
+      const firstCuriosityIdx = out.indexOf('CURIOSITY');
+      expect(headerIdx).toBeLessThan(firstCuriosityIdx);
+    });
+  });
+
+  // ─── Iteration 17: surface hidden waypoint-scoped events ─────────
+  describe('WaypointCard event-line rendering', () => {
+    test('self-monitor event renders with tool call count and message', () => {
+      const waypointId = 'wp_sm0000000001';
+      const events: OrchestratorEvent[] = [
+        {
+          type: 'waypoint-started',
+          waypointId,
+          goal: 'do work',
+          strategy: 'engineer',
+          ts: 1000,
+        },
+        {
+          type: 'self-monitor',
+          waypointId,
+          toolCallCount: 6,
+          message: 'stuck-loop: same tool+target 3x — re-read the goal',
+          ts: 1100,
+        },
+      ];
+      const out = renderChatPanel(events);
+      expect(out).toContain('self-monitor');
+      expect(out).toContain('(call 6)');
+      expect(out).toContain('stuck-loop');
+    });
+
+    test('recovery-intervention renders tool name and message', () => {
+      const waypointId = 'wp_ri0000000001';
+      const events: OrchestratorEvent[] = [
+        {
+          type: 'waypoint-started',
+          waypointId,
+          goal: 'fix bug',
+          strategy: 'engineer',
+          ts: 1000,
+        },
+        {
+          type: 'recovery-intervention',
+          waypointId,
+          tool: 'file-read',
+          message: 'repeated file-read detected; hinting alternatives',
+          ts: 1100,
+        },
+      ];
+      const out = renderChatPanel(events);
+      expect(out).toContain('recovery');
+      expect(out).toContain('file-read');
+      expect(out).toContain('repeated file-read');
+    });
+
+    test('misused-signal renders signal name and refused tool count', () => {
+      const waypointId = 'wp_ms0000000001';
+      const events: OrchestratorEvent[] = [
+        {
+          type: 'waypoint-started',
+          waypointId,
+          goal: 'hi',
+          strategy: 'engineer',
+          ts: 1000,
+        },
+        {
+          type: 'misused-signal',
+          waypointId,
+          signal: '[CONVERSATIONAL-DONE]',
+          toolCallCount: 2,
+          ts: 1100,
+        },
+      ];
+      const out = renderChatPanel(events);
+      expect(out).toContain('misused-signal');
+      expect(out).toContain('[CONVERSATIONAL-DONE]');
+      expect(out).toContain('2 tool calls refused');
+    });
+
+    test('misused-signal singular form for 1 refused call', () => {
+      const waypointId = 'wp_ms0000000002';
+      const events: OrchestratorEvent[] = [
+        {
+          type: 'waypoint-started',
+          waypointId,
+          goal: 'hi',
+          strategy: 'engineer',
+          ts: 1000,
+        },
+        {
+          type: 'misused-signal',
+          waypointId,
+          signal: '[CONVERSATIONAL-DONE]',
+          toolCallCount: 1,
+          ts: 1100,
+        },
+      ];
+      const out = renderChatPanel(events);
+      expect(out).toContain('1 tool call refused'); // singular
+      expect(out).not.toContain('1 tool calls refused');
+    });
+  });
 });

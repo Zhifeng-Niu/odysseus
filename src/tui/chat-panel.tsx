@@ -134,6 +134,87 @@ function formatDuration(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
+/**
+ * Extract self-evolution events (curiosity, memory consolidation) from
+ * the stream. These are NOT waypoint-scoped — they fire between waypoints
+ * (curiosity at idle, memory at dream/consolidation phase). Rendering them
+ * inline with waypoints would break grouping; rendering them as a trailing
+ * feed gives the operator visibility into the agent's autonomous inner
+ * life without disrupting the waypoint timeline.
+ *
+ * Iteration 17 — prior to this, both events were silently swallowed by
+ * the `default` branch in EventLine and the waypointId filter in
+ * groupByWaypoint. The user had no visibility into self-evolution.
+ */
+interface EvolutionFeedEntry {
+  readonly kind: 'curiosity' | 'memory';
+  readonly ts: number;
+  readonly text: string;
+}
+
+function deriveEvolutionFeed(
+  events: readonly OrchestratorEvent[]
+): readonly EvolutionFeedEntry[] {
+  const entries: EvolutionFeedEntry[] = [];
+  for (const e of events) {
+    if (e.type === 'curiosity-completed') {
+      const parts: string[] = [];
+      parts.push(`+${e.backlogItemsAdded} backlog`);
+      if (e.memoryEntriesAdded > 0) {
+        parts.push(`+${e.memoryEntriesAdded} memory`);
+      }
+      parts.push(formatDuration(e.durationMs));
+      entries.push({
+        kind: 'curiosity',
+        ts: e.ts,
+        text: parts.join(' · '),
+      });
+    } else if (e.type === 'memory-consolidated') {
+      entries.push({
+        kind: 'memory',
+        ts: e.ts,
+        text: `${e.category} · ${e.entryCount} entr${e.entryCount === 1 ? 'y' : 'ies'} · ${formatBytes(e.bytesWritten)}`,
+      });
+    }
+  }
+  return entries;
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n}B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)}KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+const EVOLUTION_ICON: Record<EvolutionFeedEntry['kind'], string> = {
+  curiosity: '🔍',
+  memory: '🧠',
+};
+
+function EvolutionFeed({ entries }: { entries: readonly EvolutionFeedEntry[] }): JSX.Element {
+  if (entries.length === 0) return <></>;
+  return (
+    <Box flexDirection="column" marginTop={1}>
+      <Text color={theme.text.muted} bold>
+        Self-evolution
+      </Text>
+      {entries.map((entry, i) => {
+        const color =
+          entry.kind === 'curiosity' ? theme.evolution.curiosity : theme.evolution.memory;
+        return (
+          <Box flexDirection="row" gap={1} key={`evo-${entry.ts}-${i}`}>
+            <Text color={color}>{EVOLUTION_ICON[entry.kind]}</Text>
+            <Text color={color} bold>
+              {entry.kind === 'curiosity' ? 'CURIOSITY' : 'MEMORY'}
+            </Text>
+            <Text color={theme.text.secondary}>{entry.text}</Text>
+          </Box>
+        );
+      })}
+    </Box>
+  );
+}
+
 function truncateGoal(goal: string, max: number): string {
   if (goal.length <= max) return goal;
   return goal.slice(0, max - 1) + '…';
@@ -211,12 +292,14 @@ function PlanBanner({ plan }: { plan: PlanRecord }): JSX.Element {
  */
 export function ChatPanel({ events }: ChatPanelProps): JSX.Element {
   const { plans, groups } = derivePlansAndGroups(events);
+  const evolutionFeed = deriveEvolutionFeed(events);
   const hasWaypoints = groups.length > 0;
   const hasPlans = plans.length > 0;
+  const hasEvolution = evolutionFeed.length > 0;
 
   return (
     <Box flexDirection="column">
-      {!hasWaypoints && !hasPlans && (
+      {!hasWaypoints && !hasPlans && !hasEvolution && (
         <Text color={theme.text.muted}>
           Chat with the agent, or describe a code change to start a voyage.
         </Text>
@@ -244,6 +327,8 @@ export function ChatPanel({ events }: ChatPanelProps): JSX.Element {
           ))}
         </Box>
       )}
+
+      {hasEvolution && <EvolutionFeed entries={evolutionFeed} />}
     </Box>
   );
 }

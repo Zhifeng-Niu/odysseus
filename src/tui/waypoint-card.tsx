@@ -160,6 +160,52 @@ function EventLine({ event }: { event: OrchestratorEvent }): JSX.Element | null 
           {'  ⏸ awaiting approval'}
         </Text>
       );
+    // ─── Iteration 17: surface previously-hidden waypoint-scoped events ──
+    // These three describe the agent's inner life during a waypoint:
+    //   - self-monitor: periodic context-aware nudge injected into the LLM
+    //   - recovery-intervention: stuck-loop detector injected a hint
+    //   - misused-signal: hard gate refused tool calls on a CONVERSATIONAL-
+    //     DONE turn (protocol violation, surfaced back to the LLM)
+    // Without these cases the events were silently swallowed by the
+    // `default: return null` branch — the user had no visibility into
+    // self-monitoring, recovery, or protocol-enforcement activity.
+    case 'self-monitor':
+      return (
+        <Box flexDirection="column">
+          <Text color={theme.evolution.selfMonitor}>
+            {'  ◌ self-monitor (call '}
+            {event.toolCallCount}
+            {')'}
+          </Text>
+          {event.message.length > 0 && (
+            <Text color={theme.text.secondary}>    {truncate(event.message, 300)}</Text>
+          )}
+        </Box>
+      );
+    case 'recovery-intervention':
+      return (
+        <Box flexDirection="column">
+          <Text color={theme.evolution.recovery} bold>
+            {'  ⚡ recovery · '}
+            {event.tool}
+          </Text>
+          {event.message.length > 0 && (
+            <Text color={theme.text.secondary}>    {truncate(event.message, 300)}</Text>
+          )}
+        </Box>
+      );
+    case 'misused-signal':
+      return (
+        <Text color={theme.evolution.misuse} bold>
+          {'  ⚠ misused-signal · '}
+          {event.signal}
+          {' ('}
+          {event.toolCallCount}
+          {' tool call'}
+          {event.toolCallCount === 1 ? '' : 's'}
+          {' refused)'}
+        </Text>
+      );
     default:
       return null;
   }

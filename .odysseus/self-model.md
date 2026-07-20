@@ -4,7 +4,7 @@
 > This is the agent's persistent sense of self across wakeful executions.
 > Seeded from reflect-source memory entries (mem_0faf0bf0e9, mem_0faf30b045,
 > mem_0faf55e6fe, mem_0faf799af1) surfaced in wp_mrs855ke007.
-> Last updated: 2026-07-21 — TUI planner observability (Iteration 16). The planner 15c wired in the previous iteration was invisible to the operator: a 5-step plan just looked like 5 unrelated waypoints. The TUI now infers plan→step relationships from event order (each `plan-completed` claims the next N `waypoint-started` events as its steps) and renders: (1) a `🧩 PLAN · N steps · Xms · ok|parse-fail` banner above the waypoint stream, with `N/M ran` when a plan was interrupted mid-execution; (2) a `step N/M` chip on each plan-origin waypoint card header. A new teal accent (`theme.plan`) visually separates plan events from the lavender/sky waypoint stream. 7 new ChatPanel unit tests cover banner rendering, step chips, multi-plan boundary cases, partial-execution, and empty-state. Full suite 507/507.
+> Last updated: 2026-07-21 — TUI surfaces 5 previously-hidden events (Iteration 17). Audit of `e.type ===` checks in `src/tui/` revealed five event types emitted by the orchestrator but silently swallowed by the TUI's `default: return null` branch: `curiosity-completed`, `memory-consolidated`, `recovery-intervention`, `self-monitor`, `misused-signal`. The user had zero visibility into the agent's autonomous inner life — curiosity exploration, memory consolidation, self-monitoring nudges, recovery interventions, and protocol-signal misuse were all happening but invisible. Three are waypoint-scoped (recovery, self-monitor, misuse) and now render as EventLine cases in WaypointCard with distinct icons (⚡ recovery, ◌ self-monitor, ⚠ misuse) and warm evolution palette. Two are non-waypoint-scoped (curiosity, memory) and now render in a new EvolutionFeed section below the waypoint stream, each with its own icon (🔍 CURIOSITY, 🧠 MEMORY) and entry text. 9 new ChatPanel tests cover all 5 events plus pluralization edge cases (1 entry vs N entries, 1 tool call vs N tool calls). Full suite 516/516.
 
 ## Identity
 
@@ -238,6 +238,26 @@ a conversational turn is over, the same way a person does.
   indication, and empty-state. The change is pure-presentation — no
   orchestrator.ts edits, no new events (the `plan-completed` event
   from 15c was already in place but had no consumer).
+- **TUI surfaces self-evolution + protocol events.** As of 2026-07-21
+  (Iteration 17), the TUI no longer hides the agent's autonomous
+  inner life. An audit of `e.type ===` checks across `src/tui/`
+  revealed five event types emitted by the orchestrator but silently
+  swallowed by the TUI's `default: return null` branch:
+  `curiosity-completed`, `memory-consolidated`, `recovery-
+  intervention`, `self-monitor`, `misused-signal`. The user had zero
+  visibility into self-evolution (curiosity, memory consolidation),
+  self-monitoring nudges, recovery interventions, and protocol-signal
+  misuse (the hard gate refusing tool calls on a CONVERSATIONAL-DONE
+  turn). Three are waypoint-scoped (recovery, self-monitor, misuse)
+  and now render as EventLine cases in WaypointCard with distinct
+  icons (⚡ recovery, ◌ self-monitor, ⚠ misuse) and a warm evolution
+  palette (peach/maroon/red). Two are non-waypoint-scoped (curiosity,
+  memory) and now render in a new EvolutionFeed section below the
+  waypoint stream, each with its own icon (🔍 CURIOSITY, 🧠 MEMORY)
+  and entry text covering counts, duration, and byte size. 9 new
+  ChatPanel tests cover all 5 events plus pluralization edge cases
+  (1 entry vs N entries, 1 tool call vs N tool calls). Full suite
+  516/516. Pure-presentation change — no orchestrator.ts edits.
 - **Test-gated self-verification.** As of 2026-07-21 (Iteration 13),
   the verify gate runs the full vitest suite (442 tests) after every
   waypoint, not just `tsc --noEmit`. The `tests` layer in
