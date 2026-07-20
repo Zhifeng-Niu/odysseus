@@ -43,6 +43,11 @@ import {
 } from './brain-state.js';
 import { dream } from './dreamer.js';
 import { curiosity, shouldRunCuriosity } from './curiosity.js';
+// Iteration 15c — planner integration. shouldPlanGoal is the policy gate
+// (decides WHEN to plan); plan() is the mechanism (returns PlanStep[]). Only
+// runVoyage's seed-goal path uses these today; mid-voyage re-planning on
+// failure is a future aspiration. See ./planner.ts for the full module.
+import { shouldPlanGoal, plan } from './planner.js';
 import {
   enqueueBacklog,
   peekBacklog,
@@ -1027,8 +1032,52 @@ export class CerebellumOrchestrator extends EventEmitter {
       ts: Date.now(),
     });
 
+    // Iteration 15c — planner integration. When the seed goal trips the
+    // policy heuristic (shouldPlanGoal), decompose it into ordered sub-tasks
+    // before the voyage loop starts. Each sub-task is enqueued as a 'plan'-
+    // origin backlog item at priority 50 (same as user — see backlog.ts).
+    // The original goal is NOT enqueued in this path; its work is now
+    // distributed across the plan steps.
+    //
+    // Fallback paths (no regression vs. pre-planner behavior):
+    //   - shouldPlanGoal=false → enqueue original goal as 'user', no LLM call.
+    //   - shouldPlanGoal=true but plan() returns parseOk=false or empty steps
+    //     → enqueue original goal as 'user'.
+    //   - plan() throws (provider error) → enqueue original goal as 'user'.
+    // In every fallback the voyage continues with the original goal exactly
+    // as before; only the happy path adds planning structure.
     if (input?.seedGoal && input.seedGoal.trim().length > 0) {
-      await enqueueBacklog(this.memoryRoot(), input.seedGoal.trim(), 'user');
+      const goal = input.seedGoal.trim();
+      let planned = false;
+      if (shouldPlanGoal(goal)) {
+        try {
+          const planResult = await plan({
+            rootDir: this.memoryRoot(),
+            provider: this.config.provider,
+            goal,
+          });
+          if (planResult.parseOk && planResult.steps.length > 0) {
+            for (const step of planResult.steps) {
+              await enqueueBacklog(this.memoryRoot(), step.goal, 'plan');
+            }
+            planned = true;
+            this.emitEvent({
+              type: 'plan-completed',
+              voyageId,
+              goal,
+              stepCount: planResult.steps.length,
+              durationMs: planResult.durationMs,
+              parseOk: planResult.parseOk,
+              ts: Date.now(),
+            });
+          }
+        } catch {
+          // Provider error — fall through to direct enqueue.
+        }
+      }
+      if (!planned) {
+        await enqueueBacklog(this.memoryRoot(), goal, 'user');
+      }
     }
 
     const waypoints: RunWaypointResult[] = [];

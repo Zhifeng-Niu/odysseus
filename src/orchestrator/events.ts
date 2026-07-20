@@ -7,6 +7,11 @@ import type { BrainState } from '../cerebellum/brain-state.js';
  *
  * - `user`: explicitly injected by the user (CLI arg, TUI input). Always
  *   highest priority.
+ * - `plan`: produced by the planner's decomposition of a complex user goal.
+ *   Same urgency as the user goal that spawned it — these are not
+ *   exploratory, they are the explicit next steps the agent committed to.
+ *   Priority matches `user` so the plan chain executes before any
+ *   reflect/dream/curiosity work.
  * - `reflect`: produced by reflection on a failure. Time-urgent — the agent
  *   shouldn't repeat the mistake.
  * - `dream`: produced by the dreamer's free-association over recent trace.
@@ -17,7 +22,7 @@ import type { BrainState } from '../cerebellum/brain-state.js';
  *   curiosity work preempts idle dreaming but yields to failures.
  * - `system`: bookkeeping origin for internal seed items.
  */
-export type BacklogOrigin = 'user' | 'dream' | 'reflect' | 'curiosity' | 'system';
+export type BacklogOrigin = 'user' | 'plan' | 'dream' | 'reflect' | 'curiosity' | 'system';
 
 /**
  * Memory categories map 1:1 to files in `.odysseus/memory/`. Each category
@@ -133,6 +138,23 @@ export type OrchestratorEvent =
       backlogItemsAdded: number;
       memoryEntriesAdded: number;
       durationMs: number;
+      ts: number;
+    }
+  // ─── Planner phase events ─────────────────────────────────────────────
+  // Fired when runVoyage invokes the planner on a complex seed goal. The
+  // planner decomposes the goal into ordered sub-tasks; each sub-task is
+  // enqueued as a plan-origin backlog item. Observers use this to see
+  // when the agent chose to plan (vs. execute directly) and how many
+  // steps the plan produced. Falls back silently to user-origin enqueue
+  // when shouldPlanGoal is false or plan() fails — no event is emitted
+  // in the fallback path (the existing backlog-item-added event covers it).
+  | {
+      type: 'plan-completed';
+      voyageId: string;
+      goal: string;
+      stepCount: number;
+      durationMs: number;
+      parseOk: boolean;
       ts: number;
     }
   | {

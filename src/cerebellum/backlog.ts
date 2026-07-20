@@ -227,6 +227,11 @@ export async function enqueueBacklog(
  * Default priority by origin. Lower = higher priority.
  *
  * - `user` (50): user-initiated work always preempts autonomous work.
+ * - `plan` (50): planner-decomposed sub-tasks of a user goal. Same urgency
+ *   as the user goal that spawned them — the agent committed to this plan,
+ *   so it preempts reflect/dream/curiosity the same way the original user
+ *   goal would have. Priority matches `user` rather than sitting between
+ *   user and reflect because plan steps ARE user-intent, just structured.
  * - `reflect` (75): failure-driven reflections are urgent — the agent
  *   shouldn't repeat the mistake.
  * - `curiosity` (90): forward-looking exploration of aspirations. Preempts
@@ -238,6 +243,7 @@ export async function enqueueBacklog(
 function defaultPriorityForOrigin(origin: BacklogOrigin): number {
   switch (origin) {
     case 'user':
+    case 'plan':
       return 50;
     case 'reflect':
       return 75;

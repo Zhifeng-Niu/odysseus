@@ -4,7 +4,7 @@
 > This is the agent's persistent sense of self across wakeful executions.
 > Seeded from reflect-source memory entries (mem_0faf0bf0e9, mem_0faf30b045,
 > mem_0faf55e6fe, mem_0faf799af1) surfaced in wp_mrs855ke007.
-> Last updated: 2026-07-21 — planner policy heuristic (Iteration 15b). The planner module (15a) gained its policy counterpart: `shouldPlanGoal(goal)` decides whether a goal is complex enough to warrant a planning pass before execution. Two triggers, either suffices — length ≥ 60 chars (multi-step goals tend to name multiple files / behaviors and run long), or presence of any bilingual keyword (refactor / 重构 / system / 系统 / full / 完整 / module / 模块 / redesign / 重设计 / end-to-end / 端到端 / overhaul / 改造). Keyword match is deliberately permissive — false positives cost one extra LLM call; false negatives cost an agent stumbling through a multi-step goal with no plan. The orchestrator integration (15c, pending) will use this function as the gate before calling `plan()`. 16 dedicated tests; full suite 495/495.
+> Last updated: 2026-07-21 — planner orchestrator integration (Iteration 15c). The planner is now reachable from real voyages: `runVoyage` gates on `shouldPlanGoal(seedGoal)` before enqueuing. When true, `plan()` decomposes the goal into ordered `PlanStep[]` and each step enters the backlog as a `'plan'`-origin item at priority 50 (same as user — see backlog.ts `defaultPriorityForOrigin`). When false, or when `plan()` returns `parseOk=false` / empty steps / throws, the orchestrator falls back to enqueuing the original goal as `'user'` origin — no regression vs. pre-planner behavior. A new `plan-completed` event fires on the happy path for telemetry. The integration is a single branch in `runVoyage`'s seed-goal path — the inner tool-call loop, verify gate, and rollback invariants are untouched. 5 new integration tests in voyage-loop.test.ts (now 500/500). Closes the planner gap end-to-end (mechanism 15a + policy 15b + wiring 15c).
 
 ## Identity
 
@@ -198,6 +198,28 @@ a conversational turn is over, the same way a person does.
   './planner.js'`. 16 dedicated tests cover length boundary, bilingual
   keywords, case-insensitivity, substring match, and real-world
   goal shapes.
+- **Planner orchestrator integration.** As of 2026-07-21 (Iteration
+  15c), the planner is no longer a dormant module. `runVoyage` now
+  gates on `shouldPlanGoal(seedGoal)` before enqueuing. When true,
+  it calls `plan()`, and each returned `PlanStep.goal` enters the
+  backlog as a `'plan'`-origin item at priority 50 (same as user —
+  the plan chain is explicit user-intent, structured). The original
+  goal is NOT enqueued in the happy path; its work is distributed
+  across the steps. Three fallback paths preserve pre-planner
+  behavior with zero regression: (1) `shouldPlanGoal=false` →
+  enqueue original as `'user'`, no LLM call; (2) `plan()` returns
+  `parseOk=false` or empty steps → enqueue original as `'user'`;
+  (3) provider throws → enqueue original as `'user'`. A new
+  `plan-completed` event fires on the happy path (voyageId, goal,
+  stepCount, durationMs, parseOk) so observers see when the agent
+  chose to plan and how many steps it produced. The change is
+  isolated to one branch in `runVoyage`'s seed-goal setup; the
+  inner tool-call loop, verify gate, and rollback invariants are
+  untouched. Closes the planning gap surfaced by the 6-module
+  agent review end-to-end: mechanism (15a) → policy (15b) → wiring
+  (15c). 5 new integration tests in voyage-loop.test.ts cover all
+  four branches (skip / succeed / parse-fail / throw / empty-steps);
+  full suite 500/500.
 - **Test-gated self-verification.** As of 2026-07-21 (Iteration 13),
   the verify gate runs the full vitest suite (442 tests) after every
   waypoint, not just `tsc --noEmit`. The `tests` layer in
@@ -258,17 +280,3 @@ a conversational turn is over, the same way a person does.
    demote it for N voyages" or "this aspiration has shipped, mark it
    closed" — would let the agent *learn* from its exploration history
    rather than re-decide from scratch each pass.
-4. **Planner orchestrator integration.** The planner module (15a) and
-   its policy heuristic (15b) are both in place, but nothing in the
-   orchestrator calls them yet. The next concrete step: in the
-   waypoint entry path, gate on `shouldPlanGoal(goal)`; when true,
-   call `plan()` and enqueue the returned steps as backlog items with
-   priority just above the original goal's origin. The original goal
-   is then superseded — its work is now distributed across the steps.
-   Fallback on `parseOk=false` or provider throw: execute the
-   original goal directly (no regression vs. pre-planner behavior).
-   This is the last piece to close the planning gap surfaced by the
-   6-module review. Note: this requires editing orchestrator.ts,
-   which is the central control-flow file — the change should land
-   behind a small, well-tested surface (one new branch in the
-   waypoint setup, no changes to the inner tool-call loop).

@@ -784,4 +784,232 @@ describe('CerebellumOrchestrator voyage loop', () => {
     expect(types).not.toContain('curiosity-completed');
     expect(types).not.toContain('dream-completed');
   });
+
+  // ─── Iteration 15c — planner integration ────────────────────────────────
+  // runVoyage now gates on shouldPlanGoal(seedGoal). When true, it calls
+  // plan() and enqueues each returned step as a 'plan'-origin backlog item
+  // at priority 50 (same as user). When false (or plan() fails), it falls
+  // back to enqueuing the original goal as 'user' — no regression vs.
+  // pre-planner behavior.
+
+  test('planner: shouldPlanGoal=false skips plan(), enqueues original goal as user', async () => {
+    // Short goal without keywords → shouldPlanGoal=false → no plan() call.
+    // Provider should NOT receive a planning-style prompt. We assert this
+    // by making the first response a plan JSON: if the orchestrator never
+    // calls plan(), the file-write happens against this response and fails.
+    const provider = makeMockProvider([
+      fileWriteArgs(workdir, 'plain.ts', 'export const p = 1;'),
+      'DONE',
+      JSON.stringify({ backlogItems: [], memoryEntries: [] }),
+    ]);
+
+    const orch = new CerebellumOrchestrator({
+      cwd: workdir,
+      provider,
+      registry,
+      tracePath,
+      verifyLayers: ['syntax'],
+      autoApprove: true,
+    });
+    const events = subscribe(orch);
+
+    const result = await orch.runVoyage({ seedGoal: 'add a file' });
+
+    expect(result.waypoints.length).toBe(1);
+    expect(result.waypoints[0]!.waypoint.goal).toBe('add a file');
+
+    // No plan-completed event fired.
+    const types = events.map((e) => e.type);
+    expect(types).not.toContain('plan-completed');
+
+    // File written via the tool-call response — proves plan() was NOT
+    // called (otherwise the first response would have been consumed by
+    // plan() and the waypoint would have seen 'DONE' instead).
+    const written = await readFile(join(workdir, 'plain.ts'), 'utf8');
+    expect(written).toContain('p = 1');
+  });
+
+  test('planner: shouldPlanGoal=true + plan() succeeds → steps enqueued as plan-origin', async () => {
+    // Goal trips the policy heuristic via keyword "refactor". The first
+    // provider response is the planner's JSON output; subsequent responses
+    // handle the two waypoints the plan produces.
+    const plannerJson = JSON.stringify({
+      steps: [
+        { goal: 'step-alpha: extract foo', rationale: 'first' },
+        { goal: 'step-beta: rename bar', rationale: 'second' },
+      ],
+    });
+    const provider = makeMockProvider([
+      plannerJson, // consumed by plan()
+      fileWriteArgs(workdir, 'alpha.ts', 'export const a = 1;'),
+      'DONE',
+      JSON.stringify({ backlogItems: [], memoryEntries: [] }),
+      fileWriteArgs(workdir, 'beta.ts', 'export const b = 2;'),
+      'DONE',
+      JSON.stringify({ backlogItems: [], memoryEntries: [] }),
+    ]);
+
+    const orch = new CerebellumOrchestrator({
+      cwd: workdir,
+      provider,
+      registry,
+      tracePath,
+      verifyLayers: ['syntax'],
+      autoApprove: true,
+    });
+    const events = subscribe(orch);
+
+    const result = await orch.runVoyage({ seedGoal: 'refactor the parser module' });
+
+    // Two waypoints ran — one per plan step.
+    expect(result.waypoints.length).toBe(2);
+    expect(result.waypoints[0]!.waypoint.goal).toBe('step-alpha: extract foo');
+    expect(result.waypoints[1]!.waypoint.goal).toBe('step-beta: rename bar');
+
+    // Original goal was NOT enqueued directly — it decomposed into steps.
+    expect(result.waypoints.some((w) => w.waypoint.goal === 'refactor the parser module')).toBe(false);
+
+    // plan-completed event fired with correct telemetry.
+    const planEvents = events.filter(
+      (e): e is Extract<OrchestratorEvent, { type: 'plan-completed' }> =>
+        e.type === 'plan-completed'
+    );
+    expect(planEvents.length).toBe(1);
+    expect(planEvents[0]!.goal).toBe('refactor the parser module');
+    expect(planEvents[0]!.stepCount).toBe(2);
+    expect(planEvents[0]!.parseOk).toBe(true);
+
+    // Both files actually written.
+    await expect(readFile(join(workdir, 'alpha.ts'), 'utf8')).resolves.toContain('a = 1');
+    await expect(readFile(join(workdir, 'beta.ts'), 'utf8')).resolves.toContain('b = 2');
+  });
+
+  test('planner: plan() returns parseOk=false → fallback to original goal as user', async () => {
+    // Goal trips heuristic (length), but LLM returns prose instead of JSON.
+    // Orchestrator should fall back to enqueuing the original goal.
+    const longGoal =
+      'update the verify gate to include a new layer that runs the full vitest suite after every waypoint';
+    const provider = makeMockProvider([
+      'I cannot decompose this goal — it needs more specificity.', // plan() response
+      fileWriteArgs(workdir, 'direct.ts', 'export const d = 1;'), // waypoint
+      'DONE',
+      JSON.stringify({ backlogItems: [], memoryEntries: [] }),
+    ]);
+
+    const orch = new CerebellumOrchestrator({
+      cwd: workdir,
+      provider,
+      registry,
+      tracePath,
+      verifyLayers: ['syntax'],
+      autoApprove: true,
+    });
+    const events = subscribe(orch);
+
+    const result = await orch.runVoyage({ seedGoal: longGoal });
+
+    // One waypoint ran — the original goal, directly enqueued.
+    expect(result.waypoints.length).toBe(1);
+    expect(result.waypoints[0]!.waypoint.goal).toBe(longGoal);
+
+    // No plan-completed event (parseOk=false path is silent — the
+    // orchestrator's fallback is a direct enqueue, not a reported plan).
+    const types = events.map((e) => e.type);
+    expect(types).not.toContain('plan-completed');
+
+    // File written — proves the waypoint executed against the original goal.
+    await expect(readFile(join(workdir, 'direct.ts'), 'utf8')).resolves.toContain('d = 1');
+  });
+
+  test('planner: plan() throws → fallback to original goal as user', async () => {
+    // Goal trips heuristic (keyword), but provider throws on the FIRST call
+    // (the plan() call). Subsequent calls return the normal waypoint
+    // sequence: file-write tool call, DONE, dream. The orchestrator
+    // catches the plan() throw and enqueues the original goal directly.
+    const longGoal = 'refactor dreamer.ts';
+    let callCount = 0;
+    const waypointSeq = [
+      fileWriteArgs(workdir, 'fallback.ts', 'export const f = 1;'),
+      'DONE',
+      JSON.stringify({ backlogItems: [], memoryEntries: [] }),
+    ];
+    const provider: LLMProvider = {
+      async complete(): Promise<LLMCompletion> {
+        callCount += 1;
+        if (callCount === 1) {
+          throw new Error('network timeout');
+        }
+        // Waypoint + dream sequence starts at callCount=2 → index 0.
+        const content = waypointSeq[Math.min(callCount - 2, waypointSeq.length - 1)]!;
+        let toolCalls: unknown;
+        try {
+          const parsed = JSON.parse(content) as { toolCalls?: unknown };
+          toolCalls = parsed.toolCalls;
+        } catch {
+          toolCalls = undefined;
+        }
+        return {
+          content,
+          model: 'mock',
+          usage: { inputTokens: 10, outputTokens: 5 },
+          finishReason: 'stop',
+          ...(toolCalls !== undefined ? { toolCalls } : {}),
+        };
+      },
+      async *stream() {
+        yield '';
+      },
+      getModel() {
+        return 'mock';
+      },
+    };
+
+    const orch = new CerebellumOrchestrator({
+      cwd: workdir,
+      provider,
+      registry,
+      tracePath,
+      verifyLayers: ['syntax'],
+      autoApprove: true,
+    });
+    const events = subscribe(orch);
+
+    const result = await orch.runVoyage({ seedGoal: longGoal });
+
+    // One waypoint — the original goal after provider failure.
+    expect(result.waypoints.length).toBe(1);
+    expect(result.waypoints[0]!.waypoint.goal).toBe(longGoal);
+
+    // No plan-completed event — throw path is silent fallback.
+    const types = events.map((e) => e.type);
+    expect(types).not.toContain('plan-completed');
+
+    await expect(readFile(join(workdir, 'fallback.ts'), 'utf8')).resolves.toContain('f = 1');
+  });
+
+  test('planner: plan() returns empty steps → fallback to original goal', async () => {
+    // Goal trips heuristic, LLM honestly returns empty steps array.
+    // Should fall back to enqueuing the original goal.
+    const longGoal = 'system overhaul — full rewrite';
+    const provider = makeMockProvider([
+      JSON.stringify({ steps: [] }), // honest "cannot decompose"
+      fileWriteArgs(workdir, 'empty.ts', 'export const e = 1;'),
+      'DONE',
+      JSON.stringify({ backlogItems: [], memoryEntries: [] }),
+    ]);
+
+    const orch = new CerebellumOrchestrator({
+      cwd: workdir,
+      provider,
+      registry,
+      tracePath,
+      verifyLayers: ['syntax'],
+      autoApprove: true,
+    });
+
+    const result = await orch.runVoyage({ seedGoal: longGoal });
+
+    expect(result.waypoints.length).toBe(1);
+    expect(result.waypoints[0]!.waypoint.goal).toBe(longGoal);
+  });
 });
