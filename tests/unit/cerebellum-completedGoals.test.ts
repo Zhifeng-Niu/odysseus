@@ -91,6 +91,20 @@ describe('isCompleted', () => {
     markCompleted('x', 'done');
     expect(isCompleted('the x factor')).toBe(true);
   });
+
+  test('documents the known false-positive: substring match fires on semantically unrelated query', () => {
+    // Substring matching is intentionally loose — it cannot distinguish
+    // "user" as a standalone goal from "user" as a fragment of
+    // "implement user authentication with OAuth2". This test pins the
+    // known weakness so a future tightening of isCompleted must
+    // consciously update the assertion (or delete this test with a
+    // rationale comment).
+    markCompleted(
+      'implement user authentication with OAuth2 and JWT tokens',
+      'auth module complete',
+    );
+    expect(isCompleted('user')).toBe(true); // false positive — by design
+  });
 });
 
 // ---------------------------------------------------------------------------
