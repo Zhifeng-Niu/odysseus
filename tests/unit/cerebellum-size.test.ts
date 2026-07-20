@@ -53,6 +53,14 @@ const FILE_CAPS: readonly FileCap[] = [
       'Iteration 36 extracted goal-dedup helpers here (85 lines). Cap at 120 — these are ' +
       'pure functions, should not grow.',
   },
+  {
+    filename: 'voyage-stats.ts',
+    lineCap: 305,
+    rationale:
+      'Iteration 37 added computeIncrementalTokens (delta from voyage-cumulative). ' +
+      'Current 300 lines. Cap at 305 — at CLAUDE.md <300 ceiling. If percentile or ' +
+      'another aggregation joins, extract a voyage-stats-aggregate module first.',
+  },
 ];
 
 describe('cerebellum source file size caps', () => {

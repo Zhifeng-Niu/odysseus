@@ -89,17 +89,58 @@ export function normalizeReason(raw: string): string {
   return trimmed.length > 60 ? trimmed.slice(0, 60).trim() + '…' : trimmed;
 }
 
-function sumTokens(records: readonly TraceRecord[]): TokenTotals {
+/**
+ * Compute per-waypoint incremental tokens by differencing consecutive
+ * same-voyage records' cumulative `tokens_consumed`. The orchestrator
+ * writes its running `state.totalInput`/`totalOutput` into every trace
+ * record (orchestrator.ts:689), so within a voyage each record's total
+ * INCLUDES every prior waypoint. Naively summing double-counts.
+ *
+ * Rules:
+ *   - `voyage_id` undefined (legacy pre-2026-07-21): treat as standalone.
+ *   - First record of a new voyage_id: same as standalone.
+ *   - Subsequent: delta from prior record in same voyage. Negative deltas
+ *     (shouldn't happen — state is monotonic) clamp to 0.
+ */
+export function computeIncrementalTokens(
+  records: readonly TraceRecord[]
+): TokenTotals[] {
+  const lastCumulative = new Map<string, TokenTotals>();
+  const result: TokenTotals[] = [];
+  for (const r of records) {
+    const cumulative: TokenTotals = {
+      input: r.tokens_consumed?.input ?? 0,
+      output: r.tokens_consumed?.output ?? 0,
+    };
+    const vid = r.voyage_id;
+    const prev = vid === undefined ? undefined : lastCumulative.get(vid);
+    if (prev === undefined) {
+      result.push({ ...cumulative });
+    } else {
+      result.push({
+        input: Math.max(0, cumulative.input - prev.input),
+        output: Math.max(0, cumulative.output - prev.output),
+      });
+    }
+    if (vid !== undefined) lastCumulative.set(vid, { ...cumulative });
+  }
+  return result;
+}
+
+function sumTokens(incremental: readonly TokenTotals[]): TokenTotals {
   let input = 0;
   let output = 0;
-  for (const r of records) {
-    input += r.tokens_consumed?.input ?? 0;
-    output += r.tokens_consumed?.output ?? 0;
+  for (const t of incremental) {
+    input += t.input;
+    output += t.output;
   }
   return { input, output };
 }
 
-function computeSlice(records: readonly TraceRecord[]): VoyageStatsSlice {
+function computeSlice(
+  records: readonly TraceRecord[],
+  incremental: readonly TokenTotals[]
+): VoyageStatsSlice {
   const n = records.length;
   if (n === 0) {
     return {
@@ -112,7 +153,7 @@ function computeSlice(records: readonly TraceRecord[]): VoyageStatsSlice {
     };
   }
   const counts = countOutcomes(records);
-  const tokens = sumTokens(records);
+  const tokens = sumTokens(incremental);
   const totalIters = records.reduce((sum, r) => sum + (r.iterations_used ?? 0), 0);
   return {
     waypoints: n,
@@ -155,15 +196,16 @@ function aggregateReasons(
 export function computeVoyageStats(records: readonly TraceRecord[]): VoyageStats {
   const total = records.length;
   const outcomes = countOutcomes(records);
-  const tokens = sumTokens(records);
+  const incremental = computeIncrementalTokens(records);
+  const tokens = sumTokens(incremental);
   const totalIters = records.reduce((sum, r) => sum + (r.iterations_used ?? 0), 0);
 
   let trend: TrendComparison | null = null;
   if (total >= 4) {
     const half = Math.floor(total / 2);
     trend = {
-      firstHalf: computeSlice(records.slice(0, half)),
-      secondHalf: computeSlice(records.slice(half)),
+      firstHalf: computeSlice(records.slice(0, half), incremental.slice(0, half)),
+      secondHalf: computeSlice(records.slice(half), incremental.slice(half)),
     };
   }
 

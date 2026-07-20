@@ -4,6 +4,7 @@ import {
   formatVoyageStatsMarkdown,
   normalizeReason,
   countOutcomes,
+  computeIncrementalTokens,
 } from '../../src/cerebellum/voyage-stats.js';
 import type { TraceRecord } from '../../src/trace/jsonl.js';
 
@@ -275,5 +276,136 @@ describe('formatVoyageStatsMarkdown', () => {
   test('(none) appears for empty reason lists', () => {
     const md = formatVoyageStatsMarkdown(computeVoyageStats([makeRecord({})]));
     expect(md).toContain('(none)');
+  });
+});
+
+describe('computeIncrementalTokens — voyage-cumulative correction', () => {
+  test('records without voyage_id are treated as standalone (cumulative = delta)', () => {
+    const records: TraceRecord[] = [
+      makeRecord({ tokens_consumed: { input: 1000, output: 100 } }),
+      makeRecord({ tokens_consumed: { input: 2000, output: 200 } }),
+      makeRecord({ tokens_consumed: { input: 3000, output: 300 } }),
+    ];
+    const inc = computeIncrementalTokens(records);
+    expect(inc).toEqual([
+      { input: 1000, output: 100 },
+      { input: 2000, output: 200 },
+      { input: 3000, output: 300 },
+    ]);
+  });
+
+  test('records in the same voyage are differenced from prior cumulative', () => {
+    // Simulate an orchestrator running total across 3 waypoints in one voyage.
+    // Without delta, summing cumulative gives 100+250+500 = 850 input tokens.
+    // With delta: 100 + 150 + 250 = 500 — the actual voyage cost.
+    const records: TraceRecord[] = [
+      makeRecord({
+        voyage_id: 'voy_abc',
+        waypoint_id: 'wp_1',
+        tokens_consumed: { input: 100, output: 10 },
+      }),
+      makeRecord({
+        voyage_id: 'voy_abc',
+        waypoint_id: 'wp_2',
+        tokens_consumed: { input: 250, output: 30 },
+      }),
+      makeRecord({
+        voyage_id: 'voy_abc',
+        waypoint_id: 'wp_3',
+        tokens_consumed: { input: 500, output: 75 },
+      }),
+    ];
+    const inc = computeIncrementalTokens(records);
+    expect(inc).toEqual([
+      { input: 100, output: 10 },
+      { input: 150, output: 20 },
+      { input: 250, output: 45 },
+    ]);
+  });
+
+  test('interleaved voyages keep separate running totals', () => {
+    const records: TraceRecord[] = [
+      makeRecord({ voyage_id: 'A', waypoint_id: 'A1', tokens_consumed: { input: 100, output: 0 } }),
+      makeRecord({ voyage_id: 'B', waypoint_id: 'B1', tokens_consumed: { input: 50, output: 0 } }),
+      makeRecord({ voyage_id: 'A', waypoint_id: 'A2', tokens_consumed: { input: 300, output: 0 } }),
+      makeRecord({ voyage_id: 'B', waypoint_id: 'B2', tokens_consumed: { input: 200, output: 0 } }),
+    ];
+    const inc = computeIncrementalTokens(records);
+    expect(inc).toEqual([
+      { input: 100, output: 0 }, // A first
+      { input: 50, output: 0 },  // B first
+      { input: 200, output: 0 }, // A delta: 300 - 100
+      { input: 150, output: 0 }, // B delta: 200 - 50
+    ]);
+  });
+
+  test('negative deltas (should not happen) clamp to 0', () => {
+    const records: TraceRecord[] = [
+      makeRecord({ voyage_id: 'X', waypoint_id: 'X1', tokens_consumed: { input: 500, output: 50 } }),
+      makeRecord({ voyage_id: 'X', waypoint_id: 'X2', tokens_consumed: { input: 400, output: 30 } }),
+    ];
+    const inc = computeIncrementalTokens(records);
+    expect(inc).toEqual([
+      { input: 500, output: 50 },
+      { input: 0, output: 0 }, // clamp — state shouldn't go backward
+    ]);
+  });
+
+  test('legacy records (no voyage_id) mixed with new records do not interfere', () => {
+    const records: TraceRecord[] = [
+      makeRecord({ tokens_consumed: { input: 1000, output: 0 } }), // legacy
+      makeRecord({ voyage_id: 'V', waypoint_id: 'V1', tokens_consumed: { input: 100, output: 0 } }),
+      makeRecord({ voyage_id: 'V', waypoint_id: 'V2', tokens_consumed: { input: 500, output: 0 } }),
+    ];
+    const inc = computeIncrementalTokens(records);
+    expect(inc).toEqual([
+      { input: 1000, output: 0 }, // legacy: standalone
+      { input: 100, output: 0 },  // V first
+      { input: 400, output: 0 },  // V delta: 500 - 100
+    ]);
+  });
+
+  test('computeVoyageStats uses incremental tokens for total + average', () => {
+    // Same voyage: 3 waypoints with cumulative 100/250/500 input tokens.
+    // Real per-waypoint consumption: 100/150/250 = 500 total, avg 166.67.
+    const records: TraceRecord[] = [
+      makeRecord({
+        voyage_id: 'voy_stats',
+        waypoint_id: 's1',
+        tokens_consumed: { input: 100, output: 10 },
+      }),
+      makeRecord({
+        voyage_id: 'voy_stats',
+        waypoint_id: 's2',
+        tokens_consumed: { input: 250, output: 30 },
+      }),
+      makeRecord({
+        voyage_id: 'voy_stats',
+        waypoint_id: 's3',
+        tokens_consumed: { input: 500, output: 75 },
+      }),
+    ];
+    const stats = computeVoyageStats(records);
+    expect(stats.totalTokens).toEqual({ input: 500, output: 75 });
+    expect(stats.avgTokensPerWaypoint).toEqual({ input: 500 / 3, output: 25 });
+  });
+
+  test('computeVoyageStats trend slices also use incremental tokens', () => {
+    // 4 records in same voyage. Cumulative: 100/200/350/500. Deltas: 100/100/150/150.
+    // First half (2 records): incremental total = 200, avg = 100.
+    // Second half (2 records): incremental total = 300, avg = 150.
+    const records: TraceRecord[] = [100, 200, 350, 500].map((input, i) =>
+      makeRecord({
+        voyage_id: 'voy_trend',
+        waypoint_id: `t${i + 1}`,
+        tokens_consumed: { input, output: 0 },
+      })
+    );
+    const stats = computeVoyageStats(records);
+    expect(stats.trend).not.toBeNull();
+    if (stats.trend) {
+      expect(stats.trend.firstHalf.avgInputTokens).toBe(100);
+      expect(stats.trend.secondHalf.avgInputTokens).toBe(150);
+    }
   });
 });

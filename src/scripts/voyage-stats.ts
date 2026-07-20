@@ -4,7 +4,8 @@
  * retrospective view. Answers: "how is the agent actually doing?"
  *
  * Usage:
- *   node dist/scripts/voyage-stats.js [options]
+ *   npm exec tsx -- src/scripts/voyage-stats.ts [options]
+ *   node dist/scripts/voyage-stats.js [options]   # after `npm run build`
  *
  * Options:
  *   --summary     Print only the headline line (success rate + token
@@ -17,10 +18,17 @@
  *   0  Stats computed successfully (regardless of success rate).
  *   1  Argument parse error or trace.jsonl is unreadable.
  *
+ * Token semantics (Iteration 37 fix):
+ *   Per-waypoint tokens are computed as DELTAS within each voyage.
+ *   The orchestrator writes its running `state.totalInput` into trace.jsonl,
+ *   so within a voyage each record's total includes every prior waypoint.
+ *   This CLI differences same-voyage records to recover per-waypoint cost.
+ *   Legacy records without `voyage_id` are treated as standalone.
+ *
  * Examples:
- *   node dist/scripts/voyage-stats.js
- *   node dist/scripts/voyage-stats.js --summary
- *   npm run voyage-stats
+ *   npm exec tsx -- src/scripts/voyage-stats.ts
+ *   npm exec tsx -- src/scripts/voyage-stats.ts --summary
+ *   npm exec tsx -- src/scripts/voyage-stats.ts --cwd /path/to/repo
  */
 import { parseArgs } from 'node:util';
 import { readFileSync } from 'node:fs';
