@@ -90,6 +90,25 @@ const FILE_CAPS: readonly FileCap[] = [
       'consider whether SkippedEnqueue and RejectedGoal belong in separate ' +
       'modules.',
   },
+  {
+    filename: 'planner.ts',
+    lineCap: 280,
+    rationale:
+      'Iteration 42 extracted shouldPlanGoal + PLAN_KEYWORDS + ' +
+      'MIN_PLAN_GOAL_LENGTH to planner-policy.ts: 337 → 257. Cap at 280 — ' +
+      'under CLAUDE.md <300 ceiling with headroom for prompt tweaks. ' +
+      'Crossed only if the PLANNER_SYSTEM_PROMPT grows materially; in that ' +
+      'case split the prompt into a prompts.ts entry first.',
+  },
+  {
+    filename: 'planner-policy.ts',
+    lineCap: 120,
+    rationale:
+      'Iteration 42 — pure policy module (shouldPlanGoal + constants). ' +
+      'Current 86 lines. Cap at 120 — these are heuristics that should not ' +
+      'grow. If it crosses 120, the policy is likely absorbing plan() ' +
+      'mechanism code that belongs in planner.ts.',
+  },
 ];
 
 describe('cerebellum source file size caps', () => {

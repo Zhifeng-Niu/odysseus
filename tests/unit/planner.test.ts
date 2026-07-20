@@ -173,6 +173,28 @@ describe('planner', () => {
       expect(result.steps.length).toBe(2);
     });
 
+    test('parses fenced JSON even when prose after the fence contains } (Iteration 42 regression)', async () => {
+      // Iteration 42: planner.ts previously had its own extractJson
+      // with a silent fence-stripping bug (fenceMatch?.groups?.[0] on
+      // a regex with no named groups → candidate fell back to the full
+      // input). For simple fenced JSON the indexOf('{')/lastIndexOf('}')
+      // fallback rescued parsing. BUT when prose after the closing fence
+      // contained a '}', lastIndexOf('}') found the wrong brace and
+      // slice returned invalid JSON → parseOk=false silently.
+      //
+      // Migrating to the shared extractJsonObject (Iter 38 fix) closes
+      // the bug. This test pins the fix: a } in trailing prose must
+      // not corrupt the extracted JSON.
+      const malicious = '```json\n' + TWO_STEP_RESPONSE + '\n```\nThat\'s the plan.}';
+      const result = await plan({
+        rootDir,
+        provider: staticProvider(malicious),
+        goal: 'X',
+      });
+      expect(result.parseOk).toBe(true);
+      expect(result.steps.length).toBe(2);
+    });
+
     test('steps preserve LLM-provided order', async () => {
       const response = `{
         "steps": [

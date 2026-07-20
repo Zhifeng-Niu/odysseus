@@ -27,6 +27,18 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { LLMProvider } from '../llm/provider.js';
+import { extractJsonObject } from './extract-json.js';
+
+// Re-export the policy helpers (Iteration 42 extraction) for interface
+// stability. orchestrator.ts imports shouldPlanGoal from './planner.js'
+// and that module is on the safety perimeter; tests import
+// MIN_PLAN_GOAL_LENGTH + PLAN_KEYWORDS from here too. New callers
+// should import directly from './planner-policy.js'.
+export {
+  shouldPlanGoal,
+  MIN_PLAN_GOAL_LENGTH,
+  PLAN_KEYWORDS,
+} from './planner-policy.js';
 
 /**
  * One step in a multi-step plan. `goal` is a single-waypoint-sized
@@ -189,33 +201,13 @@ function coercePlanStep(raw: unknown): PlanStep | null {
 }
 
 /**
- * Extract a JSON object from an LLM response. Mirror of
- * curiosity.ts:extractJson and dreamer.ts:extractJson — duplicated
- * intentionally so planner.ts stays self-contained. Handles raw JSON,
- * markdown-fenced JSON, and JSON embedded in prose.
+ * Extract a JSON object from an LLM response. Delegates to the shared
+ * extract-json module (Iteration 38 extraction + Iteration 42 migration
+ * for planner). Previously a duplicated local copy that carried a
+ * silent fence-stripping bug (fenceMatch?.groups?.[0] on a regex with
+ * no named groups — the index-style [1] access in the shared module is
+ * the fix).
  */
-function extractJson(
-  content: string,
-): { ok: true; value: ParsedPlan } | { ok: false; error: string } {
-  const trimmed = content.trim();
-  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
-  const candidate = fenceMatch?.groups?.[0] ?? trimmed;
-  const start = candidate.indexOf('{');
-  const end = candidate.lastIndexOf('}');
-  if (start < 0 || end <= start) {
-    return { ok: false, error: 'no JSON object found in response' };
-  }
-  const slice = candidate.slice(start, end + 1);
-  try {
-    const parsed = JSON.parse(slice) as ParsedPlan;
-    return { ok: true, value: parsed };
-  } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : 'JSON.parse failed',
-    };
-  }
-}
 
 /**
  * Run a single planning pass: LLM call + parse + coerce.
@@ -236,7 +228,7 @@ export async function plan(input: PlannerInput): Promise<PlannerOutput> {
     maxTokens: 1500,
   });
 
-  const extracted = extractJson(completion.content);
+  const extracted = extractJsonObject<ParsedPlan>(completion.content);
   if (!extracted.ok) {
     return {
       steps: [],
@@ -262,76 +254,4 @@ export async function plan(input: PlannerInput): Promise<PlannerOutput> {
     durationMs: Date.now() - start,
     parseOk: true,
   };
-}
-
-/**
- * Minimum goal length (in characters) that triggers planning without a
- * keyword match. Below this threshold the goal is almost certainly
- * single-waypoint-sized (e.g., "add error-loop detection to self-monitor.ts"
- * is 49 chars). Tuned by sampling real waypoint goals from trace.jsonl:
- * single-file changes typically clock in at 40–80 chars, multi-step
- * epics at 100+ chars. The threshold 60 sits in the middle — a goal
- * shorter than 60 chars is very likely a single waypoint; a goal at
- * 60+ chars MAY be multi-step and is worth a planning pass.
- *
- * The threshold is a HEURISTIC — keyword match below is the other
- * trigger. A goal can be short AND trigger planning if it contains
- * "refactor" or "system".
- */
-export const MIN_PLAN_GOAL_LENGTH = 60;
-
-/**
- * Keywords that trigger planning regardless of goal length. Presence of
- * any of these signals the goal is likely multi-step even when terse.
- * The list is deliberately small — each entry must earn its place by
- * catching real multi-step goals that the length heuristic would miss.
- *
- * Bilingual (English + Chinese) because Odysseus's goals originate from
- * both English operator commands and Chinese conversational inputs.
- */
-export const PLAN_KEYWORDS: readonly string[] = [
-  'refactor',
-  '重构',
-  'redesign',
-  '重设计',
-  'system',
-  '系统',
-  'full',
-  '完整',
-  'module',
-  '模块',
-  'end-to-end',
-  '端到端',
-  'overhaul',
-  '改造',
-];
-
-/**
- * Decide whether a goal is complex enough to warrant a planning pass
- * before execution.
- *
- * Two triggers, either suffices:
- *   1. LENGTH — goal is at least MIN_PLAN_GOAL_LENGTH chars after trim.
- *      Multi-step goals tend to be longer because they name multiple
- *      files or behaviors.
- *   2. KEYWORD — goal contains any of PLAN_KEYWORDS (case-insensitive).
- *      Words like "refactor" / "system" / "module" reliably signal
- *      multi-step intent even when the goal itself is terse.
- *
- * Returns false for empty/whitespace goals — the caller then executes
- * the goal directly (no regression vs. pre-planner behavior).
- *
- * This function is the POLICY counterpart to plan()'s MECHANISM. Keeping
- * them separate means the orchestrator (or any future caller) can apply
- * the policy without committing to a specific plan() invocation shape.
- * The policy is also independently testable, which matters because the
- * threshold and keyword list will need tuning as we see what real
- * user goals look like.
- */
-export function shouldPlanGoal(goal: string): boolean {
-  const trimmed = goal.trim();
-  if (trimmed.length === 0) return false;
-  if (trimmed.length >= MIN_PLAN_GOAL_LENGTH) return true;
-  const lower = trimmed.toLowerCase();
-  return PLAN_KEYWORDS.some((kw) => lower.includes(kw));
 }
