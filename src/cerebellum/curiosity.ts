@@ -180,20 +180,27 @@ export function loadSelfModelForCuriosity(rootDir: string): string {
 }
 
 /**
- * Returns true when the curiosity phase should fire. Defaults to OFF —
- * curiosity is autonomous exploration and can surprise operators who aren't
- * expecting the agent to generate its own goals. Opt in with
- * `ODYSSEUS_CURIOSITY=1` (or any truthy value except 0/false/no).
+ * Returns true when the curiosity phase should fire. Defaults to ON as of
+ * 2026-07-21 (Iteration 9) — a truly autonomous agent generates its own
+ * exploration goals without operator opt-in. Curiosity has been validated
+ * by two live GLM-5.2 probes (Iterations 7 and 8) and is gated by three
+ * independent safety layers before producing any backlog item:
  *
- * Defaulting OFF (vs AUTO_APPROVE's default ON) is intentional: auto-approve
- * merely routes existing proposals through the backlog, but curiosity
- * CREATES proposals from nothing. The surprise factor is higher, so the
- * default is conservative. Operators who want full autonomy flip both
- * env vars to truthy.
+ *   1. `didRealWork` — only fires after a voyage produced real side-effects
+ *      (not after pure-conversational "hi" waypoints).
+ *   2. `backlog-empty` — only fires when the dreamer produced no new items
+ *      this voyage; curiosity does not preempt reflective work.
+ *   3. `pending-review` queue — proposals go to `pending-review.json` first.
+ *      With `ODYSSEUS_AUTO_APPROVE=0` (operator opt-out), they wait there
+ *      for review. With the default `ODYSSEUS_AUTO_APPROVE=1`, they flow
+ *      to the backlog like dream proposals.
+ *
+ * Operators who want to disable curiosity entirely (e.g. for deterministic
+ * CI runs) set `ODYSSEUS_CURIOSITY=0` (or `false` / `no`).
  */
 export function shouldRunCuriosity(): boolean {
   const v = process.env.ODYSSEUS_CURIOSITY;
-  if (v === undefined || v === '') return false;
+  if (v === undefined || v === '') return true;
   return v !== '0' && v !== 'false' && v !== 'no';
 }
 

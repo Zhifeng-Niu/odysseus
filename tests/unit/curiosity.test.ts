@@ -365,27 +365,37 @@ describe('curiosity', () => {
     expect(result).toContain('Aspirations');
   });
 
-  test('shouldRunCuriosity defaults to OFF', () => {
+  test('shouldRunCuriosity defaults to ON (autonomous agent)', () => {
     delete process.env.ODYSSEUS_CURIOSITY;
-    expect(shouldRunCuriosity()).toBe(false);
+    expect(shouldRunCuriosity()).toBe(true);
   });
 
-  test('shouldRunCuriosity = 1 enables curiosity', () => {
+  test('shouldRunCuriosity = empty string still defaults to ON', () => {
+    process.env.ODYSSEUS_CURIOSITY = '';
+    expect(shouldRunCuriosity()).toBe(true);
+  });
+
+  test('shouldRunCuriosity = 1 explicitly enables curiosity', () => {
     process.env.ODYSSEUS_CURIOSITY = '1';
     expect(shouldRunCuriosity()).toBe(true);
   });
 
-  test('shouldRunCuriosity = 0 explicitly disables curiosity', () => {
+  test('shouldRunCuriosity = 0 is the escape hatch (disables curiosity)', () => {
     process.env.ODYSSEUS_CURIOSITY = '0';
     expect(shouldRunCuriosity()).toBe(false);
   });
 
-  test('shouldRunCuriosity = false explicitly disables curiosity', () => {
+  test('shouldRunCuriosity = false is the escape hatch', () => {
     process.env.ODYSSEUS_CURIOSITY = 'false';
     expect(shouldRunCuriosity()).toBe(false);
   });
 
-  test('shouldRunCuriosity = yes enables curiosity', () => {
+  test('shouldRunCuriosity = no is the escape hatch', () => {
+    process.env.ODYSSEUS_CURIOSITY = 'no';
+    expect(shouldRunCuriosity()).toBe(false);
+  });
+
+  test('shouldRunCuriosity = yes explicitly enables curiosity', () => {
     process.env.ODYSSEUS_CURIOSITY = 'yes';
     expect(shouldRunCuriosity()).toBe(true);
   });

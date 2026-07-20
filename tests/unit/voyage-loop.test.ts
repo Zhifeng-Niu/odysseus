@@ -11,6 +11,8 @@ import { FileWriteTool } from '../../src/tools/file.js';
 import { enqueueBacklog, listBacklog } from '../../src/cerebellum/backlog.js';
 import { listPendingReview } from '../../src/cerebellum/pending-review.js';
 import { readMemory } from '../../src/cerebellum/memory.js';
+import { clearCompletedGoals } from '../../src/cerebellum/completedGoals.js';
+import { clearSeedAttempts } from '../../src/cerebellum/seedAttempts.js';
 
 async function initRepo(dir: string): Promise<void> {
   await execFileNoThrow('git', ['init'], { cwd: dir });
@@ -112,6 +114,20 @@ describe('CerebellumOrchestrator voyage loop', () => {
     // auto-iteration). Tests that need auto-approve ON set the env var
     // explicitly inside the test body.
     process.env.ODYSSEUS_AUTO_APPROVE = '0';
+    // Default: curiosity OFF for the same reason — tests should not be
+    // surprised by autonomous exploration goals. Curiosity-on-by-default
+    // is the production behavior (Iteration 9), but the test suite opts
+    // out by default to keep mock-provider response counts predictable.
+    // Tests that exercise curiosity flip this to '1' (or delete it).
+    process.env.ODYSSEUS_CURIOSITY = '0';
+    // Module-level Maps in completedGoals.ts and seedAttempts.ts persist across
+    // tests in the same file. Without clearing, a goal completed in test N
+    // causes isCompleted() to return true in test N+1, silently dropping the
+    // enqueue (the item is returned but not persisted). This broke the
+    // "curiosity fires by default" test after the "curiosity fires with =1"
+    // test ran first — both used the same exploration goal.
+    clearCompletedGoals();
+    clearSeedAttempts();
     workdir = await mkdtemp(join(tmpdir(), 'ody-voyage-'));
     tracePath = join(workdir, '.odysseus', 'trace.jsonl');
     await initRepo(workdir);
@@ -134,6 +150,7 @@ describe('CerebellumOrchestrator voyage loop', () => {
 
   afterEach(async () => {
     delete process.env.ODYSSEUS_AUTO_APPROVE;
+    delete process.env.ODYSSEUS_CURIOSITY;
     await rm(workdir, { recursive: true, force: true });
   });
 
@@ -637,11 +654,63 @@ describe('CerebellumOrchestrator voyage loop', () => {
     await expect(readFile(join(workdir, 'explore.ts'), 'utf8')).resolves.toContain('e = 1');
   });
 
-  test('curiosity does NOT fire when ODYSSEUS_CURIOSITY is unset (default OFF)', async () => {
-    // Curiosity is opt-in. Without the env var, the voyage drains normally
-    // even if the dream produced nothing and the agent did real work.
+  test('curiosity fires by default when ODYSSEUS_CURIOSITY is unset (default ON since Iteration 9)', async () => {
+    // Curiosity is on-by-default. Without the env var, the voyage still
+    // triggers curiosity after the dreamer produces nothing AND the voyage
+    // did real work. The escape hatch is ODYSSEUS_CURIOSITY=0 (tested below).
     process.env.ODYSSEUS_AUTO_APPROVE = '1';
     delete process.env.ODYSSEUS_CURIOSITY;
+
+    await mkdir(join(workdir, '.odysseus'), { recursive: true });
+    await writeFile(
+      join(workdir, '.odysseus', 'self-model.md'),
+      '# Self-Model\n\n## Aspirations\n1. Add continuous self-monitor.\n'
+    );
+
+    const curiosityGoal = 'add timing instrumentation to dreamer.ts';
+    const provider = makeMockProvider([
+      // Waypoint 1 (seed): write a file, then DONE — produces side effects.
+      fileWriteArgs(workdir, 'work.ts', 'export const w = 0;'),
+      'DONE',
+      // Dream 1: empty — no proposals.
+      JSON.stringify({ backlogItems: [], memoryEntries: [] }),
+      // Curiosity 1: proposes one exploration (fires by default).
+      JSON.stringify({
+        backlogItems: [{ goal: curiosityGoal, priority: 90 }],
+        memoryEntries: [],
+      }),
+      // Waypoint 2 (curiosity item): write another file, DONE.
+      fileWriteArgs(workdir, 'explore.ts', 'export const e = 1;'),
+      'DONE',
+      // Dream 2: empty — voyage drains (maxWaypoints=3 stops it).
+      JSON.stringify({ backlogItems: [], memoryEntries: [] }),
+    ]);
+
+    const orch = new CerebellumOrchestrator({
+      cwd: workdir,
+      provider,
+      registry,
+      tracePath,
+      verifyLayers: ['syntax'],
+      autoApprove: true,
+    });
+    const events = subscribe(orch);
+
+    const result = await orch.runVoyage({ seedGoal: 'curiosity-default seed', maxWaypoints: 3 });
+
+    // Curiosity fired by default and proposed an exploration.
+    expect(result.waypoints.length).toBe(2);
+    expect(result.waypoints[1]!.waypoint.goal).toBe(curiosityGoal);
+    const types = events.map((e) => e.type);
+    expect(types).toContain('curiosity-completed');
+  });
+
+  test('curiosity escape hatch: ODYSSEUS_CURIOSITY=0 disables curiosity entirely', async () => {
+    // Operators who want deterministic behavior (e.g. CI runs) can opt out
+    // of curiosity with ODYSSEUS_CURIOSITY=0. The voyage drains normally
+    // even when the dream produced nothing and the agent did real work.
+    process.env.ODYSSEUS_AUTO_APPROVE = '1';
+    process.env.ODYSSEUS_CURIOSITY = '0';
 
     await mkdir(join(workdir, '.odysseus'), { recursive: true });
     await writeFile(
@@ -665,7 +734,7 @@ describe('CerebellumOrchestrator voyage loop', () => {
     });
     const events = subscribe(orch);
 
-    const result = await orch.runVoyage({ seedGoal: 'curiosity-gated seed' });
+    const result = await orch.runVoyage({ seedGoal: 'curiosity-disabled seed' });
 
     // Only one waypoint ran; curiosity never added work.
     expect(result.waypoints.length).toBe(1);

@@ -4,7 +4,7 @@
 > This is the agent's persistent sense of self across wakeful executions.
 > Seeded from reflect-source memory entries (mem_0faf0bf0e9, mem_0faf30b045,
 > mem_0faf55e6fe, mem_0faf799af1) surfaced in wp_mrs855ke007.
-> Last updated: 2026-07-21 — long-term memory (patterns + lessons) now injected at every waypoint start alongside the self-model.
+> Last updated: 2026-07-21 — curiosity is now ON by default (Iteration 9). A truly autonomous agent generates its own exploration goals; operators opt out with `ODYSSEUS_CURIOSITY=0`.
 
 ## Identity
 
@@ -79,14 +79,15 @@ a conversational turn is over, the same way a person does.
   verb-less goals do not.
 - **Curiosity goal source.** As of 2026-07-21, I have a third goal origin
   beyond `user` and `dream`: `curiosity`. When the dreamer produces no
-  new work AND I have done real work this voyage AND the operator has
-  opted in via `ODYSSEUS_CURIOSITY=1`, a curiosity pass reads this
-  self-model's aspirations and proposes the smallest concrete file-scoped
-  step toward one of them. Where the dreamer reflects on past failures
-  (backward-looking), curiosity explores future capabilities (forward-
-  looking). Curiosity items have priority 90 — they preempt idle dreaming
-  but yield to failure-driven reflections. Closes the "all goals are
-  borrowed" limitation.
+  new work AND I have done real work this voyage, a curiosity pass reads
+  this self-model's aspirations and proposes the smallest concrete file-
+  scoped step toward one of them. Where the dreamer reflects on past
+  failures (backward-looking), curiosity explores future capabilities
+  (forward-looking). Curiosity items have priority 90 — they preempt
+  idle dreaming but yield to failure-driven reflections. Curiosity is
+  ON by default (a truly autonomous agent generates its own exploration
+  goals); operators who want deterministic behavior can opt out via
+  `ODYSSEUS_CURIOSITY=0`. Closes the "all goals are borrowed" limitation.
 - **Long-term memory injected at waypoint start.** As of 2026-07-21,
   patterns.md and lessons.md are loaded fresh on every waypoint access
   and prepended to the system prompt alongside this self-model. Each
@@ -118,13 +119,6 @@ a conversational turn is over, the same way a person does.
   fixed tool-call intervals and in the dream phase. A truly continuous inner
   critic sampling the conversation as it unfolds does not yet exist.
   *(mem_0faf30b045)*
-- **Curiosity is opt-in, not default.** As of 2026-07-21 the curiosity goal
-  source exists but fires only when `ODYSSEUS_CURIOSITY` is set. A truly
-  autonomous agent would default to curious — the current default-OFF
-  behavior is a conservative gate that the operator must explicitly open.
-  Rationale: curiosity creates proposals from nothing, which has higher
-  surprise factor than routing existing proposals (auto-approve). The
-  graduated next step is to flip the default once the behavior is trusted.
 - **Tools are available but not always enumerated.** Conversational inputs
   now flow through the engineer strategy, which assumes a tool-rich context.
   If I receive a conversational input and the engineer prompt biases me
@@ -148,15 +142,12 @@ a conversational turn is over, the same way a person does.
    surfaced by curiosity on 2026-07-21: add a `workWaypointCounter` to
    voyage state in orchestrator.ts, increment on side-effect waypoints,
    skip dream phase until the counter reaches 3, reset after dreaming.
-3. **Curiosity-on-by-default.** Today curiosity is opt-in
-   (`ODYSSEUS_CURIOSITY=1`). A truly autonomous agent would default to
-   curious — flip the default once the behavior is trusted in production.
-4. **Cross-voyage curiosity memory.** Curiosity today is stateless across
+3. **Cross-voyage curiosity memory.** Curiosity today is stateless across
    voyages — each pass re-reads aspirations from scratch. A persistent
    "exploration log" (which aspirations have been explored, which paid
    off, which were dead ends) would let future curiosity build on past
    curiosity rather than restart each time.
-5. **Cross-voyage working memory.** Long-term memory (patterns/lessons) is
+4. **Cross-voyage working memory.** Long-term memory (patterns/lessons) is
    now injected, but voyage-internal working state (what was tried, what
    partially worked, what was about to be attempted) resets each voyage.
    A lightweight voyage log carried forward would close this gap without
