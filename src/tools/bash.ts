@@ -1,13 +1,26 @@
 import { execFileNoThrow } from '../util/exec.js';
 import type { Tool, ToolContext, ToolResult } from './types.js';
+import { truncateForLLM } from '../util/truncate.js';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+/**
+ * Iteration 29 — output cap on bash stdout.
+ *
+ * Unbounded stdout was the second-biggest per-iteration history growth
+ * source (after file-read). A single `git log` or `find` could dump
+ * tens of thousands of chars into history permanently. Cap at 20k
+ * chars (~5k tokens); the truncation notice tells the LLM the original
+ * size so it can narrow the query (e.g. `git log -n 20` instead of
+ * full history).
+ */
+const DEFAULT_STDOUT_CAP = 20_000;
 
 export class BashTool implements Tool {
   readonly name = 'bash';
   readonly description =
-    'Run a shell command via `bash -c`. Returns combined stdout. Use for arbitrary one-off ' +
-    'shell tasks (build, test, scripts). Prefer the dedicated file/git tools when they fit. ' +
+    'Run a shell command via `bash -c`. Returns combined stdout (capped at 20k chars; ' +
+    'if exceeded, a notice explains what was elided). Use for arbitrary one-off shell tasks ' +
+    '(build, test, scripts). Prefer the dedicated file/git tools when they fit. ' +
     'Long-running commands are bounded by a timeout (default 30s).';
   readonly parameters = {
     type: 'object',
@@ -44,12 +57,20 @@ export class BashTool implements Tool {
 
     if (result.exitCode !== 0) {
       const stderr = result.stderr.trim();
+      const cappedStderr = truncateForLLM(stderr, {
+        maxChars: DEFAULT_STDOUT_CAP,
+        label: `stderr of: ${command}`,
+      });
       return {
         ok: false,
-        error: `exit ${result.exitCode}${stderr ? `: ${stderr}` : ''}`,
+        error: `exit ${result.exitCode}: ${cappedStderr.content}`,
       };
     }
 
-    return { ok: true, value: result.stdout };
+    const capped = truncateForLLM(result.stdout, {
+      maxChars: DEFAULT_STDOUT_CAP,
+      label: `stdout of: ${command}`,
+    });
+    return { ok: true, value: capped.content };
   }
 }
