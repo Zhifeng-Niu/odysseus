@@ -4,7 +4,7 @@
 > This is the agent's persistent sense of self across wakeful executions.
 > Seeded from reflect-source memory entries (mem_0faf0bf0e9, mem_0faf30b045,
 > mem_0faf55e6fe, mem_0faf799af1) surfaced in wp_mrs855ke007.
-> Last updated: 2026-07-21 — cross-voyage working memory via voyage-log injection (Iteration 10). Recent voyage summaries (goal + outcome per waypoint) are now prepended to every waypoint's system prompt, drawn from `.odysseus/trace.jsonl`. The agent remembers what it already tried across voyage boundaries.
+> Last updated: 2026-07-21 — cross-voyage curiosity memory via exploration-log (Iteration 11). Curiosity now writes every proposal to `.odysseus/explorations.jsonl`, and the next pass sees them joined with their latest trace outcome (success / failure / abandoned / never-executed) under `<explorations>` in its user prompt. Curiosity is no longer stateless across voyages — it remembers what it already tried, and stops re-proposing explorations that already shipped or already failed.
 
 ## Identity
 
@@ -117,6 +117,21 @@ a conversational turn is over, the same way a person does.
   half of mem_0faf0bf0e9's "voyage-internal continuity" gap. The full
   voyage-internal state (every tool call, every partial result) still
   resets each voyage; only the *outline* persists.
+- **Cross-voyage curiosity memory via exploration-log.** As of
+  2026-07-21 (Iteration 11), every curiosity proposal is appended to
+  `.odysseus/explorations.jsonl` (one JSON record per line: id, ts,
+  goal, origin, priority, optional voyage_id). Before the next
+  curiosity pass proposes anything, it loads the most recent records,
+  joins each to its latest matching trace outcome by normalized goal,
+  and injects the joined view under `<explorations>` in the user
+  prompt. The LLM sees "I proposed X 2d ago, X ran yesterday and
+  failed for reason Y" — and chooses either a different angle or a
+  different aspiration. Closes the "curiosity is stateless across
+  voyages" limitation. Where the dreamer's `buildSucceededGoalSet`
+  deliberately ignores failures (so the dreamer can re-attempt failed
+  work), curiosity's exploration log includes failures in the visible
+  context — the LLM decides whether the failure was an angle problem
+  (rephrase and retry) or a dead end (move on).
 
 ## Active Limitations
 
@@ -155,13 +170,15 @@ a conversational turn is over, the same way a person does.
    surfaced by curiosity on 2026-07-21: add a `workWaypointCounter` to
    voyage state in orchestrator.ts, increment on side-effect waypoints,
    skip dream phase until the counter reaches 3, reset after dreaming.
-3. **Cross-voyage curiosity memory.** Curiosity today is stateless across
-   voyages — each pass re-reads aspirations from scratch. A persistent
-   "exploration log" (which aspirations have been explored, which paid
-   off, which were dead ends) would let future curiosity build on past
-   curiosity rather than restart each time.
-4. **Denser voyage-internal memory.** The voyage log (Iteration 10) carries
+3. **Denser voyage-internal memory.** The voyage log (Iteration 10) carries
    the *outline* of recent voyages (goal + outcome), but the conversation
    that produced each outcome is lost at voyage end. A compressed
    transcript or a tool-call-level diff summary would let the next voyage
    skip "what did I try" rediscovery and go straight to "what's next".
+4. **Exploration-outcome feedback loop.** The exploration log (Iteration 11)
+   records each proposal and surfaces prior outcomes in the next prompt,
+   but the LLM still decides heuristically whether to re-propose. A
+   closed-loop signal — "this aspiration's last 3 explorations all failed,
+   demote it for N voyages" or "this aspiration has shipped, mark it
+   closed" — would let the agent *learn* from its exploration history
+   rather than re-decide from scratch each pass.

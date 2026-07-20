@@ -15,6 +15,12 @@ import {
   isDuplicateGoal,
   buildSucceededGoalSet,
 } from './dreamer.js';
+import {
+  appendExploration,
+  loadRecentExplorationsSync,
+  joinWithTraceOutcomes,
+  formatExplorationsMarkdown,
+} from './exploration-log.js';
 
 /**
  * Curiosity phase — forward-looking exploration of self-model aspirations.
@@ -51,6 +57,7 @@ You will receive:
 - <self-model>: your persistent identity, current capabilities, active limitations, and aspirations. The aspirations are the primary seed — each one is a gap you've identified between current and desired capability.
 - <recent>: recent waypoint outcomes. Use these to skip work that already shipped or that you've tried recently.
 - <memory>: existing long-term memory titles. Use these to avoid proposing work you've already captured.
+- <explorations>: your recent curiosity proposals, joined with their latest trace outcome. Use these to avoid repeating yourself — if you proposed X last voyage and it ran, pick a different angle or a different aspiration. Re-proposing the same exploration is noise; the log remembers what you already tried.
 
 Your output must be strict JSON:
 
@@ -92,6 +99,13 @@ Rules:
 - If nothing genuinely surfaces (no aspiration has a concrete next step you
   can name right now), return empty arrays. Do NOT manufacture work to fill
   quota. Curiosity is honest — "nothing to explore today" is a valid output.
+- Before proposing an exploration, scan <explorations>. If a near-identical
+  goal already appears there:
+    - with outcome=succeeded → it shipped, do not re-propose; pick something else
+    - with outcome=failure   → only re-propose if you can name a *concrete*
+      different angle (different file, different mechanism). Restating the
+      same goal verbatim is noise.
+    - with outcome=proposed, never executed → it is queued; pick something else
 - memoryEntries should be reusable insights about your aspirations or
   exploration strategy, not one-off notes.
 - Maximum 2 memoryEntries per pass.
@@ -101,7 +115,7 @@ export interface CuriosityInput {
   /** Root dir for memory + backlog writes + self-model read. */
   readonly rootDir: string;
   readonly provider: LLMProvider;
-  /** Recent trace records — used for dedup, not seed. */
+  /** Recent trace records — used for dedup + exploration-outcome join. */
   readonly recentTrace: readonly TraceRecord[];
   /** Current memory snapshot per category (titles only — dedup reference). */
   readonly memorySnapshot: ReadonlyArray<{
@@ -111,6 +125,12 @@ export interface CuriosityInput {
   /** Cap on items persisted — extra items are dropped. */
   readonly maxBacklogItems?: number;
   readonly maxMemoryEntries?: number;
+  /**
+   * Voyage that owns this curiosity pass. Forwarded into exploration
+   * records so the audit trail links proposals back to the voyage that
+   * produced them. Optional — probes and tests can omit it.
+   */
+  readonly voyageId?: string;
 }
 
 export interface CuriosityBacklogItem {
@@ -299,6 +319,21 @@ export function buildCuriosityUserPrompt(input: CuriosityInput): string {
         .filter(Boolean)
         .join('\n\n');
 
+  // Cross-voyage curiosity memory: surface recent proposals joined with
+  // their latest trace outcome so the LLM sees what it already tried.
+  // Path mirrors trace.jsonl location (sibling under .odysseus/). Reading
+  // sync because the prompt builder is sync (called once per curiosity
+  // pass; cost is negligible — explorations.jsonl grows linearly with
+  // curiosity invocations, bounded by DEFAULT_EXPLORATION_LIMIT).
+  const explorationsPath = join(input.rootDir, 'explorations.jsonl');
+  const recentExplorations = loadRecentExplorationsSync(explorationsPath);
+  const outcomes = joinWithTraceOutcomes(recentExplorations, input.recentTrace);
+  const explorationsMd = formatExplorationsMarkdown(outcomes);
+  const explorationsBlock =
+    explorationsMd.length === 0
+      ? '(no prior explorations — fresh curiosity memory)'
+      : explorationsMd;
+
   return `<self-model>
 ${selfModelBlock}
 </self-model>
@@ -310,6 +345,10 @@ ${recent}
 <memory>
 ${memoryBlock}
 </memory>
+
+<explorations>
+${explorationsBlock}
+</explorations>
 
 What is the smallest concrete step toward one of your aspirations? Return JSON.`;
 }
@@ -377,6 +416,7 @@ export async function curiosity(input: CuriosityInput): Promise<CuriosityOutput>
   const seenGoals = buildSucceededGoalSet(input.recentTrace);
   const addedBacklogItems: CuriosityAddedBacklogItem[] = [];
   let backlogItemsSkipped = 0;
+  const explorationsPath = join(input.rootDir, 'explorations.jsonl');
   for (const item of backlogItems) {
     if (isDuplicateGoal(item.goal, seenGoals)) {
       backlogItemsSkipped += 1;
@@ -397,6 +437,20 @@ export async function curiosity(input: CuriosityInput): Promise<CuriosityOutput>
         priority: enqueued.priority,
       });
       seenGoals.add(item.goal);
+      // Cross-voyage curiosity memory: record this proposal so the next
+      // curiosity pass can see it (with its eventual trace outcome) and
+      // avoid re-proposing the same exploration. Best-effort — write
+      // failure must not roll back the enqueue.
+      try {
+        await appendExploration(explorationsPath, {
+          goal: item.goal,
+          origin: 'curiosity',
+          priority: enqueued.priority,
+          ...(input.voyageId !== undefined ? { voyage_id: input.voyageId } : {}),
+        });
+      } catch {
+        // Exploration log is best-effort; enqueue already succeeded.
+      }
     } catch {
       // empty-goal validation etc — skip silently
     }

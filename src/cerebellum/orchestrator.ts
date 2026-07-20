@@ -1320,6 +1320,10 @@ export class CerebellumOrchestrator extends EventEmitter {
         provider: this.config.provider,
         recentTrace,
         memorySnapshot,
+        // Forward voyageId so exploration-log records carry provenance —
+        // the audit trail links each proposal back to the voyage that
+        // produced it. See src/cerebellum/exploration-log.ts.
+        voyageId,
       });
       backlogItemsAdded = result.backlogItemsAdded;
       memoryEntriesAdded = result.memoryEntriesAdded;

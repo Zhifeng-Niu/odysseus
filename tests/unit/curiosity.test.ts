@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { LLMProvider, LLMCompletion } from '../../src/llm/provider.js';
@@ -12,6 +12,7 @@ import {
 import { listBacklog } from '../../src/cerebellum/backlog.js';
 import { listPendingReview } from '../../src/cerebellum/pending-review.js';
 import { readMemory } from '../../src/cerebellum/memory.js';
+import { loadRecentExplorationsSync } from '../../src/cerebellum/exploration-log.js';
 import type { TraceRecord } from '../../src/trace/jsonl.js';
 
 function completion(content: string): LLMCompletion {
@@ -327,6 +328,8 @@ describe('curiosity', () => {
     expect(prompt).toMatch(/<self-model>/);
     expect(prompt).toMatch(/<recent>/);
     expect(prompt).toMatch(/<memory>/);
+    // Iteration 11: <explorations> block always present (empty when no log).
+    expect(prompt).toMatch(/<explorations>/);
   });
 
   test('user prompt includes memory titles for dedup context', async () => {
@@ -398,5 +401,266 @@ describe('curiosity', () => {
   test('shouldRunCuriosity = yes explicitly enables curiosity', () => {
     process.env.ODYSSEUS_CURIOSITY = 'yes';
     expect(shouldRunCuriosity()).toBe(true);
+  });
+
+  describe('cross-voyage curiosity memory (Iteration 11)', () => {
+    test('curiosity writes one exploration record per enqueued item', async () => {
+      await writeFile(join(rootDir, 'self-model.md'), SAMPLE_SELF_MODEL);
+      const response = JSON.stringify({
+        backlogItems: [
+          { goal: 'add SELF_MONITOR_INTERVAL to strategy.ts', priority: 80 },
+          { goal: 'extract json helper into src/cerebellum/json.ts', priority: 75 },
+        ],
+        memoryEntries: [],
+      });
+
+      await curiosity({
+        rootDir,
+        provider: staticProvider(response),
+        recentTrace: emptyTrace,
+        memorySnapshot: [],
+      });
+
+      const records = loadRecentExplorationsSync(join(rootDir, 'explorations.jsonl'));
+      expect(records.length).toBe(2);
+      expect(records[0]!.origin).toBe('curiosity');
+      // Reverse-chronological by ts; both written within ms of each other,
+      // so file order wins on ties. Both goals must appear.
+      const goals = records.map((r) => r.goal).sort();
+      expect(goals).toEqual([
+        'add SELF_MONITOR_INTERVAL to strategy.ts',
+        'extract json helper into src/cerebellum/json.ts',
+      ].sort());
+      // Priorities preserved (post-clamp).
+      const priorities = records.map((r) => r.priority).sort();
+      expect(priorities).toEqual([75, 80]);
+    });
+
+    test('exploration record includes voyage_id when provided', async () => {
+      await writeFile(join(rootDir, 'self-model.md'), SAMPLE_SELF_MODEL);
+      const response = JSON.stringify({
+        backlogItems: [{ goal: 'add thing to file.ts' }],
+        memoryEntries: [],
+      });
+
+      await curiosity({
+        rootDir,
+        provider: staticProvider(response),
+        recentTrace: emptyTrace,
+        memorySnapshot: [],
+        voyageId: 'voy_xyz',
+      });
+
+      const records = loadRecentExplorationsSync(join(rootDir, 'explorations.jsonl'));
+      expect(records.length).toBe(1);
+      expect(records[0]!.voyage_id).toBe('voy_xyz');
+    });
+
+    test('exploration record omits voyage_id when not provided', async () => {
+      await writeFile(join(rootDir, 'self-model.md'), SAMPLE_SELF_MODEL);
+      const response = JSON.stringify({
+        backlogItems: [{ goal: 'add thing to file.ts' }],
+        memoryEntries: [],
+      });
+
+      await curiosity({
+        rootDir,
+        provider: staticProvider(response),
+        recentTrace: emptyTrace,
+        memorySnapshot: [],
+        // voyageId intentionally omitted (probe / test path).
+      });
+
+      const records = loadRecentExplorationsSync(join(rootDir, 'explorations.jsonl'));
+      expect(records.length).toBe(1);
+      expect(records[0]!.voyage_id).toBeUndefined();
+    });
+
+    test('skipped (deduped) items are NOT written to exploration log', async () => {
+      await writeFile(join(rootDir, 'self-model.md'), SAMPLE_SELF_MODEL);
+      const trace: TraceRecord[] = [
+        {
+          waypoint_id: 'wp_done',
+          voyage_id: 'voy_done',
+          goal: 'add SELF_MONITOR_INTERVAL to strategy.ts',
+          outcome: 'success',
+          iterations_used: 1,
+          checkpoint_sha: null,
+          ts: '2026-07-19T10:00:00Z',
+          fail_reason: null,
+        },
+      ];
+
+      const response = JSON.stringify({
+        backlogItems: [
+          // Duplicate of succeeded goal — should be skipped + NOT logged.
+          { goal: 'add SELF_MONITOR_INTERVAL to strategy.ts' },
+          // New goal — should be logged.
+          { goal: 'extract json helper into src/cerebellum/json.ts' },
+        ],
+        memoryEntries: [],
+      });
+
+      await curiosity({
+        rootDir,
+        provider: staticProvider(response),
+        recentTrace: trace,
+        memorySnapshot: [],
+      });
+
+      const records = loadRecentExplorationsSync(join(rootDir, 'explorations.jsonl'));
+      expect(records.length).toBe(1);
+      expect(records[0]!.goal).toBe('extract json helper into src/cerebellum/json.ts');
+    });
+
+    test('next curiosity pass sees prior explorations in user prompt', async () => {
+      await writeFile(join(rootDir, 'self-model.md'), SAMPLE_SELF_MODEL);
+
+      // Pre-seed the exploration log as if a prior pass wrote it.
+      await writeFile(
+        join(rootDir, 'explorations.jsonl'),
+        JSON.stringify({
+          id: 'expl_prior1',
+          ts: '2026-07-20T10:00:00Z',
+          goal: 'add SELF_MONITOR_INTERVAL to strategy.ts',
+          origin: 'curiosity',
+          priority: 80,
+          voyage_id: 'voy_prior',
+        }) + '\n',
+      );
+
+      // Trace shows the prior exploration succeeded.
+      const trace: TraceRecord[] = [
+        {
+          waypoint_id: 'wp_done',
+          voyage_id: 'voy_prior',
+          goal: 'add SELF_MONITOR_INTERVAL to strategy.ts',
+          outcome: 'success',
+          iterations_used: 3,
+          checkpoint_sha: 'sha_x',
+          ts: '2026-07-20T11:00:00Z',
+          fail_reason: null,
+        },
+      ];
+
+      const prompt = buildCuriosityUserPrompt({
+        rootDir,
+        provider: staticProvider(''),
+        recentTrace: trace,
+        memorySnapshot: [],
+      });
+
+      // The exploration must surface in the prompt...
+      expect(prompt).toContain('add SELF_MONITOR_INTERVAL to strategy.ts');
+      // ...with its joined outcome.
+      expect(prompt).toContain('proposed→success');
+    });
+
+    test('prior FAILED exploration surfaces FAIL reason in prompt', async () => {
+      await writeFile(join(rootDir, 'self-model.md'), SAMPLE_SELF_MODEL);
+
+      await writeFile(
+        join(rootDir, 'explorations.jsonl'),
+        JSON.stringify({
+          id: 'expl_failed',
+          ts: '2026-07-20T10:00:00Z',
+          goal: 'add workWaypointCounter to orchestrator.ts',
+          origin: 'curiosity',
+          priority: 90,
+        }) + '\n',
+      );
+
+      const trace: TraceRecord[] = [
+        {
+          waypoint_id: 'wp_fail',
+          goal: 'add workWaypointCounter to orchestrator.ts',
+          outcome: 'failure',
+          iterations_used: 5,
+          checkpoint_sha: null,
+          ts: '2026-07-20T11:00:00Z',
+          fail_reason: 'tsc strict mode rejected the new field',
+        },
+      ];
+
+      const prompt = buildCuriosityUserPrompt({
+        rootDir,
+        provider: staticProvider(''),
+        recentTrace: trace,
+        memorySnapshot: [],
+      });
+
+      expect(prompt).toContain('proposed→failure');
+      expect(prompt).toContain('tsc strict mode rejected the new field');
+    });
+
+    test('explorations.jsonl survives append across multiple curiosity passes', async () => {
+      await writeFile(join(rootDir, 'self-model.md'), SAMPLE_SELF_MODEL);
+
+      // Pass 1.
+      await curiosity({
+        rootDir,
+        provider: staticProvider(
+          JSON.stringify({
+            backlogItems: [{ goal: 'first exploration goal' }],
+            memoryEntries: [],
+          }),
+        ),
+        recentTrace: emptyTrace,
+        memorySnapshot: [],
+      });
+
+      // Pass 2.
+      await curiosity({
+        rootDir,
+        provider: staticProvider(
+          JSON.stringify({
+            backlogItems: [{ goal: 'second exploration goal' }],
+            memoryEntries: [],
+          }),
+        ),
+        recentTrace: emptyTrace,
+        memorySnapshot: [],
+      });
+
+      const records = loadRecentExplorationsSync(join(rootDir, 'explorations.jsonl'));
+      expect(records.length).toBe(2);
+      // Both goals present (file order; reverse-chrono by ts which is too
+      // close to call — so just check membership).
+      const goals = records.map((r) => r.goal);
+      expect(goals).toContain('first exploration goal');
+      expect(goals).toContain('second exploration goal');
+    });
+
+    test('explorations.jsonl is valid JSONL after writes (one record per line)', async () => {
+      await writeFile(join(rootDir, 'self-model.md'), SAMPLE_SELF_MODEL);
+      await curiosity({
+        rootDir,
+        provider: staticProvider(
+          JSON.stringify({
+            // Goals must be semantically distinct — isDuplicateGoal uses
+            // Jaccard token similarity ≥ 0.5, so 'goal A' vs 'goal B'
+            // would both normalize to {'goal'} and the second would be
+            // dropped as a near-duplicate. Use real verb+object+file form.
+            backlogItems: [
+              { goal: 'add timing to dream() in src/cerebellum/dreamer.ts' },
+              { goal: 'extract extractJson into src/cerebellum/json.ts' },
+            ],
+            memoryEntries: [],
+          }),
+        ),
+        recentTrace: emptyTrace,
+        memorySnapshot: [],
+      });
+
+      const raw = await readFile(join(rootDir, 'explorations.jsonl'), 'utf8');
+      const lines = raw.trim().split('\n');
+      expect(lines.length).toBe(2);
+      for (const line of lines) {
+        // Each line must be valid JSON.
+        const parsed = JSON.parse(line) as { id: string; goal: string };
+        expect(parsed.id).toMatch(/^expl_/);
+        expect(parsed.goal.length).toBeGreaterThan(0);
+      }
+    });
   });
 });
