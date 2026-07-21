@@ -114,13 +114,23 @@ const FILE_CAPS: readonly FileCap[] = [
   },
   {
     filename: 'curiosity.ts',
-    lineCap: 440,
+    lineCap: 330,
     rationale:
-      'Iteration 42 extracted CURIOSITY_SYSTEM_PROMPT to prompts.ts: ' +
-      '492 → 435. Cap at 440 to lock progress. Next extraction targets: ' +
-      'buildCuriosityUserPrompt (~63 lines, depends on CuriosityInput type) ' +
-      'and the LLM result-coercion helpers (~40 lines, shared shape with ' +
-      'dreamer — long-term these may converge into a shared coercion module).',
+      'Iteration 44 extracted buildCuriosityUserPrompt + loadSelfModelForCuriosity + ' +
+      'CuriosityInput to curiosity-prompt.ts: 435 → 325. Cap at 330 — strictly ' +
+      'under CLAUDE.md <300 ceiling is not yet reached but close. Next ' +
+      'extraction target: the LLM result-coercion helpers (~40 lines, shared ' +
+      'shape with dreamer — long-term these may converge into a shared ' +
+      'coercion module).',
+  },
+  {
+    filename: 'curiosity-prompt.ts',
+    lineCap: 180,
+    rationale:
+      'Iteration 44 — pure prompt builder + its input shape + self-model ' +
+      'loader. Current 140 lines. Cap at 180 — should stay flat; growth ' +
+      'means the prompt builder is absorbing coercion logic that belongs ' +
+      'in curiosity.ts.',
   },
 ];
 

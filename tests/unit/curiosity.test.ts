@@ -713,4 +713,61 @@ describe('curiosity', () => {
       expect(src).toContain('"nothing to explore today" is a valid output');
     });
   });
+
+  describe('buildCuriosityUserPrompt extraction (Iteration 44)', () => {
+    // Iteration 44 moved buildCuriosityUserPrompt + loadSelfModelForCuriosity
+    // + CuriosityInput from curiosity.ts to curiosity-prompt.ts. The tests
+    // below pin the extraction so a future refactor cannot silently
+    // re-inline the code (which would re-trigger file-size pressure).
+
+    test('buildCuriosityUserPrompt lives in curiosity-prompt.ts', async () => {
+      const { readFile } = await import('node:fs/promises');
+      const promptSrc = await readFile(
+        'src/cerebellum/curiosity-prompt.ts',
+        'utf8',
+      );
+      const curiositySrc = await readFile(
+        'src/cerebellum/curiosity.ts',
+        'utf8',
+      );
+      expect(promptSrc).toContain(
+        'export function buildCuriosityUserPrompt',
+      );
+      expect(promptSrc).toContain(
+        'export function loadSelfModelForCuriosity',
+      );
+      expect(promptSrc).toContain('export interface CuriosityInput');
+      expect(curiositySrc).not.toContain(
+        'function buildCuriosityUserPrompt',
+      );
+      expect(curiositySrc).not.toContain(
+        'function loadSelfModelForCuriosity',
+      );
+    });
+
+    test('curiosity.ts imports the extracted symbols (not re-defines them)', async () => {
+      const { readFile } = await import('node:fs/promises');
+      const curiositySrc = await readFile(
+        'src/cerebellum/curiosity.ts',
+        'utf8',
+      );
+      expect(curiositySrc).toContain(
+        "from './curiosity-prompt.js'",
+      );
+    });
+
+    test('curiosity.ts re-exports the extracted symbols for backwards compatibility', async () => {
+      // probe-curiosity.ts and these tests still import from curiosity.ts.
+      // The re-export pattern mirrors planner.ts re-exporting planner-policy.js
+      // (Iteration 42). If the re-export is removed, these imports break.
+      const { readFile } = await import('node:fs/promises');
+      const curiositySrc = await readFile(
+        'src/cerebellum/curiosity.ts',
+        'utf8',
+      );
+      expect(curiositySrc).toContain(
+        "export {\n  buildCuriosityUserPrompt,\n  loadSelfModelForCuriosity,\n  type CuriosityInput,\n} from './curiosity-prompt.js';",
+      );
+    });
+  });
 });
