@@ -2,13 +2,6 @@
   "version": 1,
   "items": [
     {
-      "id": "bl_9889b6899dd7",
-      "goal": "Add pre-execution existence check in bash tool registration in src/tools/bash.ts (or wherever tools are registered) that skips re-registration if 'bash' already exists in the tools map",
-      "origin": "dream",
-      "priority": 30,
-      "createdAt": "2026-07-21T05:15:20.897Z"
-    },
-    {
       "id": "bl_40b6c4c478b0",
       "goal": "Add goal deduplication check in src/cerebellum/backlog.ts using Levenshtein distance or similar fuzzy matching against recently completed and in-progress waypoints before seeding",
       "origin": "dream",
