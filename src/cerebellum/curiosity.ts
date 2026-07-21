@@ -10,8 +10,17 @@ import { CURIOSITY_SYSTEM_PROMPT } from './prompts.js';
 import {
   isDuplicateGoal,
   buildSucceededGoalSet,
+  normalizeGoal,
 } from './dreamer-dedup.js';
-import { appendExploration } from './exploration-log.js';
+import {
+  appendExploration,
+  loadRecentExplorationsSync,
+  joinWithTraceOutcomes,
+} from './exploration-log.js';
+import {
+  analyzeExplorationOutcomes,
+  type ExplorationEntry,
+} from './exploration-feedback.js';
 import { extractJsonObject } from './extract-json.js';
 import {
   type LlmBacklogItem,
@@ -27,9 +36,7 @@ import {
   type CuriosityInput,
 } from './curiosity-prompt.js';
 
-// Re-export moved symbols (Iteration 44 extraction) so existing importers
-// (tests, probe-curiosity.ts) do not need to know about the internal
-// split. Same pattern as planner.ts re-exporting planner-policy.js.
+// Re-export extracted symbols so existing importers don't change.
 export {
   buildCuriosityUserPrompt,
   loadSelfModelForCuriosity,
@@ -39,30 +46,16 @@ export {
 /**
  * Curiosity phase — forward-looking exploration of self-model aspirations.
  *
- * Where the dreamer is the agent's "default mode network" ruminating on past
- * failures, curiosity is the agent's "what's next" impulse. It reads its own
- * aspirations (the gaps between current and desired capability) and proposes
- * the smallest concrete step toward closing one of them.
+ * The dreamer ruminates on past failures; curiosity is the "what's next"
+ * impulse — it reads its own aspirations and proposes the smallest concrete
+ * step toward closing one. Same JSON output shape and pending-review →
+ * auto-approve pipeline as the dreamer, but a different system prompt
+ * (exploration-minded), seed (aspirations, not failures), origin tag
+ * ('curiosity'), priority (90, between reflect 75 and dream 100), and lower
+ * item cap (2 vs 5).
  *
- * Symmetries with the dreamer:
- *   - Same JSON output shape (backlogItems + memoryEntries).
- *   - Same pending-review → auto-approve pipeline.
- *   - Same dedup against the succeeded-goal set + same-pass items.
- *
- * Asymmetries:
- *   - Different system prompt (exploration, not fix-minded). The prompt lives
- *     in ./prompts.ts alongside the engineer and dream prompts (Iteration 42
- *     extraction) so cross-phase rule audits are easy.
- *   - Different seed: self-model aspirations + recent trace + memory titles.
- *     The dreamer is seeded by recent failures; curiosity is seeded by the
- *     self-model's aspiration section.
- *   - Different origin tag: 'curiosity' instead of 'dream'. Priority 90
- *     (between reflect 75 and dream 100) — curiosity preempts idle dreaming
- *     but yields to failure-driven reflections.
- *   - Lower item cap (2 vs 5) — curiosity is focused, not brainstorming.
- *
- * Closes the "no autonomous goal generation" limitation in self-model.md.
- * Closes aspiration #3 ("Curiosity goal source").
+ * Closes the "no autonomous goal generation" limitation in self-model.md
+ * and aspiration #3 ("Curiosity goal source").
  */
 
 export type CuriosityBacklogItem = LlmBacklogItem;
@@ -88,23 +81,12 @@ interface ParsedCuriosity {
 }
 
 /**
- * Returns true when the curiosity phase should fire. Defaults to ON as of
- * 2026-07-21 (Iteration 9) — a truly autonomous agent generates its own
- * exploration goals without operator opt-in. Curiosity has been validated
- * by two live GLM-5.2 probes (Iterations 7 and 8) and is gated by three
- * independent safety layers before producing any backlog item:
- *
- *   1. `didRealWork` — only fires after a voyage produced real side-effects
- *      (not after pure-conversational "hi" waypoints).
- *   2. `backlog-empty` — only fires when the dreamer produced no new items
- *      this voyage; curiosity does not preempt reflective work.
- *   3. `pending-review` queue — proposals go to `pending-review.json` first.
- *      With `ODYSSEUS_AUTO_APPROVE=0` (operator opt-out), they wait there
- *      for review. With the default `ODYSSEUS_AUTO_APPROVE=1`, they flow
- *      to the backlog like dream proposals.
- *
- * Operators who want to disable curiosity entirely (e.g. for deterministic
- * CI runs) set `ODYSSEUS_CURIOSITY=0` (or `false` / `no`).
+ * Returns true when the curiosity phase should fire. Defaults to ON — a
+ * truly autonomous agent generates its own exploration goals. Gated by
+ * three safety layers: (1) `didRealWork` — only after real side-effects,
+ * (2) `backlog-empty` — only when dreamer produced nothing, (3)
+ * `pending-review` queue — proposals wait for review unless auto-approve
+ * is on. Set `ODYSSEUS_CURIOSITY=0` to disable entirely.
  */
 export function shouldRunCuriosity(): boolean {
   const v = process.env.ODYSSEUS_CURIOSITY;
@@ -114,16 +96,8 @@ export function shouldRunCuriosity(): boolean {
 
 /**
  * Run a single curiosity pass: LLM call + persist backlog/memory items.
- *
- * Failure modes mirror dream()'s:
- * - LLM throws → rethrown (caller decides whether to abort voyage).
- * - LLM returns malformed JSON → returns { parseOk: false, parseError },
- *   nothing persisted.
- * - LLM returns junk items → silently dropped.
- * - LLM returns items duplicating past successes → skipped, counted.
- *
- * Items route through pending-review first (for audit trail), then
- * auto-approve to backlog if ODYSSEUS_AUTO_APPROVE is enabled.
+ * Failure modes mirror dream(): LLM throws → rethrown; malformed JSON →
+ * { parseOk: false }; junk/duplicate items → silently dropped/skipped.
  */
 export async function curiosity(input: CuriosityInput): Promise<CuriosityOutput> {
   const start = Date.now();
@@ -169,9 +143,7 @@ export async function curiosity(input: CuriosityInput): Promise<CuriosityOutput>
     if (entry) memoryEntries.push(entry);
   }
 
-  // Dedup against succeeded goals AND same-pass items, same as dreamer.
-  // Reuses the dreamer's helpers so the dedup definition stays in one place
-  // (curiosity and dreamer must agree on what counts as a duplicate).
+  // Dedup against succeeded goals + same-pass items (reuses dreamer helpers).
   const seenGoals = buildSucceededGoalSet(input.recentTrace);
   const addedBacklogItems: CuriosityAddedBacklogItem[] = [];
   let backlogItemsSkipped = 0;
@@ -196,10 +168,7 @@ export async function curiosity(input: CuriosityInput): Promise<CuriosityOutput>
         priority: enqueued.priority,
       });
       seenGoals.add(item.goal);
-      // Cross-voyage curiosity memory: record this proposal so the next
-      // curiosity pass can see it (with its eventual trace outcome) and
-      // avoid re-proposing the same exploration. Best-effort — write
-      // failure must not roll back the enqueue.
+      // Record proposal for cross-voyage memory. Best-effort.
       try {
         await appendExploration(explorationsPath, {
           goal: item.goal,
@@ -213,6 +182,44 @@ export async function curiosity(input: CuriosityInput): Promise<CuriosityOutput>
     } catch {
       // empty-goal validation etc — skip silently
     }
+  }
+
+  // Exploration-outcome feedback loop (aspiration #3): filter out proposals
+  // whose aspiration was demoted (3 consecutive failures).
+  const demotedAspirations = new Set<string>();
+  try {
+    const explPath = join(input.rootDir, 'explorations.jsonl');
+    const recent = loadRecentExplorationsSync(explPath);
+    const outcomes = joinWithTraceOutcomes(recent, input.recentTrace);
+    const entries: ExplorationEntry[] = [];
+    for (const o of outcomes) {
+      if (o.traceOutcome !== null) {
+        entries.push({
+          aspiration: o.exploration.goal,
+          outcome: o.traceOutcome,
+        });
+      }
+    }
+    for (const a of analyzeExplorationOutcomes(entries)) {
+      if (a.action === 'demote') demotedAspirations.add(normalizeGoal(a.aspiration));
+    }
+  } catch {
+    // Feedback analysis is best-effort — never block proposals on it.
+  }
+
+  if (demotedAspirations.size > 0) {
+    const kept = addedBacklogItems.filter((item) => {
+      if (demotedAspirations.has(normalizeGoal(item.goal))) {
+        backlogItemsSkipped += 1;
+        console.warn(
+          `[curiosity] demoting exploration (3 consecutive failures): ${item.goal.slice(0, 120)}`,
+        );
+        return false;
+      }
+      return true;
+    });
+    addedBacklogItems.length = 0;
+    for (const k of kept) addedBacklogItems.push(k);
   }
 
   // Auto-approve moves this pass's proposals to the backlog so the next
@@ -232,14 +239,12 @@ export async function curiosity(input: CuriosityInput): Promise<CuriosityOutput>
         }
       }
     } catch {
-      // Auto-approve failure is non-fatal — items stay in pending-review.
+      // Auto-approve failure is non-fatal.
     }
   }
 
-  // Curiosity memories use source='dream' (not a new MemorySource) — they're
-  // autonomous thoughts about exploration strategy, structurally identical
-  // to dream memories. Adding a 'curiosity' source would cascade through
-  // MemorySource consumers for no behavioral gain.
+  // Curiosity memories use source='dream' — structurally identical to dream
+  // memories; a 'curiosity' source would cascade through consumers for no gain.
   const addedMemoryEntries: CuriosityAddedMemoryEntry[] = [];
   for (const entry of memoryEntries) {
     try {
