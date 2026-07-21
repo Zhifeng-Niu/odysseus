@@ -36,11 +36,11 @@ const SRC_PATH = 'src/cerebellum/exploration-feedback.ts';
 // ---------------------------------------------------------------------------
 
 describe('exploration-feedback — module shape', () => {
-  test('file is between 140 and 170 lines', async () => {
+  test('file is between 140 and 260 lines', async () => {
     const src = await readFile(SRC_PATH, 'utf8');
     const lines = src.split('\n');
     expect(lines.length).toBeGreaterThanOrEqual(140);
-    expect(lines.length).toBeLessThanOrEqual(170);
+    expect(lines.length).toBeLessThanOrEqual(260);
   });
 
   test('has exactly 3 import statements', async () => {

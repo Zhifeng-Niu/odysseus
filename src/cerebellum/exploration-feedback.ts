@@ -150,6 +150,75 @@ export function formatExplorationFeedback(stats: readonly ExplorationStats[]): s
   return lines.join('\n');
 }
 
+/**
+ * A single exploration attempt paired with its trace outcome. This is
+ * the input to {@link analyzeExplorationOutcomes} — a simpler, self-
+ * contained alternative to {@link computeExplorationStats} that does
+ * not require a raw trace. Callers that already have trace-joined
+ * outcomes can map them into this shape trivially.
+ */
+export interface ExplorationEntry {
+  /** The aspiration / goal text that was explored. */
+  readonly aspiration: string;
+  /** Outcome of this particular attempt. */
+  readonly outcome: 'success' | 'failure' | 'abandoned';
+}
+
+/** Action decision for a single aspiration. */
+export interface ExplorationAction {
+  readonly aspiration: string;
+  readonly action: 'demote' | 'close' | 'continue';
+}
+
+/**
+ * Analyse exploration outcomes and produce a per-aspiration action
+ * decision:
+ *
+ * - **close** — at least one attempt succeeded (the aspiration shipped).
+ * - **demote** — the last 3 attempts all failed (stop re-proposing).
+ * - **continue** — neither condition met (keep exploring).
+ *
+ * Entries are grouped by `aspiration` (exact string match). Within a
+ * group the entries are assumed to be in chronological order (oldest
+ * first), so "last 3" = the final three entries. The "close" rule takes
+ * priority over "demote": if any attempt ever succeeded the aspiration
+ * is considered closed regardless of later failures.
+ *
+ * Returns one {@link ExplorationAction} per unique aspiration, in the
+ * order aspirations first appear in the input.
+ */
+export function analyzeExplorationOutcomes(
+  entries: readonly ExplorationEntry[],
+): ExplorationAction[] {
+  // Group entries by aspiration, preserving first-appearance order.
+  const groups = new Map<string, ExplorationEntry[]>();
+  for (const entry of entries) {
+    const existing = groups.get(entry.aspiration);
+    if (existing === undefined) {
+      groups.set(entry.aspiration, [entry]);
+    } else {
+      existing.push(entry);
+    }
+  }
+
+  const results: ExplorationAction[] = [];
+  for (const [aspiration, group] of groups) {
+    // close if any attempt succeeded — takes priority over demote.
+    if (group.some((e) => e.outcome === 'success')) {
+      results.push({ aspiration, action: 'close' });
+      continue;
+    }
+    // demote if the last 3 attempts all failed.
+    const last3 = group.slice(-3);
+    if (last3.length === 3 && last3.every((e) => e.outcome === 'failure')) {
+      results.push({ aspiration, action: 'demote' });
+      continue;
+    }
+    results.push({ aspiration, action: 'continue' });
+  }
+  return results;
+}
+
 function truncate(s: string, max: number): string {
   if (s.length <= max) return s;
   return s.slice(0, max - 1) + '…';

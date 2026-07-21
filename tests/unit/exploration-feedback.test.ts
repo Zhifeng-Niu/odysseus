@@ -2,6 +2,7 @@ import { describe, test, expect } from 'vitest';
 import {
   computeExplorationStats,
   formatExplorationFeedback,
+  analyzeExplorationOutcomes,
   DEMOTION_FAILURE_THRESHOLD,
 } from '../../src/cerebellum/exploration-feedback.js';
 import type { ExplorationOutcome, ExplorationRecord } from '../../src/cerebellum/exploration-log.js';
@@ -223,5 +224,113 @@ describe('formatExplorationFeedback', () => {
     const md = formatExplorationFeedback(stats);
     expect(md).toContain('DEMOTED');
     expect(md).toContain('SHIPPED');
+  });
+});
+
+describe('analyzeExplorationOutcomes', () => {
+  test('returns empty array for empty input', () => {
+    expect(analyzeExplorationOutcomes([])).toEqual([]);
+  });
+
+  test('demote when last 3 attempts all failed', () => {
+    const result = analyzeExplorationOutcomes([
+      { aspiration: 'add retry logic', outcome: 'failure' },
+      { aspiration: 'add retry logic', outcome: 'failure' },
+      { aspiration: 'add retry logic', outcome: 'failure' },
+    ]);
+    expect(result).toEqual([
+      { aspiration: 'add retry logic', action: 'demote' },
+    ]);
+  });
+
+  test('close when any attempt succeeded', () => {
+    const result = analyzeExplorationOutcomes([
+      { aspiration: 'add retry logic', outcome: 'failure' },
+      { aspiration: 'add retry logic', outcome: 'success' },
+    ]);
+    expect(result).toEqual([
+      { aspiration: 'add retry logic', action: 'close' },
+    ]);
+  });
+
+  test('close takes priority over demote (success among 3+ failures)', () => {
+    const result = analyzeExplorationOutcomes([
+      { aspiration: 'extract helper', outcome: 'failure' },
+      { aspiration: 'extract helper', outcome: 'success' },
+      { aspiration: 'extract helper', outcome: 'failure' },
+      { aspiration: 'extract helper', outcome: 'failure' },
+      { aspiration: 'extract helper', outcome: 'failure' },
+    ]);
+    expect(result).toEqual([
+      { aspiration: 'extract helper', action: 'close' },
+    ]);
+  });
+
+  test('continue when fewer than 3 failures', () => {
+    const result = analyzeExplorationOutcomes([
+      { aspiration: 'add retry logic', outcome: 'failure' },
+      { aspiration: 'add retry logic', outcome: 'failure' },
+    ]);
+    expect(result).toEqual([
+      { aspiration: 'add retry logic', action: 'continue' },
+    ]);
+  });
+
+  test('continue when last 3 include a non-failure (abandoned)', () => {
+    const result = analyzeExplorationOutcomes([
+      { aspiration: 'add retry logic', outcome: 'failure' },
+      { aspiration: 'add retry logic', outcome: 'abandoned' },
+      { aspiration: 'add retry logic', outcome: 'failure' },
+    ]);
+    expect(result).toEqual([
+      { aspiration: 'add retry logic', action: 'continue' },
+    ]);
+  });
+
+  test('close takes priority when any attempt ever succeeded, even outside last 3', () => {
+    const result = analyzeExplorationOutcomes([
+      { aspiration: 'add retry logic', outcome: 'success' },
+      { aspiration: 'add retry logic', outcome: 'failure' },
+      { aspiration: 'add retry logic', outcome: 'failure' },
+      { aspiration: 'add retry logic', outcome: 'failure' },
+    ]);
+    // "close if any succeeded" — an earlier success closes the aspiration.
+    expect(result).toEqual([
+      { aspiration: 'add retry logic', action: 'close' },
+    ]);
+  });
+
+  test('handles multiple aspirations preserving first-appearance order', () => {
+    const result = analyzeExplorationOutcomes([
+      { aspiration: 'aspiration A', outcome: 'failure' },
+      { aspiration: 'aspiration B', outcome: 'success' },
+      { aspiration: 'aspiration A', outcome: 'failure' },
+      { aspiration: 'aspiration A', outcome: 'failure' },
+    ]);
+    expect(result).toEqual([
+      { aspiration: 'aspiration A', action: 'demote' },
+      { aspiration: 'aspiration B', action: 'close' },
+    ]);
+  });
+
+  test('single failed attempt returns continue', () => {
+    const result = analyzeExplorationOutcomes([
+      { aspiration: 'solo goal', outcome: 'failure' },
+    ]);
+    expect(result).toEqual([
+      { aspiration: 'solo goal', action: 'continue' },
+    ]);
+  });
+
+  test('exactly 3 failures with earlier abandoned still demotes', () => {
+    const result = analyzeExplorationOutcomes([
+      { aspiration: 'add retry logic', outcome: 'abandoned' },
+      { aspiration: 'add retry logic', outcome: 'failure' },
+      { aspiration: 'add retry logic', outcome: 'failure' },
+      { aspiration: 'add retry logic', outcome: 'failure' },
+    ]);
+    expect(result).toEqual([
+      { aspiration: 'add retry logic', action: 'demote' },
+    ]);
   });
 });
