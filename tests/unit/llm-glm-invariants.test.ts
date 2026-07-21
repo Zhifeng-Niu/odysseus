@@ -261,11 +261,22 @@ describe('GLMProvider — constructor', () => {
 // ---------------------------------------------------------------------------
 
 describe('GLMProvider — public API', () => {
-  test('exposes exactly 3 public methods (complete, stream, getModel)', () => {
-    const methods = Object.getOwnPropertyNames(GLMProvider.prototype).filter(
-      (n) => n !== 'constructor',
-    );
-    expect(methods.sort()).toEqual(['complete', 'getModel', 'stream']);
+  test('exposes exactly 3 public methods (complete, stream, getModel) — source-level', async () => {
+    // TypeScript `private` is compile-time only; Object.getOwnPropertyNames would
+    // include buildRequestBody/fetchEndpoint/parseCompletionResponse too. Pin
+    // at the source level: 3 public methods + 3 private methods.
+    const src = await readFile('src/llm/glm.ts', 'utf8');
+    const publicMethods = src.match(/^\s+(async\s+\*?|async\s+)?(complete|stream|getModel)\s*\(/gm) ?? [];
+    expect(publicMethods.length).toBe(3);
+    expect(src).toMatch(/getModel\(\):\s*string/);
+    expect(src).toMatch(/async\s+complete\s*\(/);
+    expect(src).toMatch(/async\s+\*stream\s*\(/);
+  });
+
+  test('declares exactly 3 private methods (buildRequestBody, fetchEndpoint, parseCompletionResponse)', async () => {
+    const src = await readFile('src/llm/glm.ts', 'utf8');
+    const privateMethods = src.match(/^\s+private\s+(async\s+)?(buildRequestBody|fetchEndpoint|parseCompletionResponse)\s*[\(\<]/gm) ?? [];
+    expect(privateMethods.length).toBe(3);
   });
 
   test('getModel is sync and returns string', async () => {
@@ -377,7 +388,9 @@ describe('GLMProvider.buildRequestBody — wire format', () => {
 
   test('tool_choice attached only when toolChoice is set', async () => {
     const src = await readFile('src/llm/glm.ts', 'utf8');
-    expect(src).toMatch(/if\s*\(\s*options\?\.toolChoice\s*\)\s*\{[\s\S]*?body\.tool_choice\s*=\s*options\.toolChoice/s);
+    // Inside the `if (options?.tools?.length)` block, options is narrowed so
+    // the inner check is `options.toolChoice` (no `?.`).
+    expect(src).toMatch(/if\s*\(\s*options\.toolChoice\s*\)\s*\{[\s\S]*?body\.tool_choice\s*=\s*options\.toolChoice/s);
   });
 });
 
@@ -520,7 +533,8 @@ describe('GLMProvider.stream — async generator', () => {
 
   test('skips malformed JSON chunks (try/catch with empty catch)', async () => {
     const src = await readFile('src/llm/glm.ts', 'utf8');
-    expect(src).toMatch(/try\s*\{\s*JSON\.parse\(payload\)[\s\S]*?\}\s*catch\s*\{/);
+    // The actual code binds to a local: `const parsed = JSON.parse(payload)`.
+    expect(src).toMatch(/try\s*\{\s*const\s+parsed\s*=\s*JSON\.parse\(payload\)[\s\S]*?\}\s*catch\s*\{/);
   });
 
   test('reader.releaseLock in finally', async () => {
