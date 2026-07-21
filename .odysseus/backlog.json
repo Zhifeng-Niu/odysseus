@@ -1,12 +1,4 @@
 {
   "version": 1,
-  "items": [
-    {
-      "id": "bl_191541440318",
-      "goal": "Add call to analyzeExplorationOutcomes() in src/cerebellum/curiosity.ts before proposing new explorations; filter out aspirations returned with action='demote' and log the decision",
-      "origin": "curiosity",
-      "priority": 45,
-      "createdAt": "2026-07-21T06:33:57.808Z"
-    }
-  ]
+  "items": []
 }
