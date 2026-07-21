@@ -388,4 +388,63 @@ describe('self-monitor', () => {
       expect(nudge).toContain('Keep going');
     });
   });
+
+  describe('pattern extraction (Iteration 48)', () => {
+    // Iteration 48 moved detectPattern + its 4 detectors (stuckLoop,
+    // sameToolStreak, breadthWithoutAction, errorLoop) + READ/WRITE tool
+    // constants + formatEntry helper from self-monitor.ts to
+    // self-monitor-patterns.ts (mirrors Iter 44 curiosity-prompt and
+    // Iter 47 dreamer-prompt extractions). These tests pin the extraction
+    // so a future refactor cannot silently re-inline the code.
+
+    test('detectPattern lives in self-monitor-patterns.ts', async () => {
+      const { readFile } = await import('node:fs/promises');
+      const patternsSrc = await readFile(
+        'src/cerebellum/self-monitor-patterns.ts',
+        'utf8',
+      );
+      const monitorSrc = await readFile(
+        'src/cerebellum/self-monitor.ts',
+        'utf8',
+      );
+      expect(patternsSrc).toContain('export function detectPattern');
+      expect(patternsSrc).toContain('function detectStuckLoop');
+      expect(patternsSrc).toContain('function detectSameToolStreak');
+      expect(patternsSrc).toContain('function detectBreadthWithoutAction');
+      expect(patternsSrc).toContain('function detectErrorLoop');
+      // The detectors must NOT be re-defined in self-monitor.ts.
+      expect(monitorSrc).not.toContain('function detectPattern');
+      expect(monitorSrc).not.toContain('function detectStuckLoop');
+      expect(monitorSrc).not.toContain('function detectErrorLoop');
+    });
+
+    test('self-monitor.ts imports the extracted symbols (not re-defines them)', async () => {
+      const { readFile } = await import('node:fs/promises');
+      const monitorSrc = await readFile(
+        'src/cerebellum/self-monitor.ts',
+        'utf8',
+      );
+      expect(monitorSrc).toContain("from './self-monitor-patterns.js'");
+      // buildSelfMonitorObservation in self-monitor.ts must use the
+      // imported detectPattern and formatEntry, not its own copies.
+      // If the import line is stripped, the file won't compile.
+      expect(monitorSrc).toMatch(
+        /import\s*\{[^}]*detectPattern[^}]*\}\s*from\s*'\.\/self-monitor-patterns\.js'/,
+      );
+    });
+
+    test('self-monitor.ts re-exports detectPattern for backwards compat', async () => {
+      // self-monitor.test.ts imports detectPattern from self-monitor.js.
+      // The re-export pattern mirrors Iter 42 planner-policy, Iter 44
+      // curiosity-prompt, and Iter 47 dreamer-prompt.
+      const { readFile } = await import('node:fs/promises');
+      const monitorSrc = await readFile(
+        'src/cerebellum/self-monitor.ts',
+        'utf8',
+      );
+      expect(monitorSrc).toContain(
+        "export { detectPattern } from './self-monitor-patterns.js';",
+      );
+    });
+  });
 });

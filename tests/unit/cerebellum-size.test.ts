@@ -163,6 +163,32 @@ const FILE_CAPS: readonly FileCap[] = [
       'means the prompt builder is absorbing coercion logic that belongs ' +
       'in curiosity.ts.',
   },
+  {
+    filename: 'self-monitor.ts',
+    lineCap: 185,
+    rationale:
+      'Iteration 48 extracted pattern detection to ' +
+      'self-monitor-patterns.ts: 318 → 172. Cap at 185 — locks progress. ' +
+      'File is now a thin composition layer (buildSelfMonitorObservation) ' +
+      '+ the summarizeToolCall arg-to-observation converter + small ' +
+      'helpers (makeObs, isObject, truncatePath, truncate). Further ' +
+      'reduction would require extracting summarizeToolCall and its ' +
+      'helpers to a self-monitor-format.ts split — viable but low ' +
+      'priority since the helpers are tightly coupled to makeObs which ' +
+      'depends on the ToolCallObservation shape defined here.',
+  },
+  {
+    filename: 'self-monitor-patterns.ts',
+    lineCap: 200,
+    rationale:
+      'Iteration 48 — pure pattern-detection module (detectPattern ' +
+      'dispatcher + 4 detectors + READ/WRITE tool constants + formatEntry ' +
+      'display helper). Current 182 lines. Cap at 200 — leaves headroom ' +
+      'for one more detector (e.g. tool-call latency spike) without ' +
+      'forcing a split. Detector order in detectPattern is load-bearing ' +
+      '— first-match-wins reflects which signal is most actionable when ' +
+      'multiple overlap; see the docstring for the priority sequence.',
+  },
 ];
 
 describe('cerebellum source file size caps', () => {
