@@ -253,6 +253,29 @@ const FILE_CAPS: readonly FileCap[] = [
       'a split. Growth beyond 100 means the policy is absorbing approval ' +
       'mechanism code that belongs in pending-review.ts.',
   },
+  {
+    filename: 'memory.ts',
+    lineCap: 200,
+    rationale:
+      'Iteration 53 extracted pure markdown (de)serialization ' +
+      '(serializeEntry, splitSections, parseEntry, ParsedSection) to ' +
+      'memory-parse.ts: 252 → 166. Cap at 200 — locks progress. File is ' +
+      'now storage primitives (memoryFilePath, generateMemoryId) + the ' +
+      'CRUD API (readMemory, writeMemory, listMemory, ' +
+      'readMemoryAsPromptContext) + type definitions. Further reduction ' +
+      'would require splitting listMemory from the rest, but listMemory ' +
+      'is the only consumer of stat() and is small enough to stay.',
+  },
+  {
+    filename: 'memory-parse.ts',
+    lineCap: 160,
+    rationale:
+      'Iteration 53 — pure markdown parser module. Current 127 lines. ' +
+      'Cap at 160 — leaves headroom for format evolution (e.g. ' +
+      'versioning the section header, adding a new metadata field) ' +
+      'without forcing a split. Growth beyond 160 means the parser is ' +
+      'absorbing storage logic that belongs in memory.ts.',
+  },
 ];
 
 describe('cerebellum source file size caps', () => {

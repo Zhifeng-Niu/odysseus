@@ -1,6 +1,19 @@
 import { appendFile, mkdir, readFile, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { MemoryCategory } from '../orchestrator/events.js';
+import {
+  serializeEntry,
+  splitSections,
+  parseEntry,
+} from './memory-parse.js';
+
+// Re-export the parser symbols so existing importers do not need to know
+// about the internal split. Same pattern as planner.ts re-exporting
+// planner-policy.js (Iter 42), strategy.ts re-exporting strategy-prompt.js
+// (Iter 51), and self-monitor.ts re-exporting self-monitor-patterns.js
+// (Iter 48).
+export { serializeEntry, splitSections, parseEntry } from './memory-parse.js';
+export type { ParsedSection } from './memory-parse.js';
 
 /**
  * Long-term memory store — the agent's "cortex".
@@ -62,105 +75,6 @@ function generateMemoryId(): string {
   const ts = Date.now().toString(16).slice(-6);
   const rand = Math.floor(Math.random() * 0xffff).toString(16).padStart(4, '0');
   return `mem_${ts}${rand}`;
-}
-
-/**
- * Serialize a single entry as a markdown section. The header line carries
- * metadata in a parseable but human-friendly form.
- */
-function serializeEntry(entry: MemoryEntry): string {
-  const safeTitle = entry.title.replace(/\n/g, ' ').trim();
-  const header = `## [${entry.ts}] ${safeTitle}`;
-  const meta: string[] = [`- **id**: ${entry.id}`, `- **source**: ${entry.source}`];
-  if (entry.tags && entry.tags.length > 0) {
-    meta.push(`- **tags**: ${entry.tags.join(', ')}`);
-  }
-  if (entry.relatedWaypointId) {
-    meta.push(`- **related**: ${entry.relatedWaypointId}`);
-  }
-  return `${header}\n${meta.join('\n')}\n\n${entry.body.trim()}\n`;
-}
-
-interface ParsedSection {
-  readonly header: string;
-  readonly body: string;
-  readonly startIndex: number;
-  readonly endIndex: number;
-}
-
-/**
- * Split markdown into top-level `## sections`. Returns raw slices; the
- * caller parses the header. Sections that don't start with `## ` are
- * treated as prelude (skipped).
- */
-function splitSections(markdown: string): ParsedSection[] {
-  const lines = markdown.split('\n');
-  const sections: ParsedSection[] = [];
-  let currentStart = -1;
-  let currentHeader = '';
-
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i]?.startsWith('## ')) {
-      if (currentStart >= 0) {
-        sections.push({
-          header: currentHeader,
-          body: lines.slice(currentStart, i).join('\n'),
-          startIndex: currentStart,
-          endIndex: i,
-        });
-      }
-      currentStart = i;
-      currentHeader = lines[i]!.slice(3);
-    }
-  }
-  if (currentStart >= 0) {
-    sections.push({
-      header: currentHeader,
-      body: lines.slice(currentStart).join('\n'),
-      startIndex: currentStart,
-      endIndex: lines.length,
-    });
-  }
-  return sections;
-}
-
-/**
- * Parse a single section's metadata block back into a MemoryEntry. Tolerant
- * of missing fields — corrupt sections return null instead of throwing.
- */
-function parseEntry(section: ParsedSection, category: MemoryCategory): MemoryEntry | null {
-  const headerMatch = section.header.match(
-    /^\[(?<ts>[^\]]+)\]\s*(?<title>.+)$/
-  );
-  if (!headerMatch?.groups) return null;
-  const ts = headerMatch.groups.ts!;
-  const title = headerMatch.groups.title!.trim();
-
-  const idMatch = section.body.match(/- \*\*id\*\*:\s*(?<id>\S+)/);
-  const sourceMatch = section.body.match(/- \*\*source\*\*:\s*(?<source>\S+)/);
-  const tagsMatch = section.body.match(/- \*\*tags\*\*:\s*(?<tags>[^\n]+)/);
-  const relatedMatch = section.body.match(/- \*\*related\*\*:\s*(?<related>\S+)/);
-
-  if (!idMatch?.groups?.id || !sourceMatch?.groups?.source) return null;
-
-  // Body is everything after the metadata block (first blank line after meta).
-  const metaEndIdx = section.body.indexOf('\n\n');
-  const body = metaEndIdx >= 0 ? section.body.slice(metaEndIdx + 2).trim() : '';
-
-  return {
-    id: idMatch.groups.id,
-    category,
-    title,
-    source: sourceMatch.groups.source as MemorySource,
-    body,
-    ts,
-    ...(tagsMatch?.groups?.tags
-      ? { tags: tagsMatch.groups.tags.split(',').map((t) => t.trim()).filter(Boolean) }
-      : {}),
-    ...(relatedMatch?.groups?.related
-      ? { relatedWaypointId: relatedMatch.groups.related }
-      : {}),
-  };
 }
 
 export async function readMemory(
