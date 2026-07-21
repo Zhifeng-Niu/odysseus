@@ -9,6 +9,10 @@ import {
   joinWithTraceOutcomes,
   formatExplorationsMarkdown,
 } from './exploration-log.js';
+import {
+  computeExplorationStats,
+  formatExplorationFeedback,
+} from './exploration-feedback.js';
 
 /**
  * Curiosity prompt builder + its input shape and self-model loader.
@@ -120,6 +124,16 @@ export function buildCuriosityUserPrompt(input: CuriosityInput): string {
       ? '(no prior explorations — fresh curiosity memory)'
       : explorationsMd;
 
+  // Exploration-outcome feedback loop (aspiration #3): compute per-goal
+  // stats (consecutive failures, last succeeded) and surface actionable
+  // guidance — demoted explorations to skip, shipped explorations to close.
+  const stats = computeExplorationStats(outcomes, input.recentTrace);
+  const feedbackMd = formatExplorationFeedback(stats);
+  const feedbackBlock =
+    feedbackMd.length === 0
+      ? '(no exploration feedback — all explorations are fresh or neutral)'
+      : feedbackMd;
+
   return `<self-model>
 ${selfModelBlock}
 </self-model>
@@ -135,6 +149,10 @@ ${memoryBlock}
 <explorations>
 ${explorationsBlock}
 </explorations>
+
+<feedback>
+${feedbackBlock}
+</feedback>
 
 What is the smallest concrete step toward one of your aspirations? Return JSON.`;
 }

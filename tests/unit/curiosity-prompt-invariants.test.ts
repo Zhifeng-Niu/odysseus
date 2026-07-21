@@ -130,8 +130,8 @@ describe('buildCuriosityUserPrompt — block ordering', () => {
     const questionIdx = prompt.indexOf(
       'What is the smallest concrete step toward one of your aspirations?',
     );
-    const explorationsCloseIdx = prompt.indexOf('</explorations>');
-    expect(questionIdx).toBeGreaterThan(explorationsCloseIdx);
+    const feedbackCloseIdx = prompt.indexOf('</feedback>');
+    expect(questionIdx).toBeGreaterThan(feedbackCloseIdx);
     // Nothing after the question — it's the final line (possibly with
     // trailing whitespace, but no more content).
     const afterQuestion = prompt.slice(questionIdx);
@@ -153,7 +153,7 @@ describe('buildCuriosityUserPrompt — block ordering', () => {
     // Between closing tag and next opening tag: "</tag>\n\n<next>"
     const blockBoundaries = prompt.match(/<\/[a-z-]+>\n\n<[a-z-]+>/g);
     expect(blockBoundaries).not.toBeNull();
-    expect(blockBoundaries!.length).toBe(3); // 4 blocks → 3 boundaries
+    expect(blockBoundaries!.length).toBe(4); // 5 blocks → 4 boundaries
   });
 
   test('every block has matching opening and closing tags', async () => {
@@ -174,6 +174,8 @@ describe('buildCuriosityUserPrompt — block ordering', () => {
     expect(prompt.match(/<\/memory>/g)?.length).toBe(1);
     expect(prompt.match(/<explorations>/g)?.length).toBe(1);
     expect(prompt.match(/<\/explorations>/g)?.length).toBe(1);
+    expect(prompt.match(/<feedback>/g)?.length).toBe(1);
+    expect(prompt.match(/<\/feedback>/g)?.length).toBe(1);
   });
 });
 
