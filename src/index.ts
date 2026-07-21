@@ -87,7 +87,11 @@ async function main(): Promise<void> {
   registry.register(new FileWriteTool());
   registry.register(new FileEditTool());
   registry.register(new GitTool());
-  registry.register(new BashTool());
+  // Pre-execution existence check: skip re-registration if 'bash' already
+  // exists in the tools map (e.g. registry was pre-populated by a caller).
+  if (!registry.get('bash')) {
+    registry.register(new BashTool());
+  }
 
   const tracePath = join(cwd, '.odysseus', 'trace.jsonl');
 
