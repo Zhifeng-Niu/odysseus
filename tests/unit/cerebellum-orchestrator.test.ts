@@ -538,6 +538,82 @@ describe('CerebellumOrchestrator', () => {
     expect(result.failReason ?? '').not.toMatch(/^agent emitted/i);
   });
 
+  test('consecutive text-only counter resets on tool call — 3 prose turns then work does NOT trigger safety net', async () => {
+    // The safety-net threshold is 5, but the counter resets to 0 whenever
+    // the agent makes a tool call. This test verifies that 3 consecutive
+    // text-only responses (below threshold) followed by a tool call and
+    // DONE completes successfully — the waypoint is NOT abandoned.
+    const provider = makeMockProvider([
+      'Let me think about this problem.',
+      'I should look at the code first.',
+      'Now I know what to do, let me write the file.',
+      JSON.stringify({
+        toolCalls: [
+          {
+            id: 'call_1',
+            type: 'function',
+            function: {
+              name: 'file-write',
+              arguments: JSON.stringify({
+                path: join(workdir, 'reset.ts'),
+                content: 'export const reset = 1;',
+              }),
+            },
+          },
+        ],
+      }),
+      'DONE',
+    ]);
+
+    const orch = new CerebellumOrchestrator({
+      cwd: workdir,
+      provider,
+      registry,
+      tracePath,
+      verifyLayers: ['syntax'],
+    });
+
+    const result = await orch.runWaypoint({ goal: 'add a file with const reset = 1' });
+
+    expect(result.outcome).toBe('success');
+    expect(result.iterationsUsed).toBe(5);
+    expect(result.failReason).toBeUndefined();
+    const written = await readFile(join(workdir, 'reset.ts'), 'utf8');
+    expect(written).toContain('export const reset = 1;');
+  });
+
+  test('safety net does not fire at 4 text-only turns — only at threshold 5', async () => {
+    // Boundary check: 4 consecutive text-only responses is below the
+    // CONVERSATIONAL_SAFETY_NET_THRESHOLD (5). The agent then emits
+    // [CONVERSATIONAL-DONE] on turn 5, so the waypoint ends via the
+    // signal path, NOT the safety-net path. This confirms the threshold
+    // is exclusive (>= 5, not > 4) and that a 4-turn text loop is
+    // still recoverable.
+    const provider = makeMockProvider([
+      'Hmm, let me think.',
+      'Not sure yet.',
+      'Still thinking.',
+      'Almost there.',
+      'I think this is a conversational question.\n[CONVERSATIONAL-DONE]',
+    ]);
+
+    const orch = new CerebellumOrchestrator({
+      cwd: workdir,
+      provider,
+      registry,
+      tracePath,
+      verifyLayers: ['syntax'],
+    });
+
+    const result = await orch.runWaypoint({ goal: 'what is the weather today' });
+
+    expect(result.outcome).toBe('abandoned');
+    expect(result.iterationsUsed).toBe(5);
+    // Signal path — NOT safety-net path:
+    expect(result.failReason ?? '').toMatch(/^agent emitted \[CONVERSATIONAL-DONE\]/i);
+    expect(result.failReason ?? '').not.toMatch(/^conversational stop/i);
+  });
+
   test('hard gate: tool calls + [CONVERSATIONAL-DONE] in same turn → tool calls refused, marker stripped, LLM retries', async () => {
     // Structural enforcement: the marker is a STOP signal and cannot coexist
     // with tool calls. If the agent emits both in the same turn (model
