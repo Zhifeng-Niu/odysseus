@@ -552,3 +552,57 @@ describe('retry-counter extraction (Iteration 45)', () => {
     expect(seedSrc).toContain(expected);
   });
 });
+
+describe('enqueueBacklog extraction (Iteration 49)', () => {
+  // Iteration 49 moved enqueueBacklog + enqueueUserOrigin from backlog.ts
+  // to backlog-enqueue.ts (mirrors Iter 42 planner-policy, Iter 44
+  // curiosity-prompt, Iter 45 retry-counter, Iter 47 dreamer-prompt,
+  // Iter 48 self-monitor-patterns). These tests pin the extraction so a
+  // future refactor cannot silently re-inline the code.
+
+  test('enqueueBacklog lives in backlog-enqueue.ts', async () => {
+    const enqueueSrc = await readFile(
+      'src/cerebellum/backlog-enqueue.ts',
+      'utf8',
+    );
+    const backlogSrc = await readFile(
+      'src/cerebellum/backlog.ts',
+      'utf8',
+    );
+    expect(enqueueSrc).toContain('export async function enqueueBacklog');
+    expect(enqueueSrc).toContain('async function enqueueUserOrigin');
+    // Must NOT be re-defined in backlog.ts.
+    expect(backlogSrc).not.toContain('async function enqueueBacklog');
+    expect(backlogSrc).not.toContain('async function enqueueUserOrigin');
+  });
+
+  test('backlog.ts imports the extracted helpers to backlog-enqueue.ts', async () => {
+    // The shared storage primitives (loadBacklogFile, saveBacklogFile,
+    // generateBacklogId, defaultPriorityForOrigin) must be exported from
+    // backlog.ts so backlog-enqueue.ts can consume them.
+    const backlogSrc = await readFile(
+      'src/cerebellum/backlog.ts',
+      'utf8',
+    );
+    expect(backlogSrc).toContain('export async function loadBacklogFile');
+    expect(backlogSrc).toContain('export async function saveBacklogFile');
+    expect(backlogSrc).toContain('export function generateBacklogId');
+    expect(backlogSrc).toContain(
+      'export function defaultPriorityForOrigin',
+    );
+  });
+
+  test('backlog.ts re-exports enqueueBacklog for backwards compat', async () => {
+    // orchestrator, pending-review, dreamer, curiosity all import
+    // enqueueBacklog from backlog.ts. The re-export pattern mirrors
+    // Iter 42 planner-policy, Iter 44 curiosity-prompt, Iter 45
+    // retry-counter, Iter 47 dreamer-prompt, Iter 48 self-monitor-patterns.
+    const backlogSrc = await readFile(
+      'src/cerebellum/backlog.ts',
+      'utf8',
+    );
+    expect(backlogSrc).toContain(
+      "export { enqueueBacklog } from './backlog-enqueue.js';",
+    );
+  });
+});

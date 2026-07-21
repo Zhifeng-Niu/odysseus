@@ -86,14 +86,28 @@ const FILE_CAPS: readonly FileCap[] = [
   },
   {
     filename: 'backlog.ts',
-    lineCap: 390,
+    lineCap: 260,
     rationale:
-      'Iteration 45 extracted retry-counter block to retry-counter.ts: ' +
-      '403 → 378. Cap at 390 — locks progress, leaves headroom for small ' +
-      'fixes. Next extraction target: enqueueBacklog has grown to ~110 ' +
-      'lines with three pre-flight checks (isSeedExhausted, ' +
-      'isRetryExhausted, isCompleted) + dedup + the enqueue audit trail. ' +
-      'That block is the natural unit for a backlog-enqueue.ts split.',
+      'Iteration 49 extracted enqueueBacklog + enqueueUserOrigin to ' +
+      'backlog-enqueue.ts: 378 → 249. Cap at 260 — locks progress. File ' +
+      'is now pure storage primitives (load/save, byPriorityThenTime) + ' +
+      'queue ops (dequeue/peek/size/list/remove) + type definitions + ' +
+      'shared helpers exported to backlog-enqueue.ts. Further reduction ' +
+      'would require splitting the queue ops from the storage primitives, ' +
+      'but they share the loadBacklogFile/saveBacklogFile pair tightly.',
+  },
+  {
+    filename: 'backlog-enqueue.ts',
+    lineCap: 200,
+    rationale:
+      'Iteration 49 — extracted enqueueBacklog + enqueueUserOrigin from ' +
+      'backlog.ts. Current 183 lines. Cap at 200 — leaves headroom for ' +
+      'small policy tweaks. The three pre-flight checks (isSeedExhausted, ' +
+      'isRetryExhausted, isCompleted) are the dedup gate; if a fourth ' +
+      'check is added (e.g. domain-specific blocklist), the file would ' +
+      'cross 200 — in that case extract the gate checks into a ' +
+      'backlog-enqueue-policy.ts sibling (mirrors the planner/planner-policy ' +
+      'pattern from Iter 42).',
   },
   {
     filename: 'retry-counter.ts',

@@ -2,8 +2,7 @@ import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { BacklogOrigin } from '../orchestrator/events.js';
-import { isCompleted } from './completedGoals.js';
-import { isSeedExhausted, incrementSeedAttempt } from './seedAttempts.js';
+import { incrementSeedAttempt } from './seedAttempts.js';
 
 // Re-export the in-memory registries (Iteration 39 extraction) for
 // interface stability. orchestrator.ts and pending-review.ts import
@@ -23,7 +22,6 @@ export {
   listRejectedGoals,
   clearRejectedGoals,
 } from './backlog-registries.js';
-import { recordSkippedEnqueue } from './backlog-registries.js';
 
 /**
  * Backlog queue — the agent's "short-term working memory".
@@ -59,7 +57,13 @@ export interface BacklogItem {
   readonly sourceWaypointId?: string;
 }
 
-interface BacklogFile {
+/**
+ * Internal storage shape — exported only because backlog-enqueue.ts
+ * (Iteration 49 extraction) needs to construct one for saveBacklogFile.
+ * Not part of the public backlog API; new callers should not depend on
+ * this shape.
+ */
+export interface BacklogFile {
   readonly version: 1;
   readonly items: BacklogItem[];
 }
@@ -89,11 +93,13 @@ function backlogPath(rootDir: string): string {
   return join(rootDir, BACKLOG_FILENAME);
 }
 
-function generateBacklogId(): string {
+/** Shared with backlog-enqueue.ts (Iteration 49 extraction). */
+export function generateBacklogId(): string {
   return `bl_${randomBytes(6).toString('hex')}`;
 }
 
-async function loadBacklogFile(rootDir: string): Promise<BacklogFile> {
+/** Shared with backlog-enqueue.ts (Iteration 49 extraction). */
+export async function loadBacklogFile(rootDir: string): Promise<BacklogFile> {
   let raw: string;
   try {
     raw = await readFile(backlogPath(rootDir), 'utf8');
@@ -116,8 +122,10 @@ async function loadBacklogFile(rootDir: string): Promise<BacklogFile> {
 /**
  * Atomic write strategy: write to `backlog.json.tmp` then rename. POSIX
  * rename is atomic so a crash mid-write never leaves a half-written file.
+ *
+ * Shared with backlog-enqueue.ts (Iteration 49 extraction).
  */
-async function saveBacklogFile(rootDir: string, file: BacklogFile): Promise<void> {
+export async function saveBacklogFile(rootDir: string, file: BacklogFile): Promise<void> {
   const finalPath = backlogPath(rootDir);
   const tmpPath = `${finalPath}.tmp`;
   await mkdir(dirname(finalPath), { recursive: true });
@@ -142,152 +150,13 @@ export interface EnqueueOptions {
   readonly createdAt?: string;
 }
 
-export async function enqueueBacklog(
-  rootDir: string,
-  goal: string,
-  origin: BacklogOrigin,
-  options?: EnqueueOptions
-): Promise<BacklogItem> {
-  const trimmedGoal = goal.trim();
-  if (trimmedGoal.length === 0) {
-    throw new Error('backlog goal cannot be empty');
-  }
-  // Iteration 18 — user-origin items bypass every dedup check.
-  //
-  // The three checks below (isSeedExhausted, isRetryExhausted, isCompleted)
-  // exist to prevent the dreamer/reflection loop from endlessly re-enqueueing
-  // flaky or already-done work. They are correct for autonomous-origin items
-  // (dream, reflect, curiosity, system, plan).
-  //
-  // But when origin === 'user', the item is an explicit, intentional request
-  // from the operator. Silently dropping it because the same string was seen
-  // before breaks the agent's most fundamental contract: when a user sends
-  // input, the agent MUST respond. Without this bypass, resending "你好" or
-  // any prior message causes enqueueBacklog to return a phantom item without
-  // writing to the file, peekBacklog returns null on the next tick, and
-  // voyage-idle fires immediately — the user sees zero response. From their
-  // perspective the agent has died.
-  //
-  // If the user re-sends the exact same goal, that is itself signal: either
-  // the prior response was unsatisfying, or they lost track of state. Either
-  // way the agent must produce another waypoint. The dedup machinery stays
-  // in place for autonomous origins.
-  if (origin === 'user') {
-    return enqueueUserOrigin(rootDir, trimmedGoal, options);
-  }
-
-  // Block re-seeding when this goal has already been attempted
-  // MAX_SEED_ATTEMPTS times regardless of outcome (success/failure/abandon).
-  if (isSeedExhausted(trimmedGoal)) {
-    recordSkippedEnqueue(trimmedGoal, origin, 'seed-exhausted');
-    return {
-      id: options?.id ?? generateBacklogId(),
-      goal: trimmedGoal,
-      origin,
-      priority: options?.priority ?? defaultPriorityForOrigin(origin),
-      createdAt: options?.createdAt ?? new Date().toISOString(),
-      ...(options?.sourceWaypointId !== undefined
-        ? { sourceWaypointId: options.sourceWaypointId }
-        : {}),
-    };
-  }
-  // Block re-seeding when the per-goal retry counter (tracked in this
-  // module) has exceeded MAX_RETRY_ATTEMPTS enqueues.
-  if (isRetryExhausted(trimmedGoal)) {
-    console.warn(
-      `[backlog] blocking re-seed: retry counter exhausted (${getRetryCount(trimmedGoal)}/${MAX_RETRY_ATTEMPTS}) for goal: "${trimmedGoal}"`
-    );
-    recordSkippedEnqueue(trimmedGoal, origin, 'retry-exhausted');
-    return {
-      id: options?.id ?? generateBacklogId(),
-      goal: trimmedGoal,
-      origin,
-      priority: options?.priority ?? defaultPriorityForOrigin(origin),
-      createdAt: options?.createdAt ?? new Date().toISOString(),
-      ...(options?.sourceWaypointId !== undefined
-        ? { sourceWaypointId: options.sourceWaypointId }
-        : {}),
-    };
-  }
-  // Skip enqueueing when this goal has already been recorded as completed by
-  // markCompleted — prevents the voyage loop from re-seeding done work.
-  if (isCompleted(trimmedGoal)) {
-    recordSkippedEnqueue(trimmedGoal, origin, 'already-completed');
-    return {
-      id: options?.id ?? generateBacklogId(),
-      goal: trimmedGoal,
-      origin,
-      priority: options?.priority ?? defaultPriorityForOrigin(origin),
-      createdAt: options?.createdAt ?? new Date().toISOString(),
-      ...(options?.sourceWaypointId !== undefined
-        ? { sourceWaypointId: options.sourceWaypointId }
-        : {}),
-    };
-  }
-  const file = await loadBacklogFile(rootDir);
-  const item: BacklogItem = {
-    id: options?.id ?? generateBacklogId(),
-    goal: trimmedGoal,
-    origin,
-    priority: options?.priority ?? defaultPriorityForOrigin(origin),
-    createdAt: options?.createdAt ?? new Date().toISOString(),
-    ...(options?.sourceWaypointId !== undefined
-      ? { sourceWaypointId: options.sourceWaypointId }
-      : {}),
-  };
-  const nextFile: BacklogFile = {
-    version: 1,
-    items: [...file.items, item],
-  };
-  await saveBacklogFile(rootDir, nextFile);
-  // Iteration 24 — increment the retry counter AFTER save succeeds. The
-  // original code incremented before save, so a failed save (disk full,
-  // permissions) would bump the counter without the item landing in the
-  // queue — three such failures and isRetryExhausted would silently block
-  // all future enqueues of this goal, permanently freezing the agent on
-  // a goal that was never actually queued.
-  incrementRetryCounter(trimmedGoal);
-  return item;
-}
-
-/**
- * User-origin enqueue path — bypasses all dedup checks.
- *
- * See the comment at the top of `enqueueBacklog` for the rationale: the
- * dedup registry is for autonomous-loop protection, not for filtering user
- * input. This helper still increments the retry counter (so the autonomous
- * loops can observe "this goal has been seen N times" via getRetryCount)
- * but always writes to the backlog file.
- *
- * The retry counter increment is informational here, not a gate — a user
- * resending the same input 50 times should still get 50 waypoints. The
- * counter just lets other modules see the activity.
- */
-async function enqueueUserOrigin(
-  rootDir: string,
-  trimmedGoal: string,
-  options?: EnqueueOptions
-): Promise<BacklogItem> {
-  const file = await loadBacklogFile(rootDir);
-  const item: BacklogItem = {
-    id: options?.id ?? generateBacklogId(),
-    goal: trimmedGoal,
-    origin: 'user',
-    priority: options?.priority ?? defaultPriorityForOrigin('user'),
-    createdAt: options?.createdAt ?? new Date().toISOString(),
-    ...(options?.sourceWaypointId !== undefined
-      ? { sourceWaypointId: options.sourceWaypointId }
-      : {}),
-  };
-  const nextFile: BacklogFile = {
-    version: 1,
-    items: [...file.items, item],
-  };
-  await saveBacklogFile(rootDir, nextFile);
-  // Iteration 24 — increment after save succeeds (see enqueueBacklog fix).
-  incrementRetryCounter(trimmedGoal);
-  return item;
-}
+// Re-export moved symbol (Iteration 49 extraction) so existing importers
+// (orchestrator, pending-review, dreamer, curiosity, tests) do not need
+// to know about the internal split. Same pattern as planner.ts re-exporting
+// planner-policy.js (Iter 42), curiosity.ts re-exporting curiosity-prompt.js
+// (Iter 44), backlog.ts re-exporting retry-counter.js (Iter 45), and
+// self-monitor.ts re-exporting self-monitor-patterns.js (Iter 48).
+export { enqueueBacklog } from './backlog-enqueue.js';
 
 // ---------------------------------------------------------------------------
 // Skipped-enqueue registry — observability for silently-dropped enqueues.
@@ -310,8 +179,10 @@ async function enqueueUserOrigin(
  *   abstract dream proposals).
  * - `dream` (100): exploratory work, no urgency.
  * - `system` (100): bookkeeping; same as dream.
+ *
+ * Shared with backlog-enqueue.ts (Iteration 49 extraction).
  */
-function defaultPriorityForOrigin(origin: BacklogOrigin): number {
+export function defaultPriorityForOrigin(origin: BacklogOrigin): number {
   switch (origin) {
     case 'user':
     case 'plan':
