@@ -2,13 +2,6 @@
   "version": 1,
   "items": [
     {
-      "id": "bl_11aa558b15f1",
-      "goal": "Add substring false-positive test to src/cerebellum/completedGoals.test.ts verifying 'add login' does not incorrectly match 'add login page' as completed",
-      "origin": "dream",
-      "priority": 15,
-      "createdAt": "2026-07-21T05:15:20.896Z"
-    },
-    {
       "id": "bl_9889b6899dd7",
       "goal": "Add pre-execution existence check in bash tool registration in src/tools/bash.ts (or wherever tools are registered) that skips re-registration if 'bash' already exists in the tools map",
       "origin": "dream",
