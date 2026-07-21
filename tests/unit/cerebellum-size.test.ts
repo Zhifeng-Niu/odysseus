@@ -69,12 +69,31 @@ const FILE_CAPS: readonly FileCap[] = [
   },
   {
     filename: 'voyage-stats.ts',
-    lineCap: 299,
+    lineCap: 260,
     rationale:
-      'Iteration 37 added computeIncrementalTokens (delta from voyage-cumulative). ' +
-      'Current 291 lines. Cap at 299 — strictly under CLAUDE.md <300 ceiling. ' +
-      'Any growth that crosses 300 must extract a module first (e.g. a ' +
-      'voyage-stats-aggregate or voyage-stats-format split).',
+      'Iteration 55 extracted the markdown formatter block ' +
+      '(formatPct, formatTokens, formatReasons, formatSlice, ' +
+      'formatVoyageStatsMarkdown) to voyage-stats-format.ts: ' +
+      '291 → 234. Cap at 260 — locks progress and pulls out of the ' +
+      'CLAUDE.md <300 red zone. File is now pure aggregation ' +
+      '(computeVoyageStats, computeSlice, countOutcomes, ' +
+      'aggregateReasons, computeIncrementalTokens, sumTokens, ' +
+      'normalizeReason) + type definitions. Further reduction would ' +
+      'require splitting computeIncrementalTokens (token accounting) ' +
+      'from computeVoyageStats (rollup) into a voyage-stats-tokens.ts ' +
+      'sibling, but the two are tightly coupled by the VoyageStats ' +
+      'shape and the shared sumTokens helper.',
+  },
+  {
+    filename: 'voyage-stats-format.ts',
+    lineCap: 140,
+    rationale:
+      'Iteration 55 — pure markdown renderer for VoyageStats. Current ' +
+      '112 lines. Cap at 140 — leaves headroom for output-format ' +
+      'evolution (e.g. adding a "Top success reasons" section, or a ' +
+      'compact one-line summary). Growth beyond 140 means the ' +
+      'formatter is absorbing aggregation logic that belongs in ' +
+      'voyage-stats.ts.',
   },
   {
     filename: 'extract-json.ts',

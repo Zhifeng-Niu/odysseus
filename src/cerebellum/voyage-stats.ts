@@ -1,5 +1,11 @@
 import type { TraceRecord } from '../trace/jsonl.js';
 
+// Re-export the formatter so existing importers (src/scripts/voyage-stats.ts,
+// tests/unit/cerebellum-voyage-stats.test.ts) do not need to know about the
+// internal split. Same pattern as memory.ts re-exporting memory-parse.js
+// (Iter 53).
+export { formatVoyageStatsMarkdown } from './voyage-stats-format.js';
+
 /**
  * Voyage statistics — aggregates a sequence of trace records into a
  * summary that answers "how is the agent actually doing?".
@@ -12,7 +18,8 @@ import type { TraceRecord } from '../trace/jsonl.js';
  * into signal — raw events.jsonl is too verbose for a quick read.
  *
  * Pure functions over TraceRecord[]. No I/O. The CLI wrapper at
- * src/scripts/voyage-stats.ts handles file reading.
+ * src/scripts/voyage-stats.ts handles file reading. Markdown rendering
+ * lives in voyage-stats-format.ts (Iteration 55 extraction).
  */
 
 export type Outcome = TraceRecord['outcome'];
@@ -225,67 +232,3 @@ export function computeVoyageStats(records: readonly TraceRecord[]): VoyageStats
   };
 }
 
-function formatPct(x: number): string {
-  return `${(x * 100).toFixed(0)}%`;
-}
-
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return String(Math.round(n));
-}
-
-function formatReasons(reasons: readonly ReasonCount[]): string {
-  if (reasons.length === 0) return '  (none)';
-  return reasons
-    .map((r) => `  ${String(r.count).padStart(3)}  ${r.reason}`)
-    .join('\n');
-}
-
-function formatSlice(label: string, slice: VoyageStatsSlice): string {
-  return (
-    `  ${label} (${slice.waypoints} waypoints):\n` +
-    `    success=${formatPct(slice.successRate)}  ` +
-    `failure=${formatPct(slice.failureRate)}  ` +
-    `abandoned=${formatPct(slice.abandonedRate)}\n` +
-    `    avg iterations=${slice.avgIterations.toFixed(1)}  ` +
-    `avg input tokens=${formatTokens(slice.avgInputTokens)}`
-  );
-}
-
-export function formatVoyageStatsMarkdown(stats: VoyageStats): string {
-  const lines: string[] = [];
-  lines.push('# Voyage stats');
-  lines.push('');
-  lines.push(`Total waypoints: ${stats.totalWaypoints}`);
-  lines.push(
-    `Outcomes: success=${stats.outcomes.success}  ` +
-      `failure=${stats.outcomes.failure}  ` +
-      `abandoned=${stats.outcomes.abandoned}`
-  );
-  lines.push(
-    `Success rate: ${formatPct(stats.successRate)}  |  ` +
-      `avg iterations/waypoint: ${stats.avgIterations.toFixed(1)}`
-  );
-  lines.push(
-    `Total tokens: input=${formatTokens(stats.totalTokens.input)}  ` +
-      `output=${formatTokens(stats.totalTokens.output)}`
-  );
-  lines.push(
-    `Avg per waypoint: input=${formatTokens(stats.avgTokensPerWaypoint.input)}  ` +
-      `output=${formatTokens(stats.avgTokensPerWaypoint.output)}`
-  );
-  lines.push('');
-  lines.push('## Top failure reasons');
-  lines.push(formatReasons(stats.topFailReasons));
-  lines.push('');
-  lines.push('## Top abandoned reasons');
-  lines.push(formatReasons(stats.topAbandonedReasons));
-  if (stats.trend) {
-    lines.push('');
-    lines.push('## Trend (first half vs second half)');
-    lines.push(formatSlice('First half ', stats.trend.firstHalf));
-    lines.push(formatSlice('Second half', stats.trend.secondHalf));
-  }
-  return lines.join('\n');
-}
