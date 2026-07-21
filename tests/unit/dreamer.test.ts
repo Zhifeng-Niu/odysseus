@@ -880,3 +880,39 @@ describe('LLM-result coercion extraction (Iteration 46)', () => {
     expect(totalCount('export function isMemoryCategory')).toBe(1);
   });
 });
+
+describe('buildUserPrompt extraction (Iteration 47)', () => {
+  // Iteration 47 moved buildUserPrompt + DreamInput from dreamer.ts to
+  // dreamer-prompt.ts (mirrors Iter 44 curiosity-prompt extraction).
+  // These tests pin the extraction so a future refactor cannot silently
+  // re-inline the code.
+
+  test('buildUserPrompt lives in dreamer-prompt.ts', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const promptSrc = await readFile(
+      'src/cerebellum/dreamer-prompt.ts',
+      'utf8',
+    );
+    const dreamerSrc = await readFile('src/cerebellum/dreamer.ts', 'utf8');
+    expect(promptSrc).toContain('export function buildUserPrompt');
+    expect(promptSrc).toContain('export interface DreamInput');
+    expect(dreamerSrc).not.toContain('function buildUserPrompt');
+  });
+
+  test('dreamer.ts imports the extracted symbols (not re-defines them)', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const dreamerSrc = await readFile('src/cerebellum/dreamer.ts', 'utf8');
+    expect(dreamerSrc).toContain("from './dreamer-prompt.js'");
+  });
+
+  test('dreamer.ts re-exports the extracted symbols for backwards compat', async () => {
+    // dreamer.test.ts imports buildUserPrompt from dreamer.ts. The
+    // re-export pattern mirrors Iter 42 planner-policy and Iter 44
+    // curiosity-prompt.
+    const { readFile } = await import('node:fs/promises');
+    const dreamerSrc = await readFile('src/cerebellum/dreamer.ts', 'utf8');
+    expect(dreamerSrc).toContain(
+      "export { buildUserPrompt, type DreamInput } from './dreamer-prompt.js';",
+    );
+  });
+});

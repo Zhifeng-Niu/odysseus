@@ -33,11 +33,21 @@ interface FileCap {
 const FILE_CAPS: readonly FileCap[] = [
   {
     filename: 'dreamer.ts',
-    lineCap: 340,
+    lineCap: 240,
     rationale:
-      'Iteration 46 extracted shared coercion helpers to llm-result.ts: ' +
-      '378 → 330. Cap at 340 — locks progress. Next extraction target: ' +
-      'buildUserPrompt (~95 lines, depends on MemoryCategory/MemoryEntry).',
+      'Iteration 47 extracted buildUserPrompt + DreamInput to ' +
+      'dreamer-prompt.ts: 330 → 225. Cap at 240 — locks progress. File is ' +
+      'now a thin wrapper around LLM call + persistence side effects ' +
+      '(enqueue pending-review, write memory, auto-approve). Further ' +
+      'reduction would require extracting the persistence half.',
+  },
+  {
+    filename: 'dreamer-prompt.ts',
+    lineCap: 160,
+    rationale:
+      'Iteration 47 — pure prompt builder + DreamInput shape. Current 124 ' +
+      'lines. Cap at 160 — should stay flat; growth means the prompt ' +
+      'builder is absorbing coercion logic that belongs in llm-result.ts.',
   },
   {
     filename: 'llm-result.ts',

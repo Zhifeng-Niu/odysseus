@@ -1,9 +1,5 @@
-import type { LLMProvider } from '../llm/provider.js';
-import type { TraceRecord } from '../trace/jsonl.js';
-import type { MemoryCategory } from '../orchestrator/events.js';
-import type { MemoryEntry } from './memory.js';
-import { type EnqueueOptions } from './backlog.js';
 import { enqueuePendingReview, autoApproveAllPendingReview, shouldAutoApprove } from './pending-review.js';
+import { type EnqueueOptions } from './backlog.js';
 import { writeMemory as writeMemoryEntry } from './memory.js';
 import { DREAM_SYSTEM_PROMPT } from './prompts.js';
 import {
@@ -20,6 +16,13 @@ import {
   coerceBacklogItem,
   coerceMemoryEntry,
 } from './llm-result.js';
+import { buildUserPrompt, type DreamInput } from './dreamer-prompt.js';
+
+// Re-export moved symbols (Iteration 47 extraction) so existing importers
+// (tests) do not need to know about the internal split. Same pattern as
+// planner.ts re-exporting planner-policy.js (Iter 42) and curiosity.ts
+// re-exporting curiosity-prompt.js (Iter 44).
+export { buildUserPrompt, type DreamInput } from './dreamer-prompt.js';
 
 /**
  * Dreaming state — free-association over recent trace + memory.
@@ -39,22 +42,6 @@ import {
  * base prompt (Iteration 35 extraction). The prompt is imported verbatim
  * so tests can assert on its literal content.
  */
-
-export interface DreamInput {
-  /** Root dir for memory + backlog writes. */
-  readonly rootDir: string;
-  readonly provider: LLMProvider;
-  /** Recent trace records — typically the last 5-10 waypoints. */
-  readonly recentTrace: readonly TraceRecord[];
-  /** Current memory snapshot per category. */
-  readonly memorySnapshot: ReadonlyArray<{
-    readonly category: MemoryCategory;
-    readonly entries: readonly MemoryEntry[];
-  }>;
-  /** Cap on items persisted — extra items are dropped. */
-  readonly maxBacklogItems?: number;
-  readonly maxMemoryEntries?: number;
-}
 
 // Iteration 46: the Llm* type aliases below are the canonical shape
 // shared between dreamer and curiosity. The Dream* names are kept as
@@ -80,98 +67,6 @@ export interface DreamOutput {
 interface ParsedDream {
   backlogItems?: unknown;
   memoryEntries?: unknown;
-}
-
-/**
- * Extract a JSON object from an LLM response. Handles raw JSON,
- * markdown-fenced JSON, and JSON embedded in prose. Delegates to
- * the shared extract-json module (Iteration 38 extraction).
- */
-
-export function buildUserPrompt(input: DreamInput): string {
-  const recent = input.recentTrace.length === 0
-    ? '(no recent waypoints)'
-    : input.recentTrace
-        .slice(-10) // last 10 max
-        .map(
-          (r) =>
-            `- [${r.outcome}] ${r.goal}${r.fail_reason ? ` — FAIL: ${r.fail_reason.slice(0, 200)}` : ''}`
-        )
-        .join('\n');
-
-  // Split memory into two layers by source:
-  //   - Non-reflect entries (dream/user/failure/system) → title-only index.
-  //     These are pointers to what the agent already knows; titles are enough.
-  //   - Reflect entries → full body injection. These carry diagnostic depth
-  //     (systemic gap analyses) that the dreamer should translate into
-  //     concrete backlogItems. Title-only would discard the diagnostic content.
-  const reflectEntries: Array<{
-    readonly category: MemoryCategory;
-    readonly entry: MemoryEntry;
-  }> = [];
-  const otherSnapshots: Array<{
-    readonly category: MemoryCategory;
-    readonly entries: readonly MemoryEntry[];
-  }> = [];
-
-  for (const snap of input.memorySnapshot) {
-    const reflect: MemoryEntry[] = [];
-    const others: MemoryEntry[] = [];
-    for (const entry of snap.entries) {
-      if (entry.source === 'reflect') {
-        reflect.push(entry);
-      } else {
-        others.push(entry);
-      }
-    }
-    if (reflect.length > 0) {
-      for (const entry of reflect) {
-        reflectEntries.push({ category: snap.category, entry });
-      }
-    }
-    if (others.length > 0) {
-      otherSnapshots.push({ category: snap.category, entries: others });
-    }
-  }
-
-  const hasAnyMemory = reflectEntries.length > 0 || otherSnapshots.length > 0;
-
-  const memoryBlock = !hasAnyMemory
-    ? '(memory empty — fresh agent)'
-    : otherSnapshots.length === 0
-      ? '(no non-reflect memory yet — only diagnostic reflections present)'
-      : otherSnapshots
-          .map((snap) => {
-            const titles = snap.entries.map((e) => `  - ${e.title}`).join('\n');
-            return `### ${snap.category} (${snap.entries.length})\n${titles}`;
-          })
-          .join('\n\n');
-
-  const reflectionBlock =
-    reflectEntries.length === 0
-      ? '(no reflection entries — skip this section)'
-      : reflectEntries
-          .map(({ category, entry }) => {
-            const rel = entry.relatedWaypointId ? ` _(from ${entry.relatedWaypointId})_` : '';
-            const tags =
-              entry.tags && entry.tags.length > 0 ? ` _[${entry.tags.join(', ')}]_` : '';
-            return `### [${category}] ${entry.title}${rel}${tags}\n\n${entry.body}`;
-          })
-          .join('\n\n---\n\n');
-
-  return `<recent>
-${recent}
-</recent>
-
-<memory>
-${memoryBlock}
-</memory>
-
-<reflection>
-${reflectionBlock}
-</reflection>
-
-Reflect. Surface what wants to be done next. Return JSON.`;
 }
 
 /**
