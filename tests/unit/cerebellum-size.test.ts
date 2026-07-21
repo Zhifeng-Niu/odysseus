@@ -65,13 +65,23 @@ const FILE_CAPS: readonly FileCap[] = [
   },
   {
     filename: 'backlog.ts',
-    lineCap: 410,
+    lineCap: 390,
     rationale:
-      'Iteration 39 extracted registries to backlog-registries.ts: ' +
-      '505 → 403. Cap at 410 to lock progress. Next extraction target: ' +
-      'retry-counter block (~45 lines, hashGoalDescription + getRetryCount + ' +
-      'incrementRetryCounter + isRetryExhausted) — pure in-memory state, ' +
-      'fits naturally alongside seedAttempts.ts.',
+      'Iteration 45 extracted retry-counter block to retry-counter.ts: ' +
+      '403 → 378. Cap at 390 — locks progress, leaves headroom for small ' +
+      'fixes. Next extraction target: enqueueBacklog has grown to ~110 ' +
+      'lines with three pre-flight checks (isSeedExhausted, ' +
+      'isRetryExhausted, isCompleted) + dedup + the enqueue audit trail. ' +
+      'That block is the natural unit for a backlog-enqueue.ts split.',
+  },
+  {
+    filename: 'retry-counter.ts',
+    lineCap: 90,
+    rationale:
+      'Iteration 45 — pure in-memory registry, mirrors seedAttempts.ts ' +
+      'shape exactly. Current 67 lines. Cap at 90 — should stay flat. ' +
+      'Growth means the registry is absorbing backlog-API logic that ' +
+      'belongs in backlog.ts.',
   },
   {
     filename: 'backlog-registries.ts',

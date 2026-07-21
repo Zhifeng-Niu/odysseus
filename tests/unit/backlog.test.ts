@@ -505,3 +505,50 @@ describe('Iteration 24 — counter drift on save failure (outbox ordering)', () 
     expect(getSeedAttemptCount('queued')).toBe(0);
   });
 });
+
+describe('retry-counter extraction (Iteration 45)', () => {
+  // Iteration 45 extracted the retry-counter block from backlog.ts to
+  // retry-counter.ts (mirrors seedAttempts.ts). These tests pin the
+  // extraction so a future refactor cannot silently re-inline it.
+
+  test('retry-counter symbols live in retry-counter.ts', async () => {
+    const src = await readFile(
+      'src/cerebellum/retry-counter.ts',
+      'utf8',
+    );
+    expect(src).toContain('export const MAX_RETRY_ATTEMPTS');
+    expect(src).toContain('export function getRetryCount');
+    expect(src).toContain('export function incrementRetryCounter');
+    expect(src).toContain('export function isRetryExhausted');
+    expect(src).toContain('export function clearRetryCounters');
+    expect(src).toContain('export function hashGoalDescription');
+  });
+
+  test('backlog.ts re-exports the extracted symbols for backwards compat', async () => {
+    // Tests and any other callers still import from backlog.ts. The
+    // re-export pattern is the same as planner.ts → planner-policy.ts
+    // (Iter 42) and curiosity.ts → curiosity-prompt.ts (Iter 44).
+    const src = await readFile('src/cerebellum/backlog.ts', 'utf8');
+    expect(src).toContain(
+      "MAX_RETRY_ATTEMPTS,\n  getRetryCount,\n  incrementRetryCounter,\n  isRetryExhausted,\n  clearRetryCounters,\n} from './retry-counter.js';",
+    );
+  });
+
+  test('retry-counter hash matches seedAttempts hash (parallel registries)', async () => {
+    // retry-counter.ts:hashGoalDescription and seedAttempts.ts:hashGoal
+    // MUST agree on the hashing algorithm. If they drift, a goal can be
+    // blocked on one counter but not the other, defeating the
+    // complementary-counter design.
+    const retrySrc = await readFile(
+      'src/cerebellum/retry-counter.ts',
+      'utf8',
+    );
+    const seedSrc = await readFile(
+      'src/cerebellum/seedAttempts.ts',
+      'utf8',
+    );
+    const expected = `.toLowerCase()\n    .replace(/[^a-z0-9]/g, '')\n    .trim();`;
+    expect(retrySrc).toContain(expected);
+    expect(seedSrc).toContain(expected);
+  });
+});
