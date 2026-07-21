@@ -1,0 +1,217 @@
+{
+  "main": {
+    "id": "af89ff6d0de0598d",
+    "type": "split",
+    "children": [
+      {
+        "id": "295a3235442d912f",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "78bf0e726c70728b",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "01-physics-foundations/cmos-and-fabrication.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "cmos-and-fabrication"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "46cfa057919f78e0",
+    "type": "split",
+    "children": [
+      {
+        "id": "ad3368667f7f78d0",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "aa82f07f3db53c8d",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "文件列表"
+            }
+          },
+          {
+            "id": "30dcddc664eebe52",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "搜索"
+            }
+          },
+          {
+            "id": "cacdb0f7ea9512b7",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "书签"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "aa5ba59cdb5eed14",
+    "type": "split",
+    "children": [
+      {
+        "id": "568ec503bcfce5ab",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "92311a6f71adbe76",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "01-physics-foundations/cmos-and-fabrication.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "cmos-and-fabrication 的反向链接列表"
+            }
+          },
+          {
+            "id": "51a11773a45aabe5",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "01-physics-foundations/cmos-and-fabrication.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "cmos-and-fabrication 的出链列表"
+            }
+          },
+          {
+            "id": "762e38d73a0920ca",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "标签"
+            }
+          },
+          {
+            "id": "f2f72a7395b87c21",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "添加笔记属性"
+            }
+          },
+          {
+            "id": "70d8716ab13d4226",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "01-physics-foundations/cmos-and-fabrication.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "cmos-and-fabrication 的大纲"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:打开快速切换": false,
+      "graph:查看关系图谱": false,
+      "canvas:新建白板": false,
+      "daily-notes:打开/创建今天的日记": false,
+      "templates:插入模板": false,
+      "command-palette:打开命令面板": false,
+      "bases:新建数据库": false
+    }
+  },
+  "active": "78bf0e726c70728b",
+  "lastOpenFiles": [
+    "00-overview/learning-roadmap.md",
+    "SYNTHESIS.md",
+    "09-paradigm-shift/embodied-ai.md",
+    "09-paradigm-shift/neuro-symbolic.md",
+    "09-paradigm-shift/pearl-causal.md",
+    "09-paradigm-shift/friston-active-inference.md",
+    "09-paradigm-shift/schmidhuber-compression.md",
+    "09-paradigm-shift/lecun-jepa.md",
+    "09-paradigm-shift/README.md",
+    "08-current-paradigm/emergence.md",
+    "08-current-paradigm/world-models.md",
+    "08-current-paradigm/rlhf.md",
+    "08-current-paradigm/reinforcement-learning.md",
+    "08-current-paradigm/scaling-laws.md",
+    "08-current-paradigm/llm-essence.md",
+    "08-current-paradigm/README.md",
+    "07-ai-history/transformer-architecture.md",
+    "07-ai-history/deep-learning-winter.md",
+    "07-ai-history/backpropagation.md",
+    "07-ai-history/connectionism.md",
+    "07-ai-history/perceptron.md",
+    "07-ai-history/symbolic-ai.md",
+    "07-ai-history/README.md",
+    "06-computability-theory/kolmogorov-complexity.md",
+    "06-computability-theory/information-theory.md",
+    "06-computability-theory/godel-incompleteness.md",
+    "未命名 1.canvas",
+    "未命名.canvas"
+  ]
+}
