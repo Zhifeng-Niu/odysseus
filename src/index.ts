@@ -6,6 +6,7 @@ import { GitTool } from './tools/git.js';
 import { BashTool } from './tools/bash.js';
 import { runAgentTurn } from './agent/loop.js';
 import { CerebellumOrchestrator } from './cerebellum/orchestrator.js';
+import { shouldAutoApprove } from './cerebellum/pending-review-auto.js';
 import { startTui } from './tui/index.js';
 import { loadDotenv } from './util/dotenv.js';
 import { recordEvent } from './trace/event-log.js';
@@ -51,6 +52,14 @@ function runVoyageConsole(
   tracePath: string,
   model: string
 ): void {
+  // Unified autonomy switch — reuse shouldAutoApprove() so the voyage
+  // waypoint gate and the dreamer pending-review gate read the same
+  // ODYSSEUS_AUTO_APPROVE env var. Default ON: the agent's dreaming →
+  // backlog → wakeful waypoint loop is meant to self-iterate without
+  // per-waypoint TTY authorization. Operators who want supervised runs
+  // opt out with ODYSSEUS_AUTO_APPROVE=0, which simultaneously gates
+  // dreamer auto-approve AND voyage waypoint auto-approve.
+  const autoApprove = shouldAutoApprove();
   const orch = new CerebellumOrchestrator({
     cwd,
     provider,
@@ -58,7 +67,7 @@ function runVoyageConsole(
     tracePath,
     // Iteration 20 — progress gate first (cheapest, blocks empty commits).
     verifyLayers: ['progress', 'syntax', 'tests'],
-    // autoApprove defaults to false in TTY contexts — see orchestrator.ts.
+    autoApprove,
   });
 
   // Append-only event recorder — used for development retrospective.

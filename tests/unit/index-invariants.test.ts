@@ -10,7 +10,8 @@ import { readFile } from 'node:fs/promises';
 // Invariants pinned here (source-level only — running main() has irreversible
 // side effects: process.exit, file writes, network):
 //
-//   - 12 imports from specific local modules + node:path
+//   - 13 imports from specific local modules + node:path
+//     (shouldAutoApprove added to unify voyage/dreamer auto-approve gates)
 //   - 5 tools registered in a fixed order: FileRead, FileWrite, FileEdit,
 //     Git, Bash
 //   - Verify layers in BOTH paths are ['progress', 'syntax', 'tests']
@@ -28,10 +29,10 @@ import { readFile } from 'node:fs/promises';
 const SRC_PATH = 'src/index.ts';
 
 describe('index — module shape', () => {
-  test('has 12 import statements', async () => {
+  test('has 13 import statements', async () => {
     const src = await readFile(SRC_PATH, 'utf8');
     const imports = src.match(/^import\s/mg) ?? [];
-    expect(imports.length).toBe(12);
+    expect(imports.length).toBe(13);
   });
 
   test('imports from expected local modules', async () => {
@@ -44,10 +45,16 @@ describe('index — module shape', () => {
     expect(src).toMatch(/from\s+'\.\/tools\/bash\.js'/);
     expect(src).toMatch(/from\s+'\.\/agent\/loop\.js'/);
     expect(src).toMatch(/from\s+'\.\/cerebellum\/orchestrator\.js'/);
+    expect(src).toMatch(/from\s+'\.\/cerebellum\/pending-review-auto\.js'/);
     expect(src).toMatch(/from\s+'\.\/tui\/index\.js'/);
     expect(src).toMatch(/from\s+'\.\/util\/dotenv\.js'/);
     expect(src).toMatch(/from\s+'\.\/trace\/event-log\.js'/);
     expect(src).toMatch(/from\s+'node:path'/);
+  });
+
+  test('imports shouldAutoApprove from pending-review-auto', async () => {
+    const src = await readFile(SRC_PATH, 'utf8');
+    expect(src).toMatch(/import\s+\{\s*shouldAutoApprove\s*\}\s+from\s+'\.\/cerebellum\/pending-review-auto\.js'/);
   });
 
   test('all local imports use .js ESM extension', async () => {
@@ -168,6 +175,47 @@ describe('index — verify layers order', () => {
     expect(firstProgress).toBeGreaterThan(-1);
     expect(firstProgress).toBeLessThan(firstSyntax);
     expect(firstSyntax).toBeLessThan(firstTests);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Voyage console autonomy — unified with dreamer gate
+// ---------------------------------------------------------------------------
+
+describe('index — voyage console autoApprove unification', () => {
+  test('runVoyageConsole computes autoApprove from shouldAutoApprove()', async () => {
+    const src = await readFile(SRC_PATH, 'utf8');
+    expect(src).toMatch(/const\s+autoApprove\s*=\s*shouldAutoApprove\(\)/);
+  });
+
+  test('passes autoApprove to CerebellumOrchestrator config', async () => {
+    const src = await readFile(SRC_PATH, 'utf8');
+    expect(src).toMatch(/autoApprove,/);
+  });
+
+  test('does NOT rely on the orchestrator default (TTY=false) for voyage console', async () => {
+    // The orchestrator default is `autoApprove = !isTTY`. By overriding
+    // explicitly here, the voyage console bypasses the TTY-based gate so
+    // dreaming → backlog → wakeful waypoint iteration is autonomous by
+    // default. ODYSSEUS_AUTO_APPROVE=0 re-enables supervised mode.
+    const src = await readFile(SRC_PATH, 'utf8');
+    // The autoApprove field MUST appear in the config literal passed to
+    // CerebellumOrchestrator inside runVoyageConsole.
+    const voyageBlock = src.match(/function\s+runVoyageConsole\s*\([\s\S]*?startTui/);
+    expect(voyageBlock).not.toBeNull();
+    expect(voyageBlock![0]).toMatch(/shouldAutoApprove/);
+    expect(voyageBlock![0]).toMatch(/autoApprove,/);
+  });
+
+  test('document references ODYSSEUS_AUTO_APPROVE as the unified switch', async () => {
+    const src = await readFile(SRC_PATH, 'utf8');
+    expect(src).toMatch(/ODYSSEUS_AUTO_APPROVE/);
+  });
+
+  test('document mentions both gates (dreamer + voyage waypoint) read same switch', async () => {
+    const src = await readFile(SRC_PATH, 'utf8');
+    expect(src).toMatch(/dreamer/);
+    expect(src).toMatch(/voyage waypoint/);
   });
 });
 
