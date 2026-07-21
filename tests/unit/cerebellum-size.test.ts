@@ -276,6 +276,94 @@ const FILE_CAPS: readonly FileCap[] = [
       'without forcing a split. Growth beyond 160 means the parser is ' +
       'absorbing storage logic that belongs in memory.ts.',
   },
+  {
+    filename: 'voyage-log.ts',
+    lineCap: 220,
+    rationale:
+      'Iteration 54 — voyage summary aggregator + markdown formatter. ' +
+      'Current 203 lines. Cap at 220 — leaves a small headroom for ' +
+      'summarize() field additions (e.g. total tokens consumed per ' +
+      'voyage). Growth beyond 220 means it is absorbing prompt-building ' +
+      'logic that belongs in strategy-prompt.ts; in that case extract ' +
+      'formatVoyageSummariesMarkdown + truncate to a voyage-log-format.ts ' +
+      'sibling (mirrors memory-parse split, Iter 53).',
+  },
+  {
+    filename: 'commit-audit.ts',
+    lineCap: 210,
+    rationale:
+      'Iteration 54 — empty-commit detector module. Current 193 lines. ' +
+      'Cap at 210 — the module has one concern (parse `git log --shortstat` ' +
+      'for empty waypoint-success commits). Growth beyond 210 means a ' +
+      'second audit dimension (e.g. detecting commits that touch only ' +
+      'comments) is being added; in that case split the new audit into ' +
+      'commit-audit-<dimension>.ts so each detector stays independent.',
+  },
+  {
+    filename: 'exploration-log.ts',
+    lineCap: 260,
+    rationale:
+      'Iteration 54 — curiosity exploration log. Current 240 lines. ' +
+      'Cap at 260 — leaves headroom for format additions (e.g. rendering ' +
+      'tags alongside the proposal). Growth beyond 260 means the module ' +
+      'is absorbing curiosity-prompt logic; in that case extract ' +
+      'formatExplorationsMarkdown + formatAge + truncate to an ' +
+      'exploration-log-format.ts sibling (mirrors memory-parse split, ' +
+      'Iter 53).',
+  },
+  {
+    filename: 'verify.ts',
+    lineCap: 180,
+    rationale:
+      'Iteration 54 — multi-layer verify gate. Current 147 lines. Cap at ' +
+      '180 — leaves room for one more verify layer (lint, metric). Each ' +
+      'layer is ~15-25 lines including its comment block. Growth beyond ' +
+      '180 means a fourth layer (e.g. coverage threshold) is being ' +
+      'added; in that case split layers into verify-<name>.ts files and ' +
+      'keep verify.ts as the dispatcher only.',
+  },
+  {
+    filename: 'repeated-tool-call-detector.ts',
+    lineCap: 130,
+    rationale:
+      'Iteration 54 — sliding-window loop detector class. Current 102 ' +
+      'lines. Cap at 130 — small headroom for detector refinements ' +
+      '(e.g. signature normalization to ignore trivially-differing ' +
+      'args). Growth beyond 130 means the class is absorbing recovery ' +
+      'policy that belongs in the orchestrator or a sibling module.',
+  },
+  {
+    filename: 'goal-validator.ts',
+    lineCap: 150,
+    rationale:
+      'Iteration 54 — pre-dispatch conversational-goal filter. Current ' +
+      '111 lines. Cap at 150 — leaves headroom for additional language ' +
+      'patterns (e.g. Japanese, Korean) without forcing a split. Growth ' +
+      'beyond 150 means action-verb or conversational regex sets are ' +
+      'ballooning; in that case extract the regex tables to a ' +
+      'goal-validator-patterns.ts sibling (mirrors self-monitor-patterns, ' +
+      'Iter 48).',
+  },
+  {
+    filename: 'brain-state.ts',
+    lineCap: 120,
+    rationale:
+      'Iteration 54 — brain-state machine (declarative type + transition ' +
+      'table + 3 constants). Current 89 lines. Cap at 120 — small ' +
+      'headroom for a new state (e.g. `learning` — documented in the ' +
+      'module as a future addition). Growth beyond 120 means the file ' +
+      'is absorbing transition logic that belongs in the orchestrator.',
+  },
+  {
+    filename: 'waypoint.ts',
+    lineCap: 130,
+    rationale:
+      'Iteration 54 — Waypoint type + status transition factories. ' +
+      'Current 93 lines. Cap at 130 — leaves headroom for additional ' +
+      'factory functions (e.g. markInterrupted) without forcing a ' +
+      'split. Growth beyond 130 means status logic is being inlined ' +
+      'instead of expressed as small factories.',
+  },
 ];
 
 describe('cerebellum source file size caps', () => {
