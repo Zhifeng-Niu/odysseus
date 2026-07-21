@@ -2,13 +2,6 @@
   "version": 1,
   "items": [
     {
-      "id": "bl_40b6c4c478b0",
-      "goal": "Add goal deduplication check in src/cerebellum/backlog.ts using Levenshtein distance or similar fuzzy matching against recently completed and in-progress waypoints before seeding",
-      "origin": "dream",
-      "priority": 40,
-      "createdAt": "2026-07-21T05:15:20.897Z"
-    },
-    {
       "id": "bl_d8024a0ed1d8",
       "goal": "Reconcile contradictory memory entries about retry limiter status by checking src/cerebellum/backlog.ts for actual retry counter implementation and updating memory accordingly",
       "origin": "dream",
