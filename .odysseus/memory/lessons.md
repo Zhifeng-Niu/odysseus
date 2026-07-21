@@ -28,6 +28,8 @@ Failed recovery goals were over-specified ('inject a context message before hard
 
 StuckLoopError catch block and retry counter shipped without tests because the test-writing goals failed or were deprioritized. Recovery code is where bugs hurt most — co-ship tests or follow immediately.
 
+**[RESOLVED 2026-07-21]** Retry counter test debt is paid. The counter was extracted to `src/cerebellum/retry-counter.ts` (Iteration 45) and now has comprehensive coverage: `tests/unit/retry-counter.test.ts` (33 tests, Iteration 57) + `tests/unit/retry-counter-invariants.test.ts` (structural invariants). The ship-then-test lesson remains valid; the specific debt it tracked no longer exists.
+
 ## [2026-07-19T14:14:34.539Z] One test case per goal for test-file creation
 - **id**: mem_ba8f2b3581
 - **source**: dream
@@ -39,6 +41,8 @@ Test creation goals covering multiple scenarios (substring + case + empty) consi
 - **source**: dream
 
 The retry counter in backlog.ts prevents infinite re-seeding but shipped without tests. If this code silently breaks, the system re-enters the exact failure loop it was designed to stop. Guard rails deserve guard rails.
+
+**[RESOLVED 2026-07-21]** Retry counter now lives in `src/cerebellum/retry-counter.ts` (Iteration 45 extraction) with full coverage: `tests/unit/retry-counter.test.ts` (33 tests) + `tests/unit/retry-counter-invariants.test.ts`. The lesson (guard rails need guard rails) remains valid; the specific untested-counter debt it tracked is paid.
 
 ## [2026-07-19T14:34:53.401Z] Hint injection simpler than error propagation for tool loops
 - **id**: mem_cd28597609
@@ -57,3 +61,5 @@ Recent sprints show tests being added immediately after recovery features ship. 
 - **source**: dream
 
 Early termination, retry limiters, and dedup checks all shipped without tests because they were urgent fixes. Each untested loop-prevention mechanism is a latent infinite-loop risk. Test-follows-ship priority should be highest for code that prevents runaway loops.
+
+**[RESOLVED 2026-07-21]** Retry limiter test debt is paid — `src/cerebellum/retry-counter.ts` (Iteration 45) has `tests/unit/retry-counter.test.ts` (33 tests, Iteration 57) + `tests/unit/retry-counter-invariants.test.ts`. The lesson (test debt accumulates on loop-prevention code) remains valid as a general principle; the specific retry-limiter instance it tracked no longer exists.
