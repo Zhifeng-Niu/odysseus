@@ -203,6 +203,30 @@ const FILE_CAPS: readonly FileCap[] = [
       '— first-match-wins reflects which signal is most actionable when ' +
       'multiple overlap; see the docstring for the priority sequence.',
   },
+  {
+    filename: 'pending-review.ts',
+    lineCap: 260,
+    rationale:
+      'Iteration 50 extracted auto-approve (shouldAutoApprove + ' +
+      'autoApproveAllPendingReview) to pending-review-auto.ts: ' +
+      '294 → 242. Cap at 260 — locks progress. File is now the manual ' +
+      'CRUD API (enqueue/list/approve/reject) + storage primitives ' +
+      '(loadFile/saveFile) shared with pending-review-auto.ts. Further ' +
+      'reduction would require extracting the approval path (which uses ' +
+      'enqueueBacklog + the listSkippedEnqueues side-channel) to a ' +
+      'pending-review-approve.ts sibling, but the approval path is the ' +
+      'core API surface and should stay visible here.',
+  },
+  {
+    filename: 'pending-review-auto.ts',
+    lineCap: 100,
+    rationale:
+      'Iteration 50 — autonomous-mode policy module. Current 81 lines. ' +
+      'Cap at 100 — leaves headroom for one or two more env-driven ' +
+      'toggles (e.g. per-origin auto-approve overrides) without forcing ' +
+      'a split. Growth beyond 100 means the policy is absorbing approval ' +
+      'mechanism code that belongs in pending-review.ts.',
+  },
 ];
 
 describe('cerebellum source file size caps', () => {

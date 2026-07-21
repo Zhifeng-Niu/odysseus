@@ -430,3 +430,57 @@ describe('pending-review — autoApproveAllPendingReview', () => {
     expect(skips.some((s) => s.goal === 'done goal' && s.reason === 'already-completed')).toBe(true);
   });
 });
+
+describe('auto-approve extraction (Iteration 50)', () => {
+  // Iteration 50 moved shouldAutoApprove + autoApproveAllPendingReview from
+  // pending-review.ts to pending-review-auto.ts (mirrors Iter 42
+  // planner-policy, Iter 44 curiosity-prompt, Iter 45 retry-counter, Iter 47
+  // dreamer-prompt, Iter 48 self-monitor-patterns, Iter 49 backlog-enqueue).
+  // These tests pin the extraction so a future refactor cannot silently
+  // re-inline the code.
+
+  test('auto-approve symbols live in pending-review-auto.ts', async () => {
+    const autoSrc = await readFile(
+      'src/cerebellum/pending-review-auto.ts',
+      'utf8',
+    );
+    const reviewSrc = await readFile(
+      'src/cerebellum/pending-review.ts',
+      'utf8',
+    );
+    expect(autoSrc).toContain('export function shouldAutoApprove');
+    expect(autoSrc).toContain(
+      'export async function autoApproveAllPendingReview',
+    );
+    // Must NOT be re-defined in pending-review.ts.
+    expect(reviewSrc).not.toContain('function shouldAutoApprove');
+    expect(reviewSrc).not.toContain(
+      'async function autoApproveAllPendingReview',
+    );
+  });
+
+  test('pending-review.ts shares storage primitives with pending-review-auto.ts', async () => {
+    // The shared storage primitives (loadFile, saveFile) must be exported
+    // from pending-review.ts so pending-review-auto.ts can consume them.
+    const reviewSrc = await readFile(
+      'src/cerebellum/pending-review.ts',
+      'utf8',
+    );
+    expect(reviewSrc).toContain('export async function loadFile');
+    expect(reviewSrc).toContain('export async function saveFile');
+  });
+
+  test('pending-review.ts re-exports auto-approve symbols for backwards compat', async () => {
+    // dreamer, orchestrator, and these tests all import
+    // shouldAutoApprove + autoApproveAllPendingReview from pending-review.
+    // The re-export pattern mirrors Iter 48 self-monitor-patterns and
+    // Iter 49 backlog-enqueue.
+    const reviewSrc = await readFile(
+      'src/cerebellum/pending-review.ts',
+      'utf8',
+    );
+    expect(reviewSrc).toContain(
+      "shouldAutoApprove,\n  autoApproveAllPendingReview,\n} from './pending-review-auto.js';",
+    );
+  });
+});

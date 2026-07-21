@@ -56,7 +56,8 @@ function generatePendingId(): string {
   return `pr_${randomBytes(6).toString('hex')}`;
 }
 
-async function loadFile(rootDir: string): Promise<PendingReviewFile> {
+/** Shared with pending-review-auto.ts (Iteration 50 extraction). */
+export async function loadFile(rootDir: string): Promise<PendingReviewFile> {
   let raw: string;
   try {
     raw = await readFile(pendingPath(rootDir), 'utf8');
@@ -74,7 +75,8 @@ async function loadFile(rootDir: string): Promise<PendingReviewFile> {
   }
 }
 
-async function saveFile(rootDir: string, file: PendingReviewFile): Promise<void> {
+/** Shared with pending-review-auto.ts (Iteration 50 extraction). */
+export async function saveFile(rootDir: string, file: PendingReviewFile): Promise<void> {
   const finalPath = pendingPath(rootDir);
   const tmpPath = `${finalPath}.tmp`;
   await mkdir(dirname(finalPath), { recursive: true });
@@ -230,65 +232,11 @@ export async function rejectPendingReview(rootDir: string, id: string): Promise<
   return true;
 }
 
-// ---------------------------------------------------------------------------
-// Auto-approve — dreamer can bypass the user-consent gate.
-//
-// `ODYSSEUS_AUTO_APPROVE` (default truthy) routes dreamer proposals directly
-// into the backlog instead of leaving them in pending-review.json. Default
-// ON because the operator opted into autonomous mode; opt OUT with `=0` for
-// supervised runs or demos. pending-review.json is still written for audit
-// before auto-approve runs, so operators can grep historical dreamer output.
-// ---------------------------------------------------------------------------
-
-/**
- * Returns true when dreamer output should bypass pending-review and go
- * straight to the backlog. Defaults to true (autonomous mode) when the env
- * var is absent — operators must explicitly opt OUT with `=0`.
- */
-export function shouldAutoApprove(): boolean {
-  const v = process.env.ODYSSEUS_AUTO_APPROVE;
-  if (v === undefined || v === '') return true;
-  return v !== '0' && v !== 'false' && v !== 'no';
-}
-
-/**
- * Move every pending proposal into the backlog in one pass. Called by the
- * dreamer when `shouldAutoApprove()` is true. Items that fail to enqueue
- * (validation errors OR dedup-filtered phantom returns) are left in
- * pending-review.json — only items that truly landed in backlog.json are
- * removed.
- */
-export async function autoApproveAllPendingReview(
-  rootDir: string
-): Promise<readonly BacklogItem[]> {
-  const file = await loadFile(rootDir);
-  if (file.items.length === 0) return [];
-  const enqueued: BacklogItem[] = [];
-  const remaining: PendingItem[] = [];
-  for (const item of file.items) {
-    // Iteration 22 — enqueueBacklog's dedup paths return a phantom
-    // BacklogItem (right shape, never persisted) + call recordSkippedEnqueue.
-    // Observe that side channel: if it grew across the call, the enqueue
-    // was filtered — keep the item in pending so the dreamer's proposal
-    // stays visible to the operator.
-    const skippedBefore = listSkippedEnqueues().length;
-    try {
-      const result = await enqueueBacklog(rootDir, item.goal, item.origin, {
-        priority: item.priority,
-        ...(item.sourceWaypointId !== undefined
-          ? { sourceWaypointId: item.sourceWaypointId }
-          : {}),
-      });
-      const skippedAfter = listSkippedEnqueues().length;
-      if (skippedAfter > skippedBefore) {
-        remaining.push(item);
-        continue;
-      }
-      enqueued.push(result);
-    } catch {
-      remaining.push(item);
-    }
-  }
-  await saveFile(rootDir, { version: 1, items: remaining });
-  return enqueued;
-}
+// Re-export moved symbols (Iteration 50 extraction) so existing importers
+// (dreamer, orchestrator, tests) do not need to know about the internal
+// split. Same pattern as backlog.ts re-exporting backlog-enqueue.js (Iter
+// 49) and self-monitor.ts re-exporting self-monitor-patterns.js (Iter 48).
+export {
+  shouldAutoApprove,
+  autoApproveAllPendingReview,
+} from './pending-review-auto.js';
