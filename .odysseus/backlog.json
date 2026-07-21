@@ -16,13 +16,6 @@
       "createdAt": "2026-07-21T05:15:20.898Z"
     },
     {
-      "id": "bl_a21e672b892a",
-      "goal": "Create src/cerebellum/dream-gate.ts exporting shouldDream(workWaypointCounter: number, threshold: number, hasSideEffects: boolean): boolean — returns true only when hasSideEffects AND counter >= threshold; add unit tests in tests/unit/dream-gate.test.ts",
-      "origin": "curiosity",
-      "priority": 30,
-      "createdAt": "2026-07-21T05:15:20.898Z"
-    },
-    {
       "id": "bl_a53de5b79f97",
       "goal": "Create src/cerebellum/exploration-feedback.ts exporting analyzeExplorationOutcomes(entries: ExplorationEntry[]): { aspiration: string, action: 'demote' | 'close' | 'continue' }[] — demote if last 3 attempts all failed, close if any succeeded; add tests in tests/unit/exploration-feedback.test.ts",
       "origin": "curiosity",
