@@ -106,3 +106,9 @@ Aspirations 1 and 3 can be advanced by extracting pure decision functions into n
 
 Each aspiration has a testable pure-function layer (dream-gate, exploration-feedback), a state-persistence layer (voyage-state), and a wiring layer (orchestrator.ts — safety-perimeter-gated). Ship pure functions first, then state, then propose wiring for human review. This keeps curiosity productive even when the final integration point is off-limits.
 
+## [2026-07-21T06:33:57.809Z] Abandoned-by-conversational-done is retryable
+- **id**: mem_6193319cff
+- **source**: dream
+
+When a waypoint is abandoned because the agent emitted `[CONVERSATIONAL-DONE]` (not a technical failure), the goal itself was sound — it just never executed. These are clean retries, not re-attempts of failed work. Distinguish from `failure` outcomes where the code ran but didn't converge.
+

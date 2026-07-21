@@ -10,3 +10,9 @@ When an aspiration's natural home is orchestrator.ts (safety perimeter), the sma
 
 When dream-gate.ts shipped, the natural next step was voyage-state.ts (the counter it reads), not jumping to an unrelated aspiration. Following the dependency chain within one aspiration builds momentum and produces coherent subsystems rather than scattered modules.
 
+## [2026-07-21T06:33:57.810Z] Wire shipped pure functions immediately after state layer
+- **id**: mem_619332e688
+- **source**: dream
+
+When a pure-function exploration ships (e.g. dream-gate.ts, exploration-feedback.ts), the highest-value next exploration is either the state layer (voyage-state.ts) or the wiring call in the consuming module. This follows the pure-function → state → wiring decomposition and prevents created-but-unwired invisible failures.
+
