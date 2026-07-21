@@ -139,6 +139,32 @@ const FILE_CAPS: readonly FileCap[] = [
       'case split the prompt into a prompts.ts entry first.',
   },
   {
+    filename: 'strategy.ts',
+    lineCap: 160,
+    rationale:
+      'Iteration 51 extracted the prompt-builder block (loadSelfModel, ' +
+      'loadLongTermMemoryMarkdown, loadVoyageLogMarkdown, ' +
+      'buildEngineerSystemPrompt, INJECTED_MEMORY_CATEGORIES) to ' +
+      'strategy-prompt.ts: 271 → 137. Cap at 160 — locks progress. File ' +
+      'is now strategy definitions + selection (StrategyDefinition, ' +
+      'ENGINEER_STRATEGY, selectStrategy, setStrategyCwd) + the ' +
+      'conversational-done detector. Further reduction would require ' +
+      'extracting detectConversationalDone to its own module, but that ' +
+      'logic is tightly coupled to CONVERSATIONAL_DONE_MARKER which is ' +
+      'defined here and consumed by the orchestrator alongside selectStrategy.',
+  },
+  {
+    filename: 'strategy-prompt.ts',
+    lineCap: 180,
+    rationale:
+      'Iteration 51 — pure prompt-builder module. Current 150 lines. ' +
+      'Cap at 180 — leaves headroom for one more memory category ' +
+      '(e.g. injecting aspirations at prompt-build time) or a new ' +
+      'context layer (e.g. recent-commands) without forcing a split. ' +
+      'Growth beyond 180 means the prompt builder is absorbing strategy ' +
+      'selection logic that belongs in strategy.ts.',
+  },
+  {
     filename: 'planner-policy.ts',
     lineCap: 120,
     rationale:

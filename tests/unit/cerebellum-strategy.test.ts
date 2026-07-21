@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -398,5 +398,64 @@ describe('ENGINEER_STRATEGY.systemPrompt long-term memory injection', () => {
     expect(ltmIdx).toBeGreaterThan(selfModelIdx);
     expect(voyageLogIdx).toBeGreaterThan(ltmIdx);
     expect(engineerIdx).toBeGreaterThan(voyageLogIdx);
+  });
+});
+
+describe('strategy-prompt extraction (Iteration 51)', () => {
+  // Iteration 51 moved the prompt-builder block (loadSelfModel,
+  // loadLongTermMemoryMarkdown, loadVoyageLogMarkdown,
+  // buildEngineerSystemPrompt, INJECTED_MEMORY_CATEGORIES) from
+  // strategy.ts to strategy-prompt.ts (mirrors Iter 42 planner-policy,
+  // Iter 44 curiosity-prompt, Iter 47 dreamer-prompt, Iter 48
+  // self-monitor-patterns, Iter 49 backlog-enqueue, Iter 50
+  // pending-review-auto). These tests pin the extraction so a future
+  // refactor cannot silently re-inline the code.
+
+  test('prompt-builder symbols live in strategy-prompt.ts', async () => {
+    const promptSrc = await readFile(
+      'src/cerebellum/strategy-prompt.ts',
+      'utf8',
+    );
+    const strategySrc = await readFile(
+      'src/cerebellum/strategy.ts',
+      'utf8',
+    );
+    expect(promptSrc).toContain('export function loadSelfModel');
+    expect(promptSrc).toContain(
+      'export function loadLongTermMemoryMarkdown',
+    );
+    expect(promptSrc).toContain(
+      'export function buildEngineerSystemPrompt',
+    );
+    // Must NOT be re-defined in strategy.ts.
+    expect(strategySrc).not.toContain('function loadSelfModel');
+    expect(strategySrc).not.toContain(
+      'function loadLongTermMemoryMarkdown',
+    );
+    expect(strategySrc).not.toContain(
+      'function buildEngineerSystemPrompt',
+    );
+  });
+
+  test('strategy.ts imports buildEngineerSystemPrompt (not re-defines it)', async () => {
+    const strategySrc = await readFile(
+      'src/cerebellum/strategy.ts',
+      'utf8',
+    );
+    expect(strategySrc).toContain("from './strategy-prompt.js'");
+  });
+
+  test('strategy.ts re-exports the extracted symbols for backwards compat', async () => {
+    // cerebellum-strategy.test.ts imports loadSelfModel,
+    // loadLongTermMemoryMarkdown from strategy.ts. The re-export pattern
+    // mirrors Iter 42 planner-policy, Iter 44 curiosity-prompt, Iter 47
+    // dreamer-prompt.
+    const strategySrc = await readFile(
+      'src/cerebellum/strategy.ts',
+      'utf8',
+    );
+    expect(strategySrc).toContain(
+      "loadSelfModel,\n  loadLongTermMemoryMarkdown,\n  buildEngineerSystemPrompt,\n} from './strategy-prompt.js';",
+    );
   });
 });
