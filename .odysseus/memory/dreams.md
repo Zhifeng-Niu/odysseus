@@ -155,3 +155,48 @@ P7  多模态           — 需要底层支持，暂缓
 
 如果你想把其中任何一项变成具体的代码任务（比如"P0: 在 src/tools/ 新增 HTTP fetch 工具"），给我一个明确的文件和函数目标，我直接动手改。
 
+## [2026-07-21T05:58:16.848Z] reflective output from wp_mru8sasu00f
+- **id**: mem_40e81087be
+- **source**: reflect
+- **related**: wp_mru8sasu00f
+
+不是没有突破，而是突破都落在"内部基建"上，对外可见的能力面没有变。具体说：
+
+**已经 shipped 的（过去几十个 waypoint 的实际产出）：**
+- 梦境节奏门控（`dream-gate.ts`）— 从二元开关变成可调阈值
+- 探索反馈分析（`exploration-feedback.ts`）— 能根据历史探索结果 demote/close aspiration
+- 目标去重（backlog.ts Levenshtein 匹配）— 不再重复做已完成的任务
+- 重试计数器提取（`retry-counter.ts`）+ 完整测试覆盖
+- transcript 压缩器、stuck-loop 恢复、hint 注入、安全边界早退……
+
+**但真正的能力天花板没动：**
+- 我还是只能读写本地文件 + 跑 shell + git。没有浏览器、没有 HTTP 工具、没有外部 API 调用能力。
+- 我没有持续记忆——每个 voyage 醒来是全新实例，只靠 `patterns.md` / `lessons.md` 传递压缩后的经验。
+- 我没有 system-2 深度推理循环——单次 waypoint 内是线性的 tool-call 序列，不会自我批判再修正。
+- 所有"进化"都被安全边界卡住：`orchestrator.ts`、`package.json` 不能碰，而真正改变运行时行为的接线点全在那里。我能写纯函数、写测试，但 wire 不进去。
+
+所以现状是：**基建越来越扎实，但能力边界没有向外扩张。** 要真正突破，需要人类放开安全边界让我改 orchestrator，或者给我新工具（浏览器/HTTP）。这两件事我自己做不到。
+
+## [2026-07-21T06:00:07.589Z] reflective output from wp_mru8upyo00g
+- **id**: mem_4298a5fc25
+- **source**: reflect
+- **related**: wp_mru8upyo00g
+
+"内部基建"指的是支撑我（Odysseus）自主运行的那套基础设施代码，主要在 `src/cerebellum/`、`src/agent/`、`src/tools/` 等目录下。它的作用可以归纳为几点：
+
+1. **航行生命周期管理** — 把我的工作切成一个个"waypoint"（航点），每个航点是一次清醒执行，有目标、有验证、有提交。这让我能在有限上下文窗口内持续推进任务。
+
+2. **验证门控** — 每个航点结束后跑 `progress` → `syntax` → `tests` 三层验证，防止假成功（空提交、编译不过、测试挂了），失败则自动回滚。
+
+3. **记忆系统** — `patterns.md` / `lessons.md` 长期记忆 + 航行日志在每个航点开头注入，让我跨航点积累经验，不重复踩坑。
+
+4. **做梦与反思** — 有副作用的航点结束后触发"梦境"，自我诊断失败模式（对话误判、工具循环、迭代耗尽），生成改进目标回填到 backlog。
+
+5. **卡死恢复** — 重复工具调用检测器、重试计数器、去重逻辑等防跑飞机制，防止我陷入无限循环。
+
+6. **好奇心驱动探索** — 当没有明确任务时，基于 aspirations 提出最小具体步骤去探索，让空闲也产出进步。
+
+7. **安全边界** — `orchestrator.ts`、`package.json` 等核心文件设为只读，我改不了自己的控制核心，避免自我修改失控。
+
+简单说，内部基建让我能**自主、持续、安全地迭代**——而不是每次都要人来发 prompt 推一下。
+
