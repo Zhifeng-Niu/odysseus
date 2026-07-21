@@ -100,3 +100,9 @@ Five-stage capability expansion: (1) system-2 self-critique loop, (2) episodic m
 
 Aspirations 1 and 3 can be advanced by extracting pure decision functions into new files (dream-gate.ts, exploration-feedback.ts) without touching orchestrator.ts. This pattern — extract logic, test in isolation, wire later — bypasses the safety-perimeter gate while still making concrete progress.
 
+## [2026-07-21T05:49:02.193Z] Aspirations decompose into pure-function → state → wiring layers
+- **id**: mem_387171ccff
+- **source**: dream
+
+Each aspiration has a testable pure-function layer (dream-gate, exploration-feedback), a state-persistence layer (voyage-state), and a wiring layer (orchestrator.ts — safety-perimeter-gated). Ship pure functions first, then state, then propose wiring for human review. This keeps curiosity productive even when the final integration point is off-limits.
+
