@@ -79,8 +79,9 @@ describe('dream-gate — module shape', () => {
 describe('dream-gate — function signature', () => {
   test('shouldDream takes 3 parameters', async () => {
     const src = await readFile(SRC_PATH, 'utf8');
+    // Params span multiple lines; use [\s\S] to cross newlines.
     expect(src).toMatch(
-      /export\s+function\s+shouldDream\s*\(\s*\w+:\s*number,\s*\w+:\s*number,\s*\w+:\s*boolean\s*\)/,
+      /export\s+function\s+shouldDream\s*\([\s\S]*?workWaypointCounter:\s*number[\s\S]*?threshold:\s*number[\s\S]*?hasSideEffects:\s*boolean[\s\S]*?\)/,
     );
   });
 
@@ -265,7 +266,8 @@ describe('dream-gate — purity', () => {
 describe('dream-gate — documentation contract', () => {
   test('module JSDoc explains the extraction rationale', async () => {
     const src = await readFile(SRC_PATH, 'utf8');
-    expect(src).toMatch(/extracts?\s+the\s+pure\s+decision\s+function/);
+    // Cross newlines (JSDoc wraps across lines with ` * ` prefixes).
+    expect(src).toMatch(/extracts?\s+the\s+pure[\s\S]*?decision\s+function/);
     expect(src).toMatch(/tested\s+in\s+isolation/);
   });
 
