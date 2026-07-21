@@ -1,5 +1,5 @@
 import type { BacklogOrigin } from '../orchestrator/events.js';
-import { isCompleted } from './completedGoals.js';
+import { isCompleted, getCompletedGoals } from './completedGoals.js';
 import { isSeedExhausted } from './seedAttempts.js';
 import { recordSkippedEnqueue } from './backlog-registries.js';
 import {
@@ -8,6 +8,7 @@ import {
   incrementRetryCounter,
   isRetryExhausted,
 } from './retry-counter.js';
+import { findFuzzyDuplicate } from './fuzzy-dedup.js';
 import {
   type BacklogItem,
   type EnqueueOptions,
@@ -24,16 +25,33 @@ import {
  * the enqueue audit trail. That block is a self-contained policy
  * module over storage primitives in backlog.ts.
  *
- * Mirrors Iter 42 (planner-policy), Iter 44 (curiosity-prompt), Iter 45
- * (retry-counter), Iter 47 (dreamer-prompt), Iter 48 (self-monitor-patterns):
- * extract a cohesive concern to a sibling file so backlog.ts shrinks
- * toward pure storage + queue ops (dequeue/peek/size/list/remove).
- *
  * The dedup gates exist to prevent the dreamer/reflection loop from
  * endlessly re-enqueueing flaky or already-done work. They are correct
  * for autonomous-origin items (dream, reflect, curiosity, system, plan).
  * User-origin items bypass them — see the comment in enqueueBacklog.
  */
+
+/**
+ * Build a phantom BacklogItem for a dedup-blocked enqueue. The item is
+ * returned to the caller but NOT written to disk. All four dedup gates
+ * share this shape.
+ */
+function phantomItem(
+  trimmedGoal: string,
+  origin: BacklogOrigin,
+  options?: EnqueueOptions
+): BacklogItem {
+  return {
+    id: options?.id ?? generateBacklogId(),
+    goal: trimmedGoal,
+    origin,
+    priority: options?.priority ?? defaultPriorityForOrigin(origin),
+    createdAt: options?.createdAt ?? new Date().toISOString(),
+    ...(options?.sourceWaypointId !== undefined
+      ? { sourceWaypointId: options.sourceWaypointId }
+      : {}),
+  };
+}
 
 export async function enqueueBacklog(
   rootDir: string,
@@ -45,77 +63,51 @@ export async function enqueueBacklog(
   if (trimmedGoal.length === 0) {
     throw new Error('backlog goal cannot be empty');
   }
-  // Iteration 18 — user-origin items bypass every dedup check.
-  //
-  // The three checks below (isSeedExhausted, isRetryExhausted, isCompleted)
-  // exist to prevent the dreamer/reflection loop from endlessly re-enqueueing
-  // flaky or already-done work. They are correct for autonomous-origin items
-  // (dream, reflect, curiosity, system, plan).
-  //
-  // But when origin === 'user', the item is an explicit, intentional request
-  // from the operator. Silently dropping it because the same string was seen
-  // before breaks the agent's most fundamental contract: when a user sends
-  // input, the agent MUST respond. Without this bypass, resending "你好" or
-  // any prior message causes enqueueBacklog to return a phantom item without
-  // writing to the file, peekBacklog returns null on the next tick, and
-  // voyage-idle fires immediately — the user sees zero response. From their
-  // perspective the agent has died.
-  //
-  // If the user re-sends the exact same goal, that is itself signal: either
-  // the prior response was unsatisfying, or they lost track of state. Either
-  // way the agent must produce another waypoint. The dedup machinery stays
-  // in place for autonomous origins.
+  // Iteration 18 — user-origin items bypass every dedup check. The dedup
+  // gates exist to prevent the dreamer/reflection loop from endlessly
+  // re-enqueueing flaky or already-done work. But when origin === 'user',
+  // the item is an explicit request from the operator. Silently dropping
+  // it because the same string was seen before breaks the agent's most
+  // fundamental contract: when a user sends input, the agent MUST respond.
   if (origin === 'user') {
     return enqueueUserOrigin(rootDir, trimmedGoal, options);
   }
 
-  // Block re-seeding when this goal has already been attempted
-  // MAX_SEED_ATTEMPTS times regardless of outcome (success/failure/abandon).
+  // Dedup gate 1: seed-exhausted (MAX_SEED_ATTEMPTS reached).
   if (isSeedExhausted(trimmedGoal)) {
     recordSkippedEnqueue(trimmedGoal, origin, 'seed-exhausted');
-    return {
-      id: options?.id ?? generateBacklogId(),
-      goal: trimmedGoal,
-      origin,
-      priority: options?.priority ?? defaultPriorityForOrigin(origin),
-      createdAt: options?.createdAt ?? new Date().toISOString(),
-      ...(options?.sourceWaypointId !== undefined
-        ? { sourceWaypointId: options.sourceWaypointId }
-        : {}),
-    };
+    return phantomItem(trimmedGoal, origin, options);
   }
-  // Block re-seeding when the per-goal retry counter (tracked in this
-  // module) has exceeded MAX_RETRY_ATTEMPTS enqueues.
+  // Dedup gate 2: retry-exhausted (per-goal retry counter exceeded).
   if (isRetryExhausted(trimmedGoal)) {
     console.warn(
       `[backlog] blocking re-seed: retry counter exhausted (${getRetryCount(trimmedGoal)}/${MAX_RETRY_ATTEMPTS}) for goal: "${trimmedGoal}"`
     );
     recordSkippedEnqueue(trimmedGoal, origin, 'retry-exhausted');
-    return {
-      id: options?.id ?? generateBacklogId(),
-      goal: trimmedGoal,
-      origin,
-      priority: options?.priority ?? defaultPriorityForOrigin(origin),
-      createdAt: options?.createdAt ?? new Date().toISOString(),
-      ...(options?.sourceWaypointId !== undefined
-        ? { sourceWaypointId: options.sourceWaypointId }
-        : {}),
-    };
+    return phantomItem(trimmedGoal, origin, options);
   }
-  // Skip enqueueing when this goal has already been recorded as completed by
-  // markCompleted — prevents the voyage loop from re-seeding done work.
+  // Dedup gate 3: already-completed (exact/substring match via
+  // completedGoals registry). Prevents re-seeding done work.
   if (isCompleted(trimmedGoal)) {
     recordSkippedEnqueue(trimmedGoal, origin, 'already-completed');
-    return {
-      id: options?.id ?? generateBacklogId(),
-      goal: trimmedGoal,
-      origin,
-      priority: options?.priority ?? defaultPriorityForOrigin(origin),
-      createdAt: options?.createdAt ?? new Date().toISOString(),
-      ...(options?.sourceWaypointId !== undefined
-        ? { sourceWaypointId: options.sourceWaypointId }
-        : {}),
-    };
+    return phantomItem(trimmedGoal, origin, options);
+  }
+  // Dedup gate 4: fuzzy-duplicate (Levenshtein ratio ≥ 0.85 against
+  // recently completed goals). Catches near-duplicates that exact/
+  // substring matching misses — e.g. "add retry logik to glm" after
+  // "add retry logic to glm" shipped. Only checks completed goals, NOT
+  // in-progress backlog items — the retry mechanism intentionally
+  // re-enqueues the same goal string, so checking against queued items
+  // would break it. Runs last because it's O(N×M×K) vs O(1)/O(N) above.
+  {
+    const existingGoals = new Set<string>();
+    for (const cg of getCompletedGoals()) {
+      existingGoals.add(cg.description);
+    }
+    if (findFuzzyDuplicate(trimmedGoal, existingGoals) !== null) {
+      recordSkippedEnqueue(trimmedGoal, origin, 'fuzzy-duplicate');
+      return phantomItem(trimmedGoal, origin, options);
+    }
   }
   const file = await loadBacklogFile(rootDir);
   const item: BacklogItem = {
@@ -137,8 +129,7 @@ export async function enqueueBacklog(
   // original code incremented before save, so a failed save (disk full,
   // permissions) would bump the counter without the item landing in the
   // queue — three such failures and isRetryExhausted would silently block
-  // all future enqueues of this goal, permanently freezing the agent on
-  // a goal that was never actually queued.
+  // all future enqueues of this goal, permanently freezing the agent.
   incrementRetryCounter(trimmedGoal);
   return item;
 }
@@ -146,15 +137,9 @@ export async function enqueueBacklog(
 /**
  * User-origin enqueue path — bypasses all dedup checks.
  *
- * See the comment at the top of `enqueueBacklog` for the rationale: the
- * dedup registry is for autonomous-loop protection, not for filtering user
- * input. This helper still increments the retry counter (so the autonomous
- * loops can observe "this goal has been seen N times" via getRetryCount)
+ * See the comment at the top of `enqueueBacklog` for the rationale. This
+ * helper still increments the retry counter (informational, not a gate)
  * but always writes to the backlog file.
- *
- * The retry counter increment is informational here, not a gate — a user
- * resending the same input 50 times should still get 50 waypoints. The
- * counter just lets other modules see the activity.
  */
 async function enqueueUserOrigin(
   rootDir: string,
@@ -177,7 +162,6 @@ async function enqueueUserOrigin(
     items: [...file.items, item],
   };
   await saveBacklogFile(rootDir, nextFile);
-  // Iteration 24 — increment after save succeeds (see enqueueBacklog fix).
   incrementRetryCounter(trimmedGoal);
   return item;
 }

@@ -29,7 +29,11 @@ import type { BacklogOrigin } from '../orchestrator/events.js';
 // ---------------------------------------------------------------------------
 
 /** Why an enqueue was skipped by the dedup checks. */
-export type SkipReason = 'seed-exhausted' | 'retry-exhausted' | 'already-completed';
+export type SkipReason =
+  | 'seed-exhausted'
+  | 'retry-exhausted'
+  | 'already-completed'
+  | 'fuzzy-duplicate';
 
 /** A record of an enqueue that was silently dropped by the dedup checks. */
 export interface SkippedEnqueue {
