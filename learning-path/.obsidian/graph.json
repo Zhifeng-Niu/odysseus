@@ -5,8 +5,21 @@
   "showAttachments": false,
   "hideUnresolved": false,
   "showOrphans": true,
-  "collapse-color-groups": true,
-  "colorGroups": [],
+  "collapse-color-groups": false,
+  "colorGroups": [
+    { "query": "file:SYNTHESIS", "color": { "a": 1, "rgb": "#fbbf24" } },
+    { "query": "file:README", "color": { "a": 1, "rgb": "#c084fc" } },
+    { "query": "path:00-overview/", "color": { "a": 1, "rgb": "#c084fc" } },
+    { "query": "path:01-physics-foundations/", "color": { "a": 1, "rgb": "#b45309" } },
+    { "query": "path:02-digital-logic/", "color": { "a": 1, "rgb": "#94a3b8" } },
+    { "query": "path:03-computer-architecture/", "color": { "a": 1, "rgb": "#3b82f6" } },
+    { "query": "path:04-programming-systems/", "color": { "a": 1, "rgb": "#0891b2" } },
+    { "query": "path:05-algorithms-complexity/", "color": { "a": 1, "rgb": "#16a34a" } },
+    { "query": "path:06-computability-theory/", "color": { "a": 1, "rgb": "#ca8a04" } },
+    { "query": "path:07-ai-history/", "color": { "a": 1, "rgb": "#ea580c" } },
+    { "query": "path:08-current-paradigm/", "color": { "a": 1, "rgb": "#dc2626" } },
+    { "query": "path:09-paradigm-shift/", "color": { "a": 1, "rgb": "#db2777" } }
+  ],
   "collapse-display": false,
   "showArrow": false,
   "textFadeMultiplier": 0,
@@ -17,6 +30,6 @@
   "repelStrength": 10,
   "linkStrength": 1,
   "linkDistance": 250,
-  "scale": 0.5603195588005127,
+  "scale": 0.773780386451301,
   "close": false
 }
