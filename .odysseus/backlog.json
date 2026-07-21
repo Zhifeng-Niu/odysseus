@@ -1,12 +1,4 @@
 {
   "version": 1,
-  "items": [
-    {
-      "id": "bl_d8024a0ed1d8",
-      "goal": "Reconcile contradictory memory entries about retry limiter status by checking src/cerebellum/backlog.ts for actual retry counter implementation and updating memory accordingly",
-      "origin": "dream",
-      "priority": 50,
-      "createdAt": "2026-07-21T05:15:20.898Z"
-    }
-  ]
+  "items": []
 }
