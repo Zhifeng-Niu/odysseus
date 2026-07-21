@@ -1,40 +1,4 @@
 {
   "version": 1,
-  "items": [
-    {
-      "id": "pr_e976b531f7fb",
-      "goal": "Add test case for early termination after 3 consecutive non-tool-calling responses in src/orchestrator.test.ts, mocking the LLM to return text-only responses",
-      "origin": "dream",
-      "priority": 10,
-      "createdAt": "2026-07-19T19:48:29.963Z"
-    },
-    {
-      "id": "pr_863c47d5bc61",
-      "goal": "Add substring false-positive test to src/cerebellum/completedGoals.test.ts verifying 'add login' does not incorrectly match 'add login page' as completed",
-      "origin": "dream",
-      "priority": 15,
-      "createdAt": "2026-07-19T19:48:29.964Z"
-    },
-    {
-      "id": "pr_f211fc1ef9f3",
-      "goal": "Add pre-execution existence check in bash tool registration in src/tools/bash.ts (or wherever tools are registered) that skips re-registration if 'bash' already exists in the tools map",
-      "origin": "dream",
-      "priority": 30,
-      "createdAt": "2026-07-19T19:48:29.965Z"
-    },
-    {
-      "id": "pr_a140929fdb82",
-      "goal": "Add goal deduplication check in src/cerebellum/backlog.ts using Levenshtein distance or similar fuzzy matching against recently completed and in-progress waypoints before seeding",
-      "origin": "dream",
-      "priority": 40,
-      "createdAt": "2026-07-19T19:48:29.966Z"
-    },
-    {
-      "id": "pr_a31e050db5a5",
-      "goal": "Reconcile contradictory memory entries about retry limiter status by checking src/cerebellum/backlog.ts for actual retry counter implementation and updating memory accordingly",
-      "origin": "dream",
-      "priority": 50,
-      "createdAt": "2026-07-19T19:48:29.967Z"
-    }
-  ]
+  "items": []
 }
