@@ -12,6 +12,14 @@ import {
   buildSucceededGoalSet,
 } from './dreamer-dedup.js';
 import { extractJsonObject } from './extract-json.js';
+import {
+  type LlmBacklogItem,
+  type LlmMemoryEntry,
+  type LlmAddedBacklogItem,
+  type LlmAddedMemoryEntry,
+  coerceBacklogItem,
+  coerceMemoryEntry,
+} from './llm-result.js';
 
 /**
  * Dreaming state — free-association over recent trace + memory.
@@ -48,29 +56,14 @@ export interface DreamInput {
   readonly maxMemoryEntries?: number;
 }
 
-export interface DreamBacklogItem {
-  readonly goal: string;
-  readonly priority?: number;
-  readonly rationale?: string;
-}
-
-export interface DreamMemoryEntry {
-  readonly category: MemoryCategory;
-  readonly title: string;
-  readonly body: string;
-}
-
-export interface DreamAddedBacklogItem {
-  readonly id: string;
-  readonly goal: string;
-  readonly priority: number;
-}
-
-export interface DreamAddedMemoryEntry {
-  readonly id: string;
-  readonly category: MemoryCategory;
-  readonly title: string;
-}
+// Iteration 46: the Llm* type aliases below are the canonical shape
+// shared between dreamer and curiosity. The Dream* names are kept as
+// aliases for backwards-compat readability inside this module; external
+// callers (none today) would import the Llm* names directly.
+export type DreamBacklogItem = LlmBacklogItem;
+export type DreamMemoryEntry = LlmMemoryEntry;
+export type DreamAddedBacklogItem = LlmAddedBacklogItem;
+export type DreamAddedMemoryEntry = LlmAddedMemoryEntry;
 
 export interface DreamOutput {
   readonly backlogItemsAdded: number;
@@ -87,47 +80,6 @@ export interface DreamOutput {
 interface ParsedDream {
   backlogItems?: unknown;
   memoryEntries?: unknown;
-}
-
-function isObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null && !Array.isArray(v);
-}
-
-function parsePriority(v: unknown): number | undefined {
-  if (typeof v !== 'number' || !Number.isFinite(v)) return undefined;
-  return Math.max(0, Math.min(100, Math.round(v)));
-}
-
-function coerceBacklogItem(raw: unknown): DreamBacklogItem | null {
-  if (!isObject(raw)) return null;
-  const goal = typeof raw.goal === 'string' ? raw.goal.trim() : '';
-  if (goal.length === 0) return null;
-  const priority = parsePriority(raw.priority);
-  const rationale =
-    typeof raw.rationale === 'string' && raw.rationale.trim().length > 0
-      ? raw.rationale.trim()
-      : undefined;
-  return {
-    goal,
-    ...(priority !== undefined ? { priority } : {}),
-    ...(rationale !== undefined ? { rationale } : {}),
-  };
-}
-
-function isMemoryCategory(v: unknown): v is MemoryCategory {
-  return (
-    typeof v === 'string' &&
-    (v === 'patterns' || v === 'lessons' || v === 'preferences' || v === 'dreams')
-  );
-}
-
-function coerceMemoryEntry(raw: unknown): DreamMemoryEntry | null {
-  if (!isObject(raw)) return null;
-  if (!isMemoryCategory(raw.category)) return null;
-  const title = typeof raw.title === 'string' ? raw.title.trim() : '';
-  const body = typeof raw.body === 'string' ? raw.body.trim() : '';
-  if (title.length === 0 || body.length === 0) return null;
-  return { category: raw.category, title: title.slice(0, 200), body };
 }
 
 /**

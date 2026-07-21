@@ -794,3 +794,89 @@ describe('dreamer.buildUserPrompt reflection split', () => {
     expect(prompt).toContain('body with tags');
   });
 });
+
+describe('LLM-result coercion extraction (Iteration 46)', () => {
+  // Iteration 46 unified the byte-for-byte duplicated coercion helpers
+  // (isObject, parsePriority, isMemoryCategory, coerceBacklogItem,
+  // coerceMemoryEntry) and the 5 structurally-identical type aliases
+  // out of dreamer.ts and curiosity.ts into a shared llm-result.ts.
+  //
+  // Drift between the two copies was a silent failure mode: a future
+  // change to e.g. the priority clamp range would need to land in two
+  // files, and a miss would silently change which proposals each phase
+  // accepts. These tests pin the unification so a future refactor
+  // cannot silently re-inline the code.
+
+  test('llm-result.ts exports the shared symbols', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const src = await readFile('src/cerebellum/llm-result.ts', 'utf8');
+    expect(src).toContain('export interface LlmBacklogItem');
+    expect(src).toContain('export interface LlmMemoryEntry');
+    expect(src).toContain('export interface LlmAddedBacklogItem');
+    expect(src).toContain('export interface LlmAddedMemoryEntry');
+    expect(src).toContain('export function isObject');
+    expect(src).toContain('export function parsePriority');
+    expect(src).toContain('export function isMemoryCategory');
+    expect(src).toContain('export function coerceBacklogItem');
+    expect(src).toContain('export function coerceMemoryEntry');
+  });
+
+  test('dreamer.ts imports the shared symbols (not re-defines them)', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const dreamerSrc = await readFile('src/cerebellum/dreamer.ts', 'utf8');
+    expect(dreamerSrc).toContain("from './llm-result.js'");
+    expect(dreamerSrc).not.toContain('function coerceBacklogItem');
+    expect(dreamerSrc).not.toContain('function coerceMemoryEntry');
+    expect(dreamerSrc).not.toContain('function parsePriority');
+    expect(dreamerSrc).not.toContain('function isMemoryCategory');
+    // Type aliases point at the shared module, not duplicated.
+    expect(dreamerSrc).toContain('type DreamBacklogItem = LlmBacklogItem');
+    expect(dreamerSrc).toContain('type DreamMemoryEntry = LlmMemoryEntry');
+  });
+
+  test('curiosity.ts imports the shared symbols (not re-defines them)', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const curiositySrc = await readFile(
+      'src/cerebellum/curiosity.ts',
+      'utf8',
+    );
+    expect(curiositySrc).toContain("from './llm-result.js'");
+    expect(curiositySrc).not.toContain('function coerceBacklogItem');
+    expect(curiositySrc).not.toContain('function coerceMemoryEntry');
+    expect(curiositySrc).not.toContain('function parsePriority');
+    expect(curiositySrc).not.toContain('function isMemoryCategory');
+    expect(curiositySrc).toContain(
+      'type CuriosityBacklogItem = LlmBacklogItem',
+    );
+    expect(curiositySrc).toContain(
+      'type CuriosityMemoryEntry = LlmMemoryEntry',
+    );
+  });
+
+  test('dreamer and curiosity no longer duplicate the coercion helpers', async () => {
+    // The single-definition rule: each helper exists in exactly one
+    // place. If both files grow their own copies again, drift becomes
+    // possible and this test catches it before the divergence ships.
+    const { readFile } = await import('node:fs/promises');
+    const dreamerSrc = await readFile('src/cerebellum/dreamer.ts', 'utf8');
+    const curiositySrc = await readFile(
+      'src/cerebellum/curiosity.ts',
+      'utf8',
+    );
+    const sharedSrc = await readFile(
+      'src/cerebellum/llm-result.ts',
+      'utf8',
+    );
+    // Exactly one definition across the three files.
+    const count = (src: string, needle: string): number =>
+      src.split(needle).length - 1;
+    const totalCount = (needle: string): number =>
+      count(dreamerSrc, needle) +
+      count(curiositySrc, needle) +
+      count(sharedSrc, needle);
+    expect(totalCount('export function coerceBacklogItem')).toBe(1);
+    expect(totalCount('export function coerceMemoryEntry')).toBe(1);
+    expect(totalCount('export function parsePriority')).toBe(1);
+    expect(totalCount('export function isMemoryCategory')).toBe(1);
+  });
+});

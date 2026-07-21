@@ -33,11 +33,22 @@ interface FileCap {
 const FILE_CAPS: readonly FileCap[] = [
   {
     filename: 'dreamer.ts',
-    lineCap: 390,
+    lineCap: 340,
     rationale:
-      'Iteration 38 extracted extractJson to extract-json.ts: 402 → 378. ' +
-      'Cap at 390 to lock progress. Next extraction target: buildUserPrompt ' +
-      '(~95 lines, depends on MemoryCategory/MemoryEntry types).',
+      'Iteration 46 extracted shared coercion helpers to llm-result.ts: ' +
+      '378 → 330. Cap at 340 — locks progress. Next extraction target: ' +
+      'buildUserPrompt (~95 lines, depends on MemoryCategory/MemoryEntry).',
+  },
+  {
+    filename: 'llm-result.ts',
+    lineCap: 130,
+    rationale:
+      'Iteration 46 — shared LLM-result coercion (isObject, parsePriority, ' +
+      'isMemoryCategory, coerceBacklogItem, coerceMemoryEntry) + 4 type ' +
+      'aliases consumed by dreamer and curiosity. Current 98 lines. Cap at ' +
+      '130 — pure functions and types, should stay flat. Growth means a new ' +
+      'coercion rule (e.g. tag validation) is being added; consider whether ' +
+      'it applies to both phases before adding.',
   },
   {
     filename: 'dreamer-dedup.ts',
@@ -124,14 +135,14 @@ const FILE_CAPS: readonly FileCap[] = [
   },
   {
     filename: 'curiosity.ts',
-    lineCap: 330,
+    lineCap: 280,
     rationale:
-      'Iteration 44 extracted buildCuriosityUserPrompt + loadSelfModelForCuriosity + ' +
-      'CuriosityInput to curiosity-prompt.ts: 435 → 325. Cap at 330 — strictly ' +
-      'under CLAUDE.md <300 ceiling is not yet reached but close. Next ' +
-      'extraction target: the LLM result-coercion helpers (~40 lines, shared ' +
-      'shape with dreamer — long-term these may converge into a shared ' +
-      'coercion module).',
+      'Iteration 46 extracted shared coercion helpers to llm-result.ts: ' +
+      '325 → 272. Cap at 280 — leaves headroom. File is now a thin wrapper ' +
+      'around LLM call + persistence side effects; further size reduction ' +
+      'would require extracting the persistence half (pending-review enqueue + ' +
+      'memory write + exploration log append), which is a larger structural ' +
+      'change.',
   },
   {
     filename: 'curiosity-prompt.ts',

@@ -1,5 +1,4 @@
 import { join } from 'node:path';
-import type { MemoryCategory } from '../orchestrator/events.js';
 import { type EnqueueOptions } from './backlog.js';
 import {
   enqueuePendingReview,
@@ -14,6 +13,14 @@ import {
 } from './dreamer-dedup.js';
 import { appendExploration } from './exploration-log.js';
 import { extractJsonObject } from './extract-json.js';
+import {
+  type LlmBacklogItem,
+  type LlmMemoryEntry,
+  type LlmAddedBacklogItem,
+  type LlmAddedMemoryEntry,
+  coerceBacklogItem,
+  coerceMemoryEntry,
+} from './llm-result.js';
 import {
   buildCuriosityUserPrompt,
   loadSelfModelForCuriosity,
@@ -58,29 +65,10 @@ export {
  * Closes aspiration #3 ("Curiosity goal source").
  */
 
-export interface CuriosityBacklogItem {
-  readonly goal: string;
-  readonly priority?: number;
-  readonly rationale?: string;
-}
-
-export interface CuriosityMemoryEntry {
-  readonly category: MemoryCategory;
-  readonly title: string;
-  readonly body: string;
-}
-
-export interface CuriosityAddedBacklogItem {
-  readonly id: string;
-  readonly goal: string;
-  readonly priority: number;
-}
-
-export interface CuriosityAddedMemoryEntry {
-  readonly id: string;
-  readonly category: MemoryCategory;
-  readonly title: string;
-}
+export type CuriosityBacklogItem = LlmBacklogItem;
+export type CuriosityMemoryEntry = LlmMemoryEntry;
+export type CuriosityAddedBacklogItem = LlmAddedBacklogItem;
+export type CuriosityAddedMemoryEntry = LlmAddedMemoryEntry;
 
 export interface CuriosityOutput {
   readonly backlogItemsAdded: number;
@@ -97,10 +85,6 @@ export interface CuriosityOutput {
 interface ParsedCuriosity {
   backlogItems?: unknown;
   memoryEntries?: unknown;
-}
-
-function isObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
 /**
@@ -126,43 +110,6 @@ export function shouldRunCuriosity(): boolean {
   const v = process.env.ODYSSEUS_CURIOSITY;
   if (v === undefined || v === '') return true;
   return v !== '0' && v !== 'false' && v !== 'no';
-}
-
-function parsePriority(v: unknown): number | undefined {
-  if (typeof v !== 'number' || !Number.isFinite(v)) return undefined;
-  return Math.max(0, Math.min(100, Math.round(v)));
-}
-
-function coerceBacklogItem(raw: unknown): CuriosityBacklogItem | null {
-  if (!isObject(raw)) return null;
-  const goal = typeof raw.goal === 'string' ? raw.goal.trim() : '';
-  if (goal.length === 0) return null;
-  const priority = parsePriority(raw.priority);
-  const rationale =
-    typeof raw.rationale === 'string' && raw.rationale.trim().length > 0
-      ? raw.rationale.trim()
-      : undefined;
-  return {
-    goal,
-    ...(priority !== undefined ? { priority } : {}),
-    ...(rationale !== undefined ? { rationale } : {}),
-  };
-}
-
-function isMemoryCategory(v: unknown): v is MemoryCategory {
-  return (
-    typeof v === 'string' &&
-    (v === 'patterns' || v === 'lessons' || v === 'preferences' || v === 'dreams')
-  );
-}
-
-function coerceMemoryEntry(raw: unknown): CuriosityMemoryEntry | null {
-  if (!isObject(raw)) return null;
-  if (!isMemoryCategory(raw.category)) return null;
-  const title = typeof raw.title === 'string' ? raw.title.trim() : '';
-  const body = typeof raw.body === 'string' ? raw.body.trim() : '';
-  if (title.length === 0 || body.length === 0) return null;
-  return { category: raw.category, title: title.slice(0, 200), body };
 }
 
 /**
