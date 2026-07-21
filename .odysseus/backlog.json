@@ -1,12 +1,4 @@
 {
   "version": 1,
-  "items": [
-    {
-      "id": "bl_09802bf465a4",
-      "goal": "Create src/cerebellum/transcript-compressor.ts exporting compressTranscript(entries: {tool: string, target: string, outcome: string}[]): string that produces a compact one-line-per-call summary; add unit tests in tests/unit/transcript-compressor.test.ts",
-      "origin": "curiosity",
-      "priority": 50,
-      "createdAt": "2026-07-21T05:49:02.193Z"
-    }
-  ]
+  "items": []
 }
