@@ -76,7 +76,8 @@ describe('exploration-feedback — module shape', () => {
     const src = await readFile(SRC_PATH, 'utf8');
     expect(src).toMatch(/Exploration feedback loop/);
     expect(src).toMatch(/aspiration #3/);
-    expect(src).toMatch(/3\s+failures/);
+    // "3 failures" is split across lines in the JSDoc — allow any chars between
+    expect(src).toMatch(/3[\s\S]*?failures/);
   });
 
   test('explains extraction from exploration-log.ts for size cap', async () => {
@@ -135,10 +136,16 @@ describe('exploration-feedback — ExplorationStats interface', () => {
   test('all fields are readonly (immutable record)', async () => {
     const src = await readFile(SRC_PATH, 'utf8');
     const block = src.match(/export\s+interface\s+ExplorationStats\s*\{[\s\S]*?\}/)![0];
-    // every field declaration must include `readonly`
-    const fields = block.match(/^\s+\w+:/gm) ?? [];
-    const readonlys = block.match(/readonly\s+\w+:/g) ?? [];
-    expect(readonlys.length).toBe(fields.length);
+    // Count readonly field declarations (e.g. `readonly goalKey: string;`).
+    const readonlys = block.match(/^\s+readonly\s+\w+:/gm) ?? [];
+    expect(readonlys.length).toBe(8);
+    // Ensure no non-readonly field declarations exist (a field line not
+    // starting with `readonly`). JSDoc comment lines start with `/**` or `*`,
+    // not `\w`, so they won't match.
+    const mutable = block
+      .split('\n')
+      .filter((line) => /^\s+\w+:\s/.test(line) && !/^\s+readonly\s+/.test(line));
+    expect(mutable).toEqual([]);
   });
 });
 
