@@ -114,7 +114,7 @@ describe('orchestrator/events — imports', () => {
 });
 
 // ---------------------------------------------------------------------------
-// BacklogOrigin — 6-value union
+// BacklogOrigin — 7-value union
 // ---------------------------------------------------------------------------
 
 describe('BacklogOrigin — contract', () => {
@@ -123,20 +123,22 @@ describe('BacklogOrigin — contract', () => {
     expect(src).toMatch(/type\s+BacklogOrigin\s*=\s*['"]/);
   });
 
-  test('contains all 6 origins: user, plan, dream, reflect, curiosity, system', async () => {
+  test('contains all 7 origins: user, plan, dream, reflect, curiosity, system, perception', async () => {
     const src = await readFile('src/orchestrator/events.ts', 'utf8');
     const match = src.match(/type\s+BacklogOrigin\s*=\s*([^;]+);/);
     expect(match).not.toBeNull();
-    for (const origin of ["'user'", "'plan'", "'dream'", "'reflect'", "'curiosity'", "'system'"]) {
+    for (const origin of ["'user'", "'plan'", "'dream'", "'reflect'", "'curiosity'", "'system'", "'perception'"]) {
       expect(match![1]).toContain(origin);
     }
   });
 
-  test('exactly 6 origins (no more, no less)', async () => {
+  test('exactly 7 origins (no more, no less)', async () => {
+    // 'perception' added with the perception hub (Ithaca MVP): environment
+    // channels (file watcher, clock) drain into the backlog through it.
     const validOrigins: ReadonlyArray<BacklogOrigin> = [
-      'user', 'plan', 'dream', 'reflect', 'curiosity', 'system',
+      'user', 'plan', 'dream', 'reflect', 'curiosity', 'system', 'perception',
     ];
-    expect(validOrigins.length).toBe(6);
+    expect(validOrigins.length).toBe(7);
   });
 });
 

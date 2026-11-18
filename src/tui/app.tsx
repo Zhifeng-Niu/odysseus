@@ -133,6 +133,41 @@ export function App({ orch, model }: AppProps): JSX.Element {
     return () => clearInterval(handle);
   }, [pendingApproval, voyageActive, lastActivity, orch]);
 
+  // Perception hub — environment (file watcher) + temporal (daily tick)
+  // channels drain into the backlog with origin 'perception'. The idle
+  // auto-voyage above consumes them, so perception rides the same
+  // single path as every other input: backlog → waypoint. Never an LLM
+  // call from here.
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | undefined;
+    void (async () => {
+      try {
+        const { createFileWatcher } = await import('../perception/file-watcher.js');
+        const { createClockChannel } = await import('../perception/clock.js');
+        const { createPerceptionHub } = await import('../perception/hub.js');
+        const { resolve } = await import('node:path');
+        const hub = createPerceptionHub({
+          channels: [
+            createFileWatcher([resolve(process.cwd(), 'src')]),
+            createClockChannel(['08:00']),
+          ],
+        });
+        const rootDir = resolve(process.cwd(), '.odysseus');
+        timer = setInterval(() => {
+          void hub.drainToBacklog(rootDir, new Date()).catch(() => undefined);
+        }, 5 * 60_000);
+        if (cancelled && timer) clearInterval(timer);
+      } catch {
+        // Perception is best-effort; never crash the TUI boot over it.
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (timer) clearInterval(timer);
+    };
+  }, []);
+
   const phase: 'idle' | 'running' | 'awaiting-approval' =
     pendingApproval !== null
       ? 'awaiting-approval'

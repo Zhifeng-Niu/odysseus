@@ -191,6 +191,10 @@ export function defaultPriorityForOrigin(origin: BacklogOrigin): number {
       return 75;
     case 'curiosity':
       return 90;
+    case 'perception':
+      // Environment state changes are worth handling soon but rarely
+      // urgent — above dreams, below reflection on failures.
+      return 95;
     case 'dream':
     case 'system':
       return 100;

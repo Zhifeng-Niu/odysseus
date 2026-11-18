@@ -21,8 +21,11 @@ import type { BrainState } from '../cerebellum/brain-state.js';
  *   curiosity explores the future. Priority between reflect and dream —
  *   curiosity work preempts idle dreaming but yields to failures.
  * - `system`: bookkeeping origin for internal seed items.
+ * - `perception`: produced by the perception hub's channels (file watcher,
+ *   clock ticks). Environment state changes the agent should react to;
+ *   dedup gates keep repeated perceptions from re-enqueueing.
  */
-export type BacklogOrigin = 'user' | 'plan' | 'dream' | 'reflect' | 'curiosity' | 'system';
+export type BacklogOrigin = 'user' | 'plan' | 'dream' | 'reflect' | 'curiosity' | 'system' | 'perception';
 
 /**
  * Memory categories map 1:1 to files in `.odysseus/memory/`. Each category
