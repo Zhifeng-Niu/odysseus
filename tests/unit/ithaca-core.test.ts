@@ -103,7 +103,7 @@ describe('IthacaCore — state and rendering', () => {
     expect(rendered).toContain('finish thesis ch4');
     expect(rendered).toContain('never overstate progress');
     expect(rendered).toContain('user is a grad student in NLP');
-    expect(rendered).toContain('user-command');
+    expect(rendered).toContain('仅用户显式命令可改写');
   });
 
   it('empty core renders empty string (no prompt injection)', () => {

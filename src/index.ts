@@ -84,6 +84,12 @@ function runVoyageConsole(
 async function main(): Promise<void> {
   const cwd = process.cwd();
   loadDotenv(join(cwd, '.env'));
+
+  // /ithaca — protected core; local-only, never enters the LLM, works without an API key.
+  const userInput = process.argv.slice(2).join(' ').trim();
+  // /ithaca — protected core; local-only, never enters the LLM, works without an API key.
+  if (userInput.startsWith('/ithaca')) return (await import('./ithaca/commands.js')).runIthacaCli(userInput);
+
   const config = loadConfig();
   const provider = new GLMProvider({
     apiKey: config.apiKey,

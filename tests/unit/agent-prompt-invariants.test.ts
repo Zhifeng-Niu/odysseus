@@ -53,15 +53,17 @@ describe('PromptInput — shape', () => {
     expect(src).toMatch(/availableTools:\s*readonly\s+string\[\]/);
   });
 
-  test('has exactly 2 fields, both required', async () => {
+  test('has 2 required fields + 1 optional (ithaca protected core)', async () => {
     const src = await readFile('src/agent/prompt.ts', 'utf8');
     const match = src.match(/interface\s+PromptInput\s*\{([\s\S]*?)\}/);
     expect(match).not.toBeNull();
-    // Both required: no `?` after field name
     const required = match![1].match(/^\s+\w+:\s+/gm) ?? [];
     const optional = match![1].match(/^\s+\w+\?\s*:/gm) ?? [];
     expect(required.length).toBe(2);
-    expect(optional.length).toBe(0);
+    // ithaca is the protected-core injection slot: optional because an empty
+    // core injects nothing. Ported with the Ithaca MVP (framework line).
+    expect(optional.length).toBe(1);
+    expect(optional[0]).toContain('ithaca');
   });
 });
 
@@ -274,13 +276,17 @@ describe('agent/prompt — source-level safety', () => {
     expect(src).not.toMatch(/\bclass\s+\w+/);
   });
 
-  test('template literal interpolation uses only input.mission and input.availableTools', async () => {
+  test('template literal interpolation uses only mission, availableTools, and ithaca', async () => {
     const src = await readFile('src/agent/prompt.ts', 'utf8');
-    // Count ${...} interpolations in the template literal
+    // Count ${...} interpolations in the template literal. The ithaca
+    // interpolation is the protected-core slot (Ithaca MVP port) — the
+    // prompt must not grow any further interpolation sources without
+    // updating this guard.
     const interpolations = src.match(/\$\{[^}]+\}/g) ?? [];
-    expect(interpolations.length).toBe(2);
+    expect(interpolations.length).toBe(3);
     expect(interpolations.some((i) => i.includes('input.mission'))).toBe(true);
     expect(interpolations.some((i) => i.includes('input.availableTools'))).toBe(true);
+    expect(interpolations.some((i) => i.includes('ithacaBlock'))).toBe(true);
   });
 });
 

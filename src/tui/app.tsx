@@ -57,6 +57,10 @@ export function App({ orch, model }: AppProps): JSX.Element {
   const { exit } = useApp();
   const [exitArmed, setExitArmed] = useState(false);
 
+  // /ithaca command output — rendered as a local notice panel (the command
+  // never enters the LLM path, so it has no assistant-message event).
+  const [ithacaNotice, setIthacaNotice] = useState<string | null>(null);
+
   // Idle tracking — lastActivity bumps on every user submit and every
   // orchestrator event (so an in-progress voyage counts as activity).
   // autoVoyageArmed gates the auto-drain: a single idle-triggered voyage
@@ -167,9 +171,21 @@ export function App({ orch, model }: AppProps): JSX.Element {
     autoVoyageArmedRef.current = true;
 
     // Slash commands are reserved for future TUI commands (/dream, /status,
-    // /clear). For now they fall through to the unified voyage path.
+    // /clear). /ithaca is dispatched locally — it is the ONLY write channel
+    // into the protected core and must never go through the LLM.
+    if (text.startsWith('/ithaca')) {
+      try {
+        const { handleIthacaCommand } = await import('../ithaca/commands.js');
+        const { resolve } = await import('node:path');
+        const output = await handleIthacaCommand(resolve(process.cwd(), '.odysseus'), text);
+        setIthacaNotice(output);
+      } catch (e) {
+        setIthacaNotice(`✗ Ithaca: ${e instanceof Error ? e.message : String(e)}`);
+      }
+      return;
+    }
     if (text.startsWith('/')) {
-      // TODO: dispatch slash commands here
+      // TODO: dispatch remaining slash commands here (/dream, /status, /clear)
     }
 
     // If a voyage is already running, treat the input as a steering message
@@ -216,6 +232,14 @@ export function App({ orch, model }: AppProps): JSX.Element {
           onApprove={() => orch.approve(pendingApproval.waypointId)}
           onReject={(reason) => orch.reject(pendingApproval.waypointId, reason)}
         />
+      )}
+
+      {ithacaNotice && (
+        <Box borderStyle="round" paddingX={1} flexDirection="column">
+          {ithacaNotice.split('\n').map((line, i) => (
+            <Text key={i}>{line}</Text>
+          ))}
+        </Box>
       )}
 
       <InputArea onSubmit={handleInputSubmit} disabled={pendingApproval !== null} />

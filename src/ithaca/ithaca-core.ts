@@ -61,8 +61,8 @@ export interface IthacaCoreOptions {
 
 export class IthacaCore {
   private state: IthacaCoreState;
-  private readonly store?: IthacaStore;
-  private readonly onEvent?: IthacaEventHandler;
+  private readonly store: IthacaStore | undefined;
+  private readonly onEvent: IthacaEventHandler | undefined;
   private readonly now: () => number;
   private readonly idgen: () => string;
   private pendingSave: Promise<void> = Promise.resolve();

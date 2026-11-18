@@ -430,11 +430,14 @@ describe('index — source-level safety', () => {
 // ---------------------------------------------------------------------------
 
 describe('index — structural fingerprint', () => {
-  test('file is between 80 and 120 lines (compact entry point)', async () => {
+  test('file is between 80 and 125 lines (compact entry point)', async () => {
+    // Upper bound 120 → 125: the /ithaca CLI surface (Ithaca MVP port) adds
+    // a 3-line local dispatch — the protected core must never enter the LLM
+    // path, so it cannot be folded into runAgentTurn.
     const src = await readFile(SRC_PATH, 'utf8');
     const lines = src.split('\n');
     expect(lines.length).toBeGreaterThanOrEqual(80);
-    expect(lines.length).toBeLessThanOrEqual(120);
+    expect(lines.length).toBeLessThanOrEqual(125);
   });
 
   test('has no class declarations (function-only module)', async () => {
