@@ -17,26 +17,12 @@ export interface VerifyOutput {
 }
 
 /**
- * Iteration 20 — progress layer.
- *
- * Detects the "empty-commit false-success" pattern surfaced by
- * commit-audit.ts (Iteration 19): when commitWaypoint hits
- * `git diff --cached --quiet` with exit 0, it appends `--allow-empty`
- * and creates a `waypoint/wp_*-ok` commit despite the agent having
- * produced zero work. About 40% of recent waypoint commits fell into
- * this pattern.
- *
- * The orchestrator's commitWaypoint cannot be patched in-place without
- * manual review (see CLAUDE.md "Key Constraints"). This layer blocks
- * the false-success path BEFORE commitWaypoint is reached: the verify
- * gate runs at orchestrator.ts:800, commitWaypoint at :867. A failing
- * progress layer makes `verify.passed === false`, which forces the
- * rollback/failure branch and never reaches the empty commit.
- *
- * Uses `git status --porcelain` to detect ANY working-tree change vs
- * HEAD: new files, modifications, deletions, untracked. An empty stdout
- * means the agent's tools produced no file effect — the waypoint burned
- * iterations and tokens without progressing the codebase.
+ * Iteration 20 — progress layer. Detects the "empty-commit false-success"
+ * pattern (commit-audit.ts, Iteration 19): `git diff --cached --quiet`
+ * exit 0 made commitWaypoint append `--allow-empty` and create a
+ * `waypoint/wp_*-ok` commit despite zero work (~40% of waypoint commits).
+ * The verify gate blocks this BEFORE commitWaypoint; a failing layer
+ * forces the rollback/failure branch.
  */
 
 // Resolve the real TypeScript compiler shipped with Odysseus. `npx tsc`
@@ -58,21 +44,45 @@ export async function runVerify(input: VerifyInput): Promise<VerifyOutput> {
 
   for (const layer of input.layers) {
     if (layer === 'syntax') {
-      const r = await execFileNoThrow('node', [TSC_BIN, '--noEmit'], {
-        cwd: input.cwd,
-        env: input.env ?? process.env,
-      });
-      results.syntax = r.exitCode === 0 ? 'pass' : 'fail';
-      if (r.exitCode !== 0) {
-        details.push(`--- syntax ---\n${r.stdout}\n${r.stderr}`);
+      // Project mode (tsconfig.json present): bare `tsc --noEmit` checks
+      // the whole project. No tsconfig → check only the CHANGED .ts files
+      // (bare tsc would print help text and fail every waypoint run in an
+      // arbitrary directory); git-clean or non-git dirs fall back to the
+      // bare call. Enumeration lives in verify-syntax.ts, loaded lazily to
+      // keep this module's import surface at exactly two statements.
+      const { existsSync } = await import('node:fs');
+      const { changedTypeScriptFiles } = await import('./verify-syntax.js');
+      const projectMode = existsSync(`${input.cwd}/tsconfig.json`);
+      const enumerated = projectMode ? [] : await changedTypeScriptFiles(input.cwd);
+
+      let r;
+      if (projectMode || enumerated === 'unavailable') {
+        r = await execFileNoThrow('node', [TSC_BIN, '--noEmit'], {
+          cwd: input.cwd,
+          env: input.env ?? process.env,
+        });
+        results.syntax = r.exitCode === 0 ? 'pass' : 'fail';
+        if (r.exitCode !== 0) {
+          details.push(`--- syntax ---\n${r.stdout}\n${r.stderr}`);
+        }
+      } else if (enumerated.length === 0) {
+        results.syntax = 'pass'; // no TS changes → nothing to check
+      } else {
+        r = await execFileNoThrow(
+          'node',
+          [TSC_BIN, '--noEmit', ...enumerated.slice(0, 50)],
+          { cwd: input.cwd, env: input.env ?? process.env },
+        );
+        results.syntax = r.exitCode === 0 ? 'pass' : 'fail';
+        if (r.exitCode !== 0) {
+          details.push(`--- syntax ---\n${r.stdout}\n${r.stderr}`);
+        }
       }
     }
     if (layer === 'tests') {
-      // Run the full vitest suite. --passWithNoTests ensures the layer
-      // passes even when no test files exist (e.g. a brand-new codebase
-      // or a waypoint that touches only non-test code). The agent's own
-      // 442-test suite is the safety net that catches regressions before
-      // they ship.
+      // Full vitest suite; --passWithNoTests keeps brand-new codebases
+      // green (same "nothing to check is not failure" philosophy as the
+      // no-tsconfig syntax fallback).
       const r = await execFileNoThrow(
         'npx',
         ['vitest', 'run', '--passWithNoTests'],
@@ -84,27 +94,9 @@ export async function runVerify(input: VerifyInput): Promise<VerifyOutput> {
       }
     }
     if (layer === 'progress') {
-      // Iteration 21 — HEAD-aware progress detection.
-      //
-      // Iteration 20's initial implementation only checked the working
-      // tree. That was correct for the common case (agent writes files,
-      // commitWaypoint commits them) but wrong for an important edge
-      // case: when the agent itself calls `git commit` during the
-      // waypoint, the working tree ends up clean by verify time, even
-      // though real work happened. The original implementation would
-      // fail this case, triggering orchestrator.ts:911's rollback path
-      // and LOSING the agent's manually-committed work. That's a worse
-      // failure mode than the false-success pattern we were trying to
-      // block.
-      //
-      // The fix uses HEAD's subject as the signal. The orchestrator's
-      // lazy-checkpoint path creates a `checkpoint/wp_*-start` commit
-      // at the first mutating tool call. If HEAD's subject still IS
-      // a checkpoint-start, the agent made no commits this waypoint —
-      // progress must come from the working tree. If HEAD's subject is
-      // anything else, HEAD moved past the checkpoint (or no checkpoint
-      // was created), so real progress exists regardless of working
-      // tree state.
+      // Iteration 21 — HEAD-aware progress detection: HEAD still being the
+      // checkpoint-start commit means zero work (the Iteration 20
+      // false-success pattern); HEAD moved means real progress.
       const headR = await execFileNoThrow(
         'git',
         ['log', '-1', '--format=%s'],
@@ -122,16 +114,11 @@ export async function runVerify(input: VerifyInput): Promise<VerifyOutput> {
         results.progress = 'fail';
         details.push(`--- progress ---\n${r.stdout}\n${r.stderr}`);
       } else if (headIsCheckpoint && r.stdout.trim().length === 0) {
-        // HEAD is the checkpoint-start AND working tree is clean → the
-        // agent did nothing. This is the false-success pattern.
         results.progress = 'fail';
         details.push(
           '--- progress ---\nwaypoint produced no file changes and no commits since checkpoint'
         );
       } else {
-        // Either HEAD moved past the checkpoint (agent committed) OR
-        // the working tree has changes (agent wrote files). Both count
-        // as real progress.
         results.progress = 'pass';
       }
     }
