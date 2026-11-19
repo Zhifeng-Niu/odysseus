@@ -5,6 +5,7 @@ import { FileReadTool, FileWriteTool, FileEditTool } from './tools/file.js';
 import { GitTool } from './tools/git.js';
 import { BashTool } from './tools/bash.js';
 import { runAgentTurn } from './agent/loop.js';
+import { installProcessGuards } from './agent/guards.js';
 import { CerebellumOrchestrator } from './cerebellum/orchestrator.js';
 import { shouldAutoApprove } from './cerebellum/pending-review-auto.js';
 import { startTui } from './tui/index.js';
@@ -84,6 +85,23 @@ function runVoyageConsole(
 async function main(): Promise<void> {
   const cwd = process.cwd();
   loadDotenv(join(cwd, '.env'));
+
+  // Crash guards — absorb stray rejections/exceptions (report to stderr +
+  // the event log), never take a live session down. Never call exit here.
+  installProcessGuards({
+    onError: (kind, err) => {
+      process.stderr.write(`[guard] ${kind}: ${err.message}\n`);
+      try {
+        recordEvent(join(cwd, '.odysseus', 'events.jsonl'), {
+          type: kind,
+          source: 'agent',
+          data: { message: err.message },
+        } as never);
+      } catch {
+        // Event-log failure must not turn a guard into a crash.
+      }
+    },
+  });
 
   // /ithaca — protected core; local-only, never enters the LLM, works without an API key.
   const userInput = process.argv.slice(2).join(' ').trim();
