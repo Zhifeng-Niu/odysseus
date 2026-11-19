@@ -1,18 +1,19 @@
 ---
-active: false
-iteration: 8
-session_id: 31b9c953b5df
-max_iterations: 8
+active: true
+iteration: 0
+session_id: a1c3e5b7d9f1
 time_budget_seconds: 0
-completion_promise: ""
+completion_promise: "e2e task-completion proof green + full suite green + build clean"
 orientation: engineer
-started_at: 2026-06-03T02:13:58Z
+started_at: 2026-11-19T10:09:59Z
 mission_file: MISSION.md
 consecutive_discards: 0
+delivery_tier: standard
+patience_budget: 30
+discard_threshold: 10
+min_metric_delta_pct: 0.5
 ---
 
-# Odyssey Mission Complete
+# Odyssey Mission Active
 
-Status: complete
-Waypoints: 6/6
-Metric improvement: tui_jsx_errors 47→0, Catppuccin Mocha theme, gradient accents
+WP1: E2E task-completion proof (fake provider -> real orchestrator loop).
