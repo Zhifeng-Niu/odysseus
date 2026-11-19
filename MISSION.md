@@ -1,11 +1,11 @@
 ---
 orientation: [engineer]
-status: active
+status: complete
 started_at: 2026-11-19T10:09:59Z
 expedition_branch: odyssey/stable-agent-20261119
 baseline_metric: "suite 4817 pass, build+tsc clean"
 best_metric: "e2e-task-completion 3/3 green, suite 4825 pass"
-total_waypoints: 1
+total_waypoints: 2
 consecutive_discards: 0
 delivery_tier: standard
 patience_budget: 30
@@ -43,8 +43,8 @@ memory retrieval / protocols / evals) is fair game.
 - WP1: DONE. Root cause found: bare `tsc --noEmit` in dirs without tsconfig.json
   failed EVERY waypoint (help-text exit). Fix: single-file fallback over git-changed
   .ts files + e2e proofs (checkpoint commit / crash graceful / rollback clean).
-- WP2: Hardening - unhandledRejection/uncaughtException guards at the entry,
-  graceful degradation for provider/tool errors mid-voyage.
+- WP2: DONE. installProcessGuards (absorb + report, refcounted, never exit)
+  wired at main() start; report to stderr + events.jsonl (rule 3).
 - WP3+: Layer completeness per consensus template as stability allows.
 
 ## Guard
