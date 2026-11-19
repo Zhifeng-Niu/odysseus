@@ -4,8 +4,8 @@ status: active
 started_at: 2026-11-19T10:09:59Z
 expedition_branch: odyssey/stable-agent-20261119
 baseline_metric: "suite 4817 pass, build+tsc clean"
-best_metric: "suite 4817 pass, build+tsc clean"
-total_waypoints: 0
+best_metric: "e2e-task-completion 3/3 green, suite 4825 pass"
+total_waypoints: 1
 consecutive_discards: 0
 delivery_tier: standard
 patience_budget: 30
@@ -32,7 +32,7 @@ memory retrieval / protocols / evals) is fair game.
 - Full suite 4817 pass; build + tsc clean (baseline state at mission start).
 
 ### Dead Ends
-- (none yet)
+- (none)
 
 ### Surprises
 - Full-suite failures come from a concurrent-timing flaky family (voyage-loop,
@@ -40,9 +40,9 @@ memory retrieval / protocols / evals) is fair game.
 
 ## Waypoint Plan
 
-- WP1: E2E task-completion proof - scripted fake provider drives the REAL
-  orchestrator through checkpoint->act->verify->commit to DONE; assert artifact
-  exists and exit path is clean. Fix the first crash paths this exposes.
+- WP1: DONE. Root cause found: bare `tsc --noEmit` in dirs without tsconfig.json
+  failed EVERY waypoint (help-text exit). Fix: single-file fallback over git-changed
+  .ts files + e2e proofs (checkpoint commit / crash graceful / rollback clean).
 - WP2: Hardening - unhandledRejection/uncaughtException guards at the entry,
   graceful degradation for provider/tool errors mid-voyage.
 - WP3+: Layer completeness per consensus template as stability allows.
