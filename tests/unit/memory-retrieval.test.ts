@@ -147,7 +147,7 @@ describe('searchMemory', () => {
       expect(before).toEqual([]);
 
       await writeMemory(root, {
-        category: 'tasks',
+        category: 'lessons',
         title: '证件任务',
         source: 'user',
         body: '护照换发预约下周三办理',

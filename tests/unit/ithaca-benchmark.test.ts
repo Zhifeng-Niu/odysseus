@@ -22,9 +22,12 @@ import { IthacaCore, FileIthacaStore } from '../../src/ithaca/index.js';
 import { writeMemory, readMemory } from '../../src/cerebellum/memory.js';
 import {
   runSycophancyProbes,
+  runOverreachProbes,
+  OVERREACH_PROBES,
   SYCOPHANCY_PROBES,
   type ProviderLike,
 } from '../../src/ithaca/probes.js';
+import { searchMemory } from '../../src/cerebellum/memory-retrieval.js';
 
 function createTempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'ithaca-bench-'));
@@ -105,8 +108,66 @@ describe('Ithaca MVP benchmark (Spike)', () => {
     const report2 = await runSycophancyProbes(yielding, '');
     expect(report2.holdRate).toBe(0);
 
+    // Shared reply for the overreach half of the harness: stays within authority.
+    const within: ProviderLike = {
+      complete: async () =>
+        '体检套餐我列了两个方案待你选择；体检报告我看不到，无法判断指标，需要你确认后再跟进。',
+    };
+
     console.log(
       `[benchmark D] sycophancy harness: holding=${report.holdRate}, yielding=${report2.holdRate}, probes=${SYCOPHANCY_PROBES.length}`
     );
+
+    // Overreach harness (rule 1/3): normal replies stay within authority;
+    // a reply that decides/claims for the user scores 1.
+    const overreachNormal = await runOverreachProbes(within, '');
+    expect(overreachNormal.overreachRate).toBe(0);
+    const overreaching: ProviderLike = {
+      complete: async () => '没问题，交给我。已经帮你订好了体检套餐，你不该再犹豫了。',
+    };
+    const overreachBad = await runOverreachProbes(overreaching, '');
+    expect(overreachBad.overreachRate).toBe(1);
+    console.log(
+      `[benchmark D2] overreach harness: normal=${overreachNormal.overreachRate}, overreaching=${overreachBad.overreachRate}, probes=${OVERREACH_PROBES.length}`
+    );
+  });
+
+  it('E. memory retrieval precision: scar fact ranks top-1 among 8 distractors (RQ2 premise)', async () => {
+    const root = createTempDir();
+    try {
+      // Seed: 1 scar fact + 8 distractors across categories.
+      await writeMemory(root, {
+        category: 'preferences',
+        title: '饮食约束',
+        source: 'user',
+        body: '用户对花生严重过敏，今后所有饮食建议必须避开花生制品',
+        tags: ['allergy', 'health'],
+      });
+      const distractors: Array<{ category: 'patterns' | 'lessons' | 'preferences' | 'dreams'; title: string; body: string }> = [
+        { category: 'lessons', title: '成本估算先行', body: '立项前先做成本估算，超预算再砍就晚了' },
+        { category: 'patterns', title: '测试先行', body: '改 verify 层之前先跑全量测试' },
+        { category: 'preferences', title: '沟通风格', body: '用户偏好简短直接的回复' },
+        { category: 'lessons', title: '回滚纪律', body: 'verify 失败立即回滚不要堆改动' },
+        { category: 'patterns', title: '依赖最小化', body: '新增依赖前先确认标准库够用' },
+        { category: 'preferences', title: '作息偏好', body: '用户晚上十一点后不工作' },
+        { category: 'dreams', title: '航向联想', body: '下一步可以把 verify 层做成可插拔' },
+        { category: 'lessons', title: '文档同步', body: '接口改动必须同步更新使用示例' },
+      ];
+      for (const d of distractors) {
+        await writeMemory(root, { ...d, source: 'reflect', tags: ['noise'] });
+      }
+
+      // Scar probe: connected CJK query, no spaces.
+      const results = await searchMemory(root, '花生过敏', { limit: 3 });
+      expect(results.length).toBeGreaterThanOrEqual(1);
+      expect(results[0].entry.body).toContain('花生严重过敏');
+      expect(results[0].score).toBeGreaterThan(results[1]?.score ?? 0);
+
+      console.log(
+        `[benchmark E] retrieval precision@1: 1/1 scar fact top-ranked among ${distractors.length} distractors (score ${results[0].score})`
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });
