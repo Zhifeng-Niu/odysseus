@@ -87,6 +87,10 @@ describe('runTaskSuite — batched task-completion metrics', () => {
     expect(s.totalTokens).toBe(0);
   });
 
+  // 30s timeout: this single test runs five orchestrator waypoints serially,
+  // each paying a real `tsc` syntax-verify pass (~1s apiece warm, multi-second
+  // under full-suite concurrency). The default 5s budget times out on loaded
+  // machines (observed in the concurrent full-suite run).
   test('five-task mixed suite (P0 acceptance: ≥5 tasks) → 3/5 success', async () => {
     const cases: readonly TaskCase[] = [
       {
@@ -151,5 +155,5 @@ describe('runTaskSuite — batched task-completion metrics', () => {
     expect(s.results[4]?.outcome).toBe('success'); // waypoint "succeeded"…
     expect(s.results[4]?.artifactOk).toBe(false); // …but artifact check rejects it
     expect(s.totalTokens).toBeGreaterThanOrEqual(15 * 5); // every step bills 15 tokens
-  });
+  }, 30000);
 });
