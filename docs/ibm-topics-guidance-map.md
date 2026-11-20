@@ -154,10 +154,11 @@ agent 低优（与既判一致：协议与 MCP/delta 正交，A2A 后置）。
   批量任务，success 须 outcome∧artifact 双验，≥5 任务套件）、injection-probes
   （间接注入 ×4 向量，injectionResistRate）。参数 grounding 与 LLM-as-judge 仍为
   升级路径（原计划项，未在本轮）。
-- **P1 反思固化 = learning element**（reasoning/LATS + learning 六组件对照）：
-  verify 失败教训结构化写入长期记忆（lesson 记录：症状/根因/修法），下个 waypoint
-  检索注入；附带 predictive perception 最小版（重复失败模式→自动入 backlog）。
-  理由：Ithaca 记忆五性质的 Consolidation；Cerebellum 已有 4/6 组件骨架。
+- **P1 反思固化 = learning element**（reasoning/LATS + learning 六组件对照）
+  ——✅ 已实现（autodev iter2，src/cerebellum/lesson-recorder.ts）：事件订阅
+  （orchestrator 不动）→ 终局失败写结构化 lesson（症状/根因/修法方向，sha1
+  指纹去重）→ lessons.md 经 loadLongTermMemoryMarkdown 注入后续 waypoint。
+  附带 predictive perception 最小版（重复失败模式→自动入 backlog）仍为待办。
 - **P2 语义检索**（agentic RAG 对照）：词法→embedding 升级路径（既有立项前提）；
   启动时深读 agentic-chunking。
 - **P3 注入防护**（security 对照）：外部内容进 prompt 的来源标注+隔离区；检索
