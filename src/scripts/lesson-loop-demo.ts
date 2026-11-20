@@ -49,9 +49,14 @@ async function main(): Promise<void> {
   const cfg = loadConfig();
   console.log(`model: ${cfg.model} @ ${cfg.baseUrl}`);
 
-  const memoryRoot = resolve(process.cwd(), '.odysseus');
+  // Isolated memory root: the demo writes REAL lessons from a synthetic
+  // failure — they must not pollute the live .odysseus memory store (found
+  // when the repo's memory-size cap tripped after a demo run). Shaped as
+  // {demoCwd}/.odysseus so Phase B can verify via loadLongTermMemoryMarkdown.
+  const demoCwd = await fs.mkdtemp(join(os.tmpdir(), 'lesson-loop-mem-'));
+  const memoryRoot = join(demoCwd, '.odysseus');
   const lessonsBefore = (await readMemory(memoryRoot, 'lessons')).length;
-  console.log(`lessons.md before: ${lessonsBefore} entries\n`);
+  console.log(`lessons.md before: ${lessonsBefore} entries (isolated root: ${memoryRoot})\n`);
 
   const root = await makeRepo();
   const registry = new ToolRegistry();
@@ -102,7 +107,7 @@ async function main(): Promise<void> {
   // prompt (any task, any model) will carry these lessons via
   // loadLongTermMemoryMarkdown, which reads the same file.
   console.log('\n▶ Phase B: injection-side check (loadLongTermMemoryMarkdown content)...');
-  const injected = loadLongTermMemoryMarkdown(process.cwd());
+  const injected = loadLongTermMemoryMarkdown(demoCwd);
   const lessonsSection = injected.split('## lessons')[1] ?? '';
   const hasFresh = fresh.every((lesson) => lessonsSection.includes(lesson.title));
   console.log(
