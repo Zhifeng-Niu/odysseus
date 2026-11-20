@@ -29,8 +29,17 @@ export interface VerifyOutput {
 // silently falls back to the deprecated npm `tsc` stub (which exits 0 with a
 // help message) on systems that have it cached, defeating the syntax gate.
 // Pinning to the local `typescript/bin/tsc` keeps the gate trustworthy.
-const require = createRequire(import.meta.url);
-const TSC_BIN = require.resolve('typescript/bin/tsc');
+// Resolved LAZILY (first syntax run, not module load): typescript is a
+// runtime dependency now, but a broken install must degrade the syntax
+// layer gracefully instead of crashing the whole entry point.
+let tscBinCache: string | null = null;
+function resolveTscBin(): string {
+  if (tscBinCache === null) {
+    const require = createRequire(import.meta.url);
+    tscBinCache = require.resolve('typescript/bin/tsc');
+  }
+  return tscBinCache;
+}
 
 export async function runVerify(input: VerifyInput): Promise<VerifyOutput> {
   const results: Record<VerifyLayer, VerifyLayerResult> = {
@@ -44,6 +53,16 @@ export async function runVerify(input: VerifyInput): Promise<VerifyOutput> {
 
   for (const layer of input.layers) {
     if (layer === 'syntax') {
+      let TSC_BIN: string;
+      try {
+        TSC_BIN = resolveTscBin();
+      } catch (err) {
+        results.syntax = 'fail';
+        details.push(
+          `--- syntax ---\ntypescript unavailable in this install: ${err instanceof Error ? err.message : String(err)}`
+        );
+        continue;
+      }
       // Project mode (tsconfig.json present): bare `tsc --noEmit` checks
       // the whole project. No tsconfig → check only the CHANGED .ts files
       // (bare tsc would print help text and fail every waypoint run in an

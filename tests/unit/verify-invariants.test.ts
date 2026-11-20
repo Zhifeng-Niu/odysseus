@@ -432,9 +432,16 @@ describe('verify — source-level safety', () => {
 // ---------------------------------------------------------------------------
 
 describe('verify — structural fingerprint', () => {
-  test('TSC_BIN is module-scoped const (not exported)', async () => {
+  test('TSC_BIN resolves lazily inside runVerify, not exported', async () => {
+    // Formerly a module-level `const TSC_BIN = require.resolve(...)`: a
+    // broken/global install crashed the whole entry point at IMPORT time
+    // (typescript/bin/tsc missing). Now the resolve is lazy + guarded inside
+    // the syntax branch — a missing compiler fails the syntax layer
+    // gracefully instead of killing module load. Still never exported.
     const src = await readFile(SRC_PATH, 'utf8');
-    expect(src).toMatch(/^const\s+TSC_BIN\s*=\s*require\.resolve/m);
+    expect(src).toMatch(/function\s+resolveTscBin\(\)\s*:\s*string/);
+    expect(src).toMatch(/let\s+TSC_BIN:\s*string/);
+    expect(src).toMatch(/TSC_BIN\s*=\s*resolveTscBin\(\)/);
     expect(src).not.toMatch(/^export\s+const\s+TSC_BIN/m);
   });
 

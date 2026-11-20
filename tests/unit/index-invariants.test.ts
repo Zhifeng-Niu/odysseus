@@ -434,7 +434,7 @@ describe('index — source-level safety', () => {
 // ---------------------------------------------------------------------------
 
 describe('index — structural fingerprint', () => {
-  test('file is between 80 and 150 lines (compact entry point)', async () => {
+  test('file is between 80 and 152 lines (compact entry point)', async () => {
     // Upper bound 120 → 125: the /ithaca CLI surface (Ithaca MVP port) adds
     // a 3-line local dispatch — the protected core must never enter the LLM
     // path, so it cannot be folded into runAgentTurn.
@@ -443,10 +443,14 @@ describe('index — structural fingerprint', () => {
     // 145 → 150: lesson recorder wiring (P1 learning element) — one import +
     // one attach call in runVoyageConsole; the recorder lives in its own
     // module, the entry point only wires it.
+    // 150 → 152: `odysseus init` dispatch (一句话部署) + bin shebang — the
+    // global bin symlinks straight at dist/index.js, which needs
+    // #!/usr/bin/env node to execute as a program (no shebang → sh "runs"
+    // the JS: line 1 `import ...` invokes ImageMagick's import!).
     const src = await readFile(SRC_PATH, 'utf8');
     const lines = src.split('\n');
     expect(lines.length).toBeGreaterThanOrEqual(80);
-    expect(lines.length).toBeLessThanOrEqual(150);
+    expect(lines.length).toBeLessThanOrEqual(152);
   });
 
   test('has no class declarations (function-only module)', async () => {

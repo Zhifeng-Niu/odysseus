@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { loadConfig } from './config.js';
 import { GLMProvider } from './llm/glm.js';
 import { ToolRegistry } from './tools/registry.js';
