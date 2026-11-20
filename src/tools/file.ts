@@ -1,5 +1,5 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 import type { Tool, ToolContext, ToolResult } from './types.js';
 import { truncateForLLM } from '../util/truncate.js';
 import { quarantineExternalContent } from '../util/quarantine.js';
@@ -20,6 +20,18 @@ import { quarantineExternalContent } from '../util/quarantine.js';
  */
 const DEFAULT_LINE_LIMIT = 1000;
 const DEFAULT_CHAR_CAP = 20_000;
+
+/**
+ * Declared contract: paths may be absolute or cwd-relative — where cwd is
+ * the AGENT's working directory (ToolContext.cwd), never the driver
+ * process's process.cwd(). Found by the first live-model baseline (the
+ * model writes 'hello.ts', the file landed outside the repo, the progress
+ * verify correctly failed the actually-successful waypoint). bash/git
+ * already honor ctx.cwd; the file tools must too.
+ */
+function resolveInCtx(path: string, ctx: ToolContext): string {
+  return isAbsolute(path) ? path : join(ctx.cwd, path);
+}
 
 export class FileReadTool implements Tool {
   readonly name = 'file-read';
@@ -47,9 +59,10 @@ export class FileReadTool implements Tool {
     return false;
   }
 
-  async execute(args: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> {
-    const path = String(args.path ?? '');
-    if (!path) return { ok: false, error: 'path required' };
+  async execute(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+    const rawPath = String(args.path ?? '');
+    if (!rawPath) return { ok: false, error: 'path required' };
+    const path = resolveInCtx(rawPath, ctx);
     const offset = parseNonNegativeInt(args.offset, 0);
     const limit = parseNonNegativeInt(args.limit, DEFAULT_LINE_LIMIT);
     try {
@@ -94,10 +107,11 @@ export class FileWriteTool implements Tool {
     required: ['path', 'content'],
   };
 
-  async execute(args: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> {
-    const path = String(args.path ?? '');
+  async execute(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+    const rawPath = String(args.path ?? '');
+    if (!rawPath) return { ok: false, error: 'path required' };
+    const path = resolveInCtx(rawPath, ctx);
     const content = String(args.content ?? '');
-    if (!path) return { ok: false, error: 'path required' };
     try {
       await mkdir(dirname(path), { recursive: true });
       await writeFile(path, content, 'utf8');
@@ -122,8 +136,10 @@ export class FileEditTool implements Tool {
     required: ['path', 'oldString', 'newString'],
   };
 
-  async execute(args: Record<string, unknown>, _ctx: ToolContext): Promise<ToolResult> {
-    const path = String(args.path ?? '');
+  async execute(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+    const rawPath = String(args.path ?? '');
+    if (!rawPath) return { ok: false, error: 'path and oldString required' };
+    const path = resolveInCtx(rawPath, ctx);
     const oldString = String(args.oldString ?? '');
     const newString = String(args.newString ?? '');
     if (!path || !oldString) return { ok: false, error: 'path and oldString required' };
