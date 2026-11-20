@@ -148,10 +148,12 @@ agent 低优（与既判一致：协议与 MCP/delta 正交，A2A 后置）。
 
 ## 5. 路线图（下一 mission WP 候选）
 
-- **P0 评测层**（evaluation/testing 对照）：function-calling 错误分类指标
-  （5 规则类+参数 grounding）+ 任务成功率批量化（≥5 任务/批，success rate /
-  error rate / cost / latency）+ 注入脆弱度探针扩展。产出=「能完成 task」从单点
-  证明变成可度量曲线。
+- **P0 评测层**（evaluation/testing 对照）——✅ 已实现（autodev iter1，src/eval/）：
+  tool-call-eval（wrong-name/malformed-json/hallucinated-param/missing-param/
+  wrong-type/disallowed-value 七态判定+汇总率）、task-suite（真编排器+脚本 provider
+  批量任务，success 须 outcome∧artifact 双验，≥5 任务套件）、injection-probes
+  （间接注入 ×4 向量，injectionResistRate）。参数 grounding 与 LLM-as-judge 仍为
+  升级路径（原计划项，未在本轮）。
 - **P1 反思固化 = learning element**（reasoning/LATS + learning 六组件对照）：
   verify 失败教训结构化写入长期记忆（lesson 记录：症状/根因/修法），下个 waypoint
   检索注入；附带 predictive perception 最小版（重复失败模式→自动入 backlog）。
