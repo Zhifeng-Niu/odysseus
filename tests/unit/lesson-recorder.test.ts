@@ -271,12 +271,14 @@ describe('pruneAutolearnToCap — the first explicit forgetting operation', () =
       body: 'b'.repeat(400), tags: ['autolearn', 'fp:bbb'], ts: '2026-01-03T00:00:00Z',
     });
 
-    const removed = await pruneAutolearnToCap(memRoot(), 900);
+    // cap 1100: user(~500)+B(~520) fits, so ONLY the oldest autolearn (A)
+    // goes — this pins selectivity, not just aggressive shrinking.
+    const removed = await pruneAutolearnToCap(memRoot(), 1100);
     const lessons = await readMemory(memRoot(), 'lessons');
     const raw = await readFile(path.join(memRoot(), 'memory', 'lessons.md'), 'utf8');
 
-    expect(raw.length).toBeLessThanOrEqual(900);
-    expect(removed).toBeGreaterThanOrEqual(1);
+    expect(raw.length).toBeLessThanOrEqual(1100);
+    expect(removed).toBe(1);
     expect(lessons.find((l) => l.title.includes('user lesson'))).toBeDefined();
     expect(lessons.find((l) => l.title.includes('auto A'))).toBeUndefined();
     expect(lessons.find((l) => l.title.includes('auto B'))).toBeDefined();
