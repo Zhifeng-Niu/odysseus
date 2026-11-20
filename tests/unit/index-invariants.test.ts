@@ -29,12 +29,14 @@ import { readFile } from 'node:fs/promises';
 const SRC_PATH = 'src/index.ts';
 
 describe('index — module shape', () => {
-  test('has 14 import statements', async () => {
+  test('has 15 import statements', async () => {
     // 13 → 14: agent/guards.js (crash-free-task mission) — the entry point
     // owns process-guard installation.
+    // 14 → 15: cerebellum/lesson-recorder.js (P1 learning element) — the
+    // voyage console path wires verify-failure → lesson recording here.
     const src = await readFile(SRC_PATH, 'utf8');
     const imports = src.match(/^import\s/mg) ?? [];
-    expect(imports.length).toBe(14);
+    expect(imports.length).toBe(15);
   });
 
   test('imports from expected local modules', async () => {
@@ -432,16 +434,19 @@ describe('index — source-level safety', () => {
 // ---------------------------------------------------------------------------
 
 describe('index — structural fingerprint', () => {
-  test('file is between 80 and 145 lines (compact entry point)', async () => {
+  test('file is between 80 and 150 lines (compact entry point)', async () => {
     // Upper bound 120 → 125: the /ithaca CLI surface (Ithaca MVP port) adds
     // a 3-line local dispatch — the protected core must never enter the LLM
     // path, so it cannot be folded into runAgentTurn.
     // 125 → 145: crash guards (crash-free-task mission) — guard install +
     // report-to-event-log block at main() start.
+    // 145 → 150: lesson recorder wiring (P1 learning element) — one import +
+    // one attach call in runVoyageConsole; the recorder lives in its own
+    // module, the entry point only wires it.
     const src = await readFile(SRC_PATH, 'utf8');
     const lines = src.split('\n');
     expect(lines.length).toBeGreaterThanOrEqual(80);
-    expect(lines.length).toBeLessThanOrEqual(145);
+    expect(lines.length).toBeLessThanOrEqual(150);
   });
 
   test('has no class declarations (function-only module)', async () => {

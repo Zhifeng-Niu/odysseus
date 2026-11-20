@@ -1,5 +1,7 @@
+import { dirname } from 'node:path';
 import type { LLMProvider } from '../llm/provider.js';
 import { CerebellumOrchestrator } from '../cerebellum/orchestrator.js';
+import { attachLessonRecorder } from '../cerebellum/lesson-recorder.js';
 import type { ToolRegistry } from '../tools/registry.js';
 import type { VerifyLayer } from '../cerebellum/verify.js';
 import type { OrchestratorEvent } from '../orchestrator/events.js';
@@ -57,6 +59,11 @@ export async function runAgentTurn(
       lastAssistantMessage = event.content;
     }
   });
+
+  // P1 learning element: terminal verify failures become structured lessons
+  // in long-term memory (category 'lessons'), injected into every subsequent
+  // waypoint by loadLongTermMemoryMarkdown. Best-effort — never breaks the turn.
+  attachLessonRecorder(orchestrator, dirname(config.tracePath));
 
   const result = await orchestrator.runWaypoint({ goal: userInput });
 

@@ -302,16 +302,21 @@ describe('agent/loop — imports', () => {
     expect(src).toMatch(/^import\s+type\s+\{\s*OrchestratorEvent\s*\}\s+from\s+'\.\.\/orchestrator\/events\.js'/m);
   });
 
-  test('exactly 5 import statements', async () => {
+  test('exactly 7 import statements', async () => {
+    // 5 → 7: node:path (dirname — lesson recorder memoryRoot) and
+    // cerebellum/lesson-recorder.js (P1 learning element wiring) — runAgentTurn
+    // is the unified turn entry, so the recorder attaches here for CLI runs.
     const src = await readFile('src/agent/loop.ts', 'utf8');
     const imports = src.match(/^import\s/mg) ?? [];
-    expect(imports.length).toBe(5);
+    expect(imports.length).toBe(7);
   });
 
-  test('all imports use .js ESM extension', async () => {
+  test('all local imports use .js ESM extension', async () => {
+    // node: builtins are exempt — they have no .js extension by design.
     const src = await readFile('src/agent/loop.ts', 'utf8');
     const imports = src.match(/^import[^;\n]+from\s+'[^']+'/gm) ?? [];
     for (const imp of imports) {
+      if (imp.includes("from 'node:")) continue;
       expect(imp).toMatch(/\.js'/);
     }
   });

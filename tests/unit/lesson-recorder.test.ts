@@ -79,9 +79,9 @@ describe('attachLessonRecorder — terminal failure → structured lesson', () =
     expect(lesson.category).toBe('lessons');
     expect(lesson.title).toContain('syntax');
     expect(lesson.title).toContain('add a bash tool');
-    expect(lesson.body).toContain('## 症状');
-    expect(lesson.body).toContain('## 根因');
-    expect(lesson.body).toContain('## 修法方向');
+    expect(lesson.body).toContain('**症状**');
+    expect(lesson.body).toContain('**根因**');
+    expect(lesson.body).toContain('**修法方向**');
     expect(lesson.body).toContain('TS2321');
     expect(lesson.tags?.some((t) => t.startsWith('fp:'))).toBe(true);
     expect(lesson.relatedWaypointId).toBe('wp1');

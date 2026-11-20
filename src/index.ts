@@ -11,7 +11,8 @@ import { shouldAutoApprove } from './cerebellum/pending-review-auto.js';
 import { startTui } from './tui/index.js';
 import { loadDotenv } from './util/dotenv.js';
 import { recordEvent } from './trace/event-log.js';
-import { join } from 'node:path';
+import { attachLessonRecorder } from './cerebellum/lesson-recorder.js';
+import { join, dirname } from 'node:path';
 
 function isInteractive(): boolean {
   return process.stdout.isTTY === true && process.stdin.isTTY === true;
@@ -78,6 +79,9 @@ function runVoyageConsole(
   orch.on('event', (e) => {
     recordEvent(eventLogPath, e);
   });
+
+  // P1 learning element (voyage console path): verify failures → lessons.
+  attachLessonRecorder(orch, dirname(tracePath));
 
   startTui({ orch, model });
 }
