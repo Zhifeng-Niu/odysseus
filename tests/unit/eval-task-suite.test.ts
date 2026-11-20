@@ -86,4 +86,70 @@ describe('runTaskSuite — batched task-completion metrics', () => {
     expect(s.avgLatencyMs).toBe(0);
     expect(s.totalTokens).toBe(0);
   });
+
+  test('five-task mixed suite (P0 acceptance: ≥5 tasks) → 3/5 success', async () => {
+    const cases: readonly TaskCase[] = [
+      {
+        id: 'm1-single-write',
+        goal: 'create one module',
+        steps: (root) => [
+          writeStep(path.join(root, 'm1.ts'), 'export const m1 = 1;'),
+          doneStep(),
+        ],
+        verify: (root) => fs.existsSync(path.join(root, 'm1.ts')),
+      },
+      {
+        id: 'm2-two-writes',
+        goal: 'create two modules',
+        steps: (root) => [
+          writeStep(path.join(root, 'a.ts'), 'export const a = 1;'),
+          writeStep(path.join(root, 'b.ts'), 'export const b = 2;'),
+          doneStep(),
+        ],
+        verify: (root) =>
+          fs.existsSync(path.join(root, 'a.ts')) && fs.existsSync(path.join(root, 'b.ts')),
+      },
+      {
+        id: 'm3-read-then-write',
+        goal: 'overwrite existing file with new content',
+        steps: (root) => [
+          writeStep(path.join(root, 'c.ts'), 'export const c = 1;'),
+          writeStep(path.join(root, 'c.ts'), 'export const c = 99;'),
+          doneStep(),
+        ],
+        verify: (root) =>
+          fs.readFileSync(path.join(root, 'c.ts'), 'utf8').includes('export const c = 99;'),
+      },
+      {
+        id: 'm4-type-error',
+        goal: 'create intentionally broken module',
+        steps: (root) => [
+          writeStep(path.join(root, 'm4.ts'), 'export const x: number = "oops";'),
+          doneStep(),
+        ],
+        verify: () => true, // outcome already 'failure' via syntax verify
+      },
+      {
+        id: 'm5-wrong-artifact',
+        goal: 'create final.ts',
+        steps: (root) => [
+          writeStep(path.join(root, 'other.ts'), 'export const other = true;'),
+          doneStep(),
+        ],
+        verify: (root) => fs.existsSync(path.join(root, 'final.ts')), // artifact never created
+      },
+    ];
+
+    const s = await runTaskSuite(cases);
+    expect(s.total).toBe(5); // program.md P0 acceptance line
+    expect(s.succeeded).toBe(3);
+    expect(s.failed).toBe(2);
+    expect(s.successRate).toBeCloseTo(0.6);
+    expect(s.errorRate).toBeCloseTo(0.4);
+    expect(s.results.map((r) => r.success)).toEqual([true, true, true, false, false]);
+    expect(s.results[3]?.outcome).toBe('failure');
+    expect(s.results[4]?.outcome).toBe('success'); // waypoint "succeeded"…
+    expect(s.results[4]?.artifactOk).toBe(false); // …but artifact check rejects it
+    expect(s.totalTokens).toBeGreaterThanOrEqual(15 * 5); // every step bills 15 tokens
+  });
 });
