@@ -16,8 +16,11 @@
  * identical failures do not flood lessons.md.
  */
 import { createHash } from 'node:crypto';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import type { OrchestratorEvent } from '../orchestrator/events.js';
 import { readMemory, writeMemory } from './memory.js';
+import { serializeEntry } from './memory-parse.js';
 
 export interface LessonRecorderHandle {
   detach: () => void;
@@ -199,4 +202,51 @@ function normalizeForFingerprint(detail: string): string {
   return detail
     .replace(/\/(?:private\/)?(?:var\/folders|tmp)\/[^\s:']*/g, '<TMPDIR>')
     .replace(/\(\d+,\d+\)/g, '');
+}
+
+// ---------------------------------------------------------------------------
+// Explicit forgetting — live baselines keep feeding real lessons; the
+// injected-prompt budget (the repo's memory-size gate, 5k chars) is finite.
+// ---------------------------------------------------------------------------
+
+/** Mirrors the repo memory-size gate (tests/unit/memory-size.test.ts). */
+export const LESSONS_CAP_CHARS = 5000;
+
+/**
+ * Prune `autolearn`-tagged lessons oldest-first until lessons.md fits the
+ * cap. Human/dream/user lessons are NEVER touched — forgetting is scoped to
+ * what the agent wrote about its own mechanical failures. Returns the number
+ * of entries removed (0 = already under cap).
+ */
+export async function pruneAutolearnToCap(
+  memoryRoot: string,
+  capChars: number
+): Promise<number> {
+  const lessonsPath = join(memoryRoot, 'memory', 'lessons.md');
+  let raw: string;
+  try {
+    raw = await readFile(lessonsPath, 'utf8');
+  } catch {
+    return 0; // no lessons file = nothing to prune
+  }
+  if (raw.length <= capChars) return 0;
+
+  const entries = await readMemory(memoryRoot, 'lessons');
+  const autolearn = entries
+    .filter((entry) => (entry.tags ?? []).includes('autolearn'))
+    .sort((a, b) => a.ts.localeCompare(b.ts));
+  const keep = new Set(entries.map((entry) => entry.id));
+  let removed = 0;
+  for (const entry of autolearn) {
+    if (raw.length <= capChars) break;
+    keep.delete(entry.id);
+    removed += 1;
+    raw = entries
+      .filter((e) => keep.has(e.id))
+      .map((e) => `${serializeEntry(e)}\n`)
+      .join('');
+  }
+  await mkdir(dirname(lessonsPath), { recursive: true });
+  await writeFile(lessonsPath, raw, 'utf8');
+  return removed;
 }
