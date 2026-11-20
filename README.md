@@ -4,13 +4,25 @@ A Cerebellum-driven, self-bootstrapping coding agent.
 
 > This is the Spike Phase of Odysseus v2. It exists to answer one question: does Cerebellum-style checkpoint → verify → rollback produce measurable capability gains when an agent edits its own code? See [`docs/superpowers/specs/2026-07-18-odysseus-restart-design.md`](docs/superpowers/specs/2026-07-18-odysseus-restart-design.md).
 
-## Quickstart
+## 一句话部署（Quickstart）
+
+**人类**：一行命令装好（含 init 引导配置 GLM key 并 live 验证）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Zhifeng-Niu/odysseus/main/install.sh | bash
+```
+
+**给任何编码 agent 的一句话**（Claude Code / OpenClaw / 任意 CLI agent 都能执行）：
+
+> 「请部署 Odysseus（https://github.com/Zhifeng-Niu/odysseus）：clone 仓库 → npm install && npm run build → 运行 odysseus init 把我的 GLM key（我稍后提供）写进 .env 并验证，最后用一句真实任务验收它能完成。」
+
+**本地开发**：
 
 ```bash
 # 1. Install deps
 npm install
 
-# 2. Configure environment
+# 2. Configure environment（或构建后直接跑 odysseus init 引导配置）
 cp .env.example .env
 # Edit .env and add your GLM-5.2 API key from https://open.bigmodel.cn
 

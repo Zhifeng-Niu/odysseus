@@ -124,7 +124,9 @@ export async function runInit(options: InitOptions): Promise<InitReport> {
 async function defaultPing(apiKey: string, baseUrl: string, model: string): Promise<PingResult> {
   try {
     const provider = new GLMProvider({ apiKey, model, baseUrl });
-    const completion = await provider.complete('回复ok', { maxTokens: 8 });
+    // Reasoning models (GLM-5.2) can burn a tiny max_tokens budget entirely
+    // on thinking and return empty content — give the ping real room.
+    const completion = await provider.complete('回复ok', { maxTokens: 512 });
     return completion.content.length > 0 ? { ok: true } : { ok: false, error: 'empty reply' };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };

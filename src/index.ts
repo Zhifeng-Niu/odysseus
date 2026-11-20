@@ -111,6 +111,8 @@ async function main(): Promise<void> {
   const userInput = process.argv.slice(2).join(' ').trim();
   // /ithaca — protected core; local-only, never enters the LLM, works without an API key.
   if (userInput.startsWith('/ithaca')) return (await import('./ithaca/commands.js')).runIthacaCli(userInput);
+  // odysseus init — one-command setup (一句话部署); like /ithaca, needs no key.
+  if (userInput === 'init' || userInput === 'setup') return (await import('./setup.js')).runInitCli(userInput);
 
   const config = loadConfig();
   const provider = new GLMProvider({
