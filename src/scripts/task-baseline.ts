@@ -93,12 +93,19 @@ async function main(): Promise<void> {
     registry.register(new GitTool());
     registry.register(new BashTool());
 
+    if (task.acceptance) {
+      await fs.writeFile(
+        join(root, '.odysseus', 'acceptance.json'),
+        JSON.stringify(task.acceptance, null, 2) + '\n',
+        'utf8'
+      );
+    }
     const orch = new CerebellumOrchestrator({
       cwd: root,
       provider: counting,
       registry,
       tracePath: join(root, '.odysseus', 'trace.jsonl'),
-      verifyLayers: ['progress', 'syntax', 'tests'],
+      verifyLayers: task.verifyLayers ?? ['progress', 'syntax', 'tests'],
       autoApprove: true,
     });
     // Failures compound into the LIVE lesson store (not the throwaway repo).

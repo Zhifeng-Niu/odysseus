@@ -17,6 +17,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { execFileNoThrow } from '../util/exec.js';
 import type { LLMCompletion, LLMProvider } from '../llm/provider.js';
+import type { VerifyLayer } from '../cerebellum/verify.js';
 import { CerebellumOrchestrator } from '../cerebellum/orchestrator.js';
 import { ToolRegistry } from '../tools/registry.js';
 import { FileReadTool, FileWriteTool } from '../tools/file.js';
@@ -28,6 +29,20 @@ export interface TaskCase {
   readonly steps: (root: string) => readonly LLMCompletion[];
   /** Artifact-level acceptance, evaluated only on outcome==='success'. */
   readonly verify: (root: string) => boolean | Promise<boolean>;
+  /** Verify layers for this case (default: ['syntax'] — code-task era). */
+  readonly verifyLayers?: readonly VerifyLayer[];
+  /**
+   * M4: declared acceptance for life-domain tasks — written to
+   * {root}/.odysseus/acceptance.json so the artifact verify layer can gate
+   * non-code artifacts (declared by the harness, never self-graded).
+   */
+  readonly acceptance?: {
+    readonly checks: readonly {
+      readonly path: string;
+      readonly contains?: string;
+      readonly existsOnly?: boolean;
+    }[];
+  };
 }
 
 export interface TaskRunResult {
@@ -109,12 +124,22 @@ async function runSingleCase(taskCase: TaskCase): Promise<TaskRunResult> {
   const tracePath = path.join(root, '.odysseus', 'trace.jsonl');
   await fs.mkdir(path.dirname(tracePath), { recursive: true });
 
+  // M4: declared acceptance lands BEFORE the waypoint runs — the artifact
+  // verify layer reads it at gate time (declared, not self-graded).
+  if (taskCase.acceptance) {
+    await fs.writeFile(
+      path.join(root, '.odysseus', 'acceptance.json'),
+      JSON.stringify(taskCase.acceptance, null, 2) + '\n',
+      'utf8'
+    );
+  }
+
   const orch = new CerebellumOrchestrator({
     cwd: root,
     provider,
     registry,
     tracePath,
-    verifyLayers: ['syntax'],
+    verifyLayers: taskCase.verifyLayers ?? ['syntax'],
     autoApprove: true,
   });
 
