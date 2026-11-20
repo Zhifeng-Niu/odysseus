@@ -21,6 +21,7 @@ import {
 import {
   searchMemory,
   searchMemoryHybrid,
+  recallMemoryAsPromptContext,
 } from '../../src/cerebellum/memory-retrieval.js';
 import { writeMemory } from '../../src/cerebellum/memory.js';
 
@@ -164,5 +165,31 @@ describe('searchMemoryHybrid — lexical ⊕ vector blend', () => {
       limit: 1,
     });
     expect(hybrid).toHaveLength(1);
+  });
+});
+
+describe('recallMemoryAsPromptContext — embedding passthrough (M5)', () => {
+  test('zero-lexical query surfaces the entry when an embedder is passed', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mem-recall-emb-'));
+    try {
+      await writeMemory(root, {
+        category: 'preferences',
+        source: 'user',
+        title: '花生过敏',
+        body: '推荐食物时必须排除花生与花生酱。',
+      });
+      // keyword-only recall misses the English query entirely…
+      const lexical = await recallMemoryAsPromptContext(root, 'peanut');
+      expect(lexical).toBe('');
+
+      // …the hybrid path (embedder passthrough) surfaces it.
+      const block = await recallMemoryAsPromptContext(root, 'peanut', {
+        embedding: crossLingualEmbedder(),
+        maxEntries: 3,
+      });
+      expect(block).toContain('花生过敏');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });

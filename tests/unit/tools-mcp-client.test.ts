@@ -58,7 +58,13 @@ describe('registerMcpTools — registry bridge', () => {
       expect(spec?.function.description).toContain('Echo');
 
       const result = await registry.dispatch('echo', { text: 'hi' }, { cwd: process.cwd() });
-      expect(result).toEqual({ ok: true, value: 'echo: hi' });
+      // M5 injection defense: MCP tool output is EXTERNAL data — it enters
+      // the prompt inside the nonce quarantine (same contract as file-read,
+      // see util/quarantine.ts + p3-quarantine.test.ts).
+      if (result.ok) {
+        expect(result.value).toMatch(/^<<<QUARANTINE-[0-9a-f]{8} DATA-ONLY origin="mcp-tool"/);
+        expect(result.value).toContain('echo: hi');
+      }
 
       // Conservative default: MCP tools are treated as mutating (checkpoint
       // cost over un-checkpointed mutation risk).
