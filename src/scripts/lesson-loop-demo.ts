@@ -13,7 +13,7 @@
  * Every rerun must show: new lesson (different fingerprint) OR dedup hit on
  * an identical failure — both are correct loop behavior; floods are not.
  */
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import { execFileNoThrow } from '../util/exec.js';
