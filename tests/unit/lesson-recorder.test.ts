@@ -11,8 +11,9 @@ import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { attachLessonRecorder } from '../../src/cerebellum/lesson-recorder.js';
-import { readMemory } from '../../src/cerebellum/memory.js';
+import { readFile } from 'node:fs/promises';
+import { attachLessonRecorder, pruneAutolearnToCap } from '../../src/cerebellum/lesson-recorder.js';
+import { readMemory, writeMemory } from '../../src/cerebellum/memory.js';
 import type { OrchestratorEvent } from '../../src/orchestrator/events.js';
 
 class FakeOrchestrator {
@@ -237,5 +238,67 @@ describe('fingerprint normalization — temp paths must not defeat dedup', () =>
 
     const lessons = await readMemory(memRoot(), 'lessons');
     expect(lessons[0]!.body).toContain('/var/folders/xx/T/lesson-loop-AAAA/broken.ts');
+  });
+});
+
+describe('pruneAutolearnToCap — the first explicit forgetting operation', () => {
+  // Live baselines feed real lessons into the store; the repo's memory-size
+  // gate keeps the injected prompt bounded. Forgetting must be explicit and
+  // selective: autolearn entries go oldest-first; human/dream lessons never.
+  let root: string;
+
+  const memRoot = (): string => path.join(root, '.odysseus');
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'lesson-prune-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  test('prunes oldest autolearn first, never touches user lessons', async () => {
+    await writeMemory(memRoot(), {
+      category: 'lessons', source: 'user', title: 'user lesson (old, big)',
+      body: 'u'.repeat(400), ts: '2026-01-01T00:00:00Z',
+    });
+    await writeMemory(memRoot(), {
+      category: 'lessons', source: 'failure', title: 'auto A (oldest autolearn)',
+      body: 'a'.repeat(400), tags: ['autolearn', 'fp:aaa'], ts: '2026-01-02T00:00:00Z',
+    });
+    await writeMemory(memRoot(), {
+      category: 'lessons', source: 'failure', title: 'auto B (newest)',
+      body: 'b'.repeat(400), tags: ['autolearn', 'fp:bbb'], ts: '2026-01-03T00:00:00Z',
+    });
+
+    const removed = await pruneAutolearnToCap(memRoot(), 900);
+    const lessons = await readMemory(memRoot(), 'lessons');
+    const raw = await readFile(path.join(memRoot(), 'memory', 'lessons.md'), 'utf8');
+
+    expect(raw.length).toBeLessThanOrEqual(900);
+    expect(removed).toBeGreaterThanOrEqual(1);
+    expect(lessons.find((l) => l.title.includes('user lesson'))).toBeDefined();
+    expect(lessons.find((l) => l.title.includes('auto A'))).toBeUndefined();
+    expect(lessons.find((l) => l.title.includes('auto B'))).toBeDefined();
+  });
+
+  test('already under cap → no-op, returns 0', async () => {
+    await writeMemory(memRoot(), {
+      category: 'lessons', source: 'user', title: 'small', body: 'tiny',
+    });
+    const removed = await pruneAutolearnToCap(memRoot(), 5000);
+    expect(removed).toBe(0);
+    expect((await readMemory(memRoot(), 'lessons'))).toHaveLength(1);
+  });
+
+  test('never prunes the last resort: autolearn-only store can go to zero but no crash', async () => {
+    await writeMemory(memRoot(), {
+      category: 'lessons', source: 'failure', title: 'only autolearn',
+      body: 'x'.repeat(600), tags: ['autolearn', 'fp:xxx'],
+    });
+    const removed = await pruneAutolearnToCap(memRoot(), 100);
+    const lessons = await readMemory(memRoot(), 'lessons');
+    expect(removed).toBeGreaterThanOrEqual(1);
+    expect(lessons).toHaveLength(0); // cap 100 < one entry: everything autolearn goes
   });
 });

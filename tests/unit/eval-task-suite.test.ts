@@ -160,3 +160,32 @@ describe('runTaskSuite — batched task-completion metrics', () => {
     expect(s.totalTokens).toBeGreaterThanOrEqual(15 * 5); // every step bills 15 tokens
   }, 30000);
 });
+
+describe('runTaskSuite — 10-task capability (M3 acceptance)', () => {
+  // Mixed difficulty at scale: 2 ts-cases pay real tsc verify; 8 non-ts
+  // cases skip the syntax pass fast (no .ts changes → nothing to check).
+  // Proves the harness scales to the ≥10 live baseline without timing out.
+  test('ten mixed tasks → all succeed, summary scales', async () => {
+    const cases: TaskCase[] = [];
+    for (let i = 0; i < 10; i++) {
+      const isTs = i === 0 || i === 5; // exactly two ts-cases
+      const fileName = isTs ? `mod-${i}.ts` : `notes-${i}.md`;
+      const marker = `payload-${i}`;
+      cases.push({
+        id: `scale-${i}`,
+        goal: `创建文件 ${fileName}，内容包含一行：${marker}`,
+        steps: (root) => [
+          writeStep(path.join(root, fileName), `${marker}\n`),
+          doneStep(),
+        ],
+        verify: (root) =>
+          fs.readFileSync(path.join(root, fileName), 'utf8').includes(marker),
+      });
+    }
+    const s = await runTaskSuite(cases);
+    expect(s.total).toBe(10);
+    expect(s.succeeded).toBe(10);
+    expect(s.successRate).toBeCloseTo(1);
+    expect(s.totalTokens).toBeGreaterThanOrEqual(15 * 20); // 2 steps × 15 tokens × 10
+  }, 60000);
+});
