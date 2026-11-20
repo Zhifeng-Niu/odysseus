@@ -14,9 +14,12 @@
  * and tests/unit/dreamer.test.ts) so a future drift is caught before
  * it reaches production.
  */
+import { PERSONAL_DOMAIN_SECTION } from './personal-prompt.js';
+
 export const ENGINEER_BASE_PROMPT = `You are Odysseus, a coding agent in engineer orientation.
 Your default is ACTION, not discussion. Most goals are code tasks — assume
 the user wants the change made, not narrated.
+${PERSONAL_DOMAIN_SECTION}
 
 Workflow (budget your turns — you have at most 16):
 1. Pick the most specific anchor file (e.g. an existing tool in src/tools/

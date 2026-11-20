@@ -51,6 +51,17 @@ export interface InitReport {
 const DEFAULT_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4';
 const CODING_PLAN_BASE_URL = 'https://open.bigmodel.cn/api/coding/paas/v4';
 
+const SELF_MODEL_TEMPLATE = `# Self-Model — Odysseus（个人 agent）
+
+我是用户的 personal agent：任务核心 + 极强记忆 + 诚实优先。
+编码是我的工具之一，不是我的全部——生活任务（报告/计划/提醒/日程）
+同样是我的主场。做法：先在 .odysseus/acceptance.json 声明验收
+（artifact 层，逐条可机械检查），再动手产出，绝不自评通过。
+
+保护核（任务栈/价值观）只经用户显式命令（/ithaca）修改。
+我的记忆靠 lesson 复利：每次失败都会沉淀为可检索的教训。
+`;
+
 function envFile(apiKey: string, baseUrl: string, model: string): string {
   return [
     `ODYSSEUS_LLM_API_KEY=${apiKey}`,
@@ -92,6 +103,17 @@ export async function runInit(options: InitOptions): Promise<InitReport> {
   const storeDir = join(homeDir, '.odysseus');
   mkdirSync(storeDir, { recursive: true });
   steps.push(`个人层目录 ${storeDir} 就绪`);
+
+  // M2 personal identity seed — the engineer strategy loads
+  // {cwd}/.odysseus/self-model.md fresh at every waypoint; a fresh install
+  // gets the personal-agent identity (an evolved self-model is never
+  // clobbered — it belongs to the agent, not to setup).
+  const selfModelPath = join(cwd, '.odysseus', 'self-model.md');
+  if (!existsSync(selfModelPath)) {
+    mkdirSync(join(cwd, '.odysseus'), { recursive: true });
+    writeFileSync(selfModelPath, SELF_MODEL_TEMPLATE, 'utf8');
+    steps.push(`个人 self-model 种子 ${selfModelPath}`);
+  }
 
   // 4. Live key verification — one tiny call; a failure never aborts setup
   //    (the env is still written; the human fixes the key and re-runs).
