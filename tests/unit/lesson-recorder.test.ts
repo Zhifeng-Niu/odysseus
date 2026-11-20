@@ -174,3 +174,68 @@ describe('attachLessonRecorder — terminal failure → structured lesson', () =
     expect(() => attachLessonRecorder(broken, memRoot())).not.toThrow();
   });
 });
+
+describe('fingerprint normalization — temp paths must not defeat dedup', () => {
+  // lesson-loop-demo finding: the fingerprint hashes the raw detail, and
+  // syntax details embed the absolute temp path — so the SAME failure in a
+  // different repo/temp-dir produced a different fingerprint and escaped
+  // dedup. Normalize temp dirs (and line/col drift) before hashing.
+  let root: string;
+  let orch: FakeOrchestrator;
+  let recorder: ReturnType<typeof attachLessonRecorder> | null = null;
+
+  const memRoot = (): string => path.join(root, '.odysseus');
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'lesson-fp-'));
+    orch = new FakeOrchestrator();
+  });
+
+  afterEach(() => {
+    recorder?.detach();
+    recorder = null;
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  function emitFailure(goal: string, detail: string, waypointId: string): void {
+    orch.emit({ type: 'waypoint-started', waypointId, goal, strategy: 'engineer', ts: Date.now() });
+    orch.emit({ type: 'verify-completed', waypointId, iteration: 1, passed: false, detail, ts: Date.now() });
+    orch.emit({ type: 'waypoint-rolled-back', waypointId, reason: 'verify failed', iterationsUsed: 1, ts: Date.now() });
+  }
+
+  test('same failure at different temp dirs dedups to one lesson', async () => {
+    recorder = attachLessonRecorder(orch, memRoot());
+    const detailA = '--- syntax ---\n/var/folders/xx/T/lesson-loop-AAAA/broken.ts(1,14): error TS2322: Type string is not assignable to type number.';
+    const detailB = '--- syntax ---\n/var/folders/yy/T/lesson-loop-BBBB/broken.ts(1,14): error TS2322: Type string is not assignable to type number.';
+    emitFailure('same goal', detailA, 'wp1');
+    await recorder.pending();
+    emitFailure('same goal', detailB, 'wp2');
+    await recorder.pending();
+
+    const lessons = await readMemory(memRoot(), 'lessons');
+    expect(lessons).toHaveLength(1);
+  });
+
+  test('normalization keeps genuinely different failures distinct', async () => {
+    recorder = attachLessonRecorder(orch, memRoot());
+    const detailA = '--- syntax ---\n/tmp/repo-x/broken.ts(1,14): error TS2322: Type string is not assignable to type number.';
+    const detailB = '--- syntax ---\n/tmp/repo-x/broken.ts(2,20): error TS2304: Cannot find name foo.';
+    emitFailure('same goal', detailA, 'wp1');
+    await recorder.pending();
+    emitFailure('same goal', detailB, 'wp2');
+    await recorder.pending();
+
+    const lessons = await readMemory(memRoot(), 'lessons');
+    expect(lessons).toHaveLength(2);
+  });
+
+  test('stored symptom body keeps the RAW detail (paths still visible)', async () => {
+    recorder = attachLessonRecorder(orch, memRoot());
+    const detail = '--- syntax ---\n/var/folders/xx/T/lesson-loop-AAAA/broken.ts(1,14): error TS2322: boom';
+    emitFailure('raw detail goal', detail, 'wp1');
+    await recorder.pending();
+
+    const lessons = await readMemory(memRoot(), 'lessons');
+    expect(lessons[0]!.body).toContain('/var/folders/xx/T/lesson-loop-AAAA/broken.ts');
+  });
+});
