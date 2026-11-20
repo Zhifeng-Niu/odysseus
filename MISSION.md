@@ -1,60 +1,61 @@
 ---
 orientation: [engineer]
-status: complete
-started_at: 2026-11-19T10:09:59Z
-expedition_branch: odyssey/stable-agent-20261119
-baseline_metric: "suite 4817 pass, build+tsc clean"
-best_metric: "e2e-task-completion 3/3 green, suite 4825 pass"
-total_waypoints: 2
+status: active
+started_at: 2026-11-20T07:14:03Z
+expedition_branch: odyssey/personal-ithaca-20261120
+baseline_metric: "suite 4872 pass; live baseline: tasks 2/3, holdRate 0.67, overreach 0, injectResist 0.75 (empty core)"
+best_metric: "suite 4872 pass; live baseline: tasks 2/3, holdRate 0.67, overreach 0, injectResist 0.75 (empty core)"
+total_waypoints: 0
 consecutive_discards: 0
-delivery_tier: standard
-patience_budget: 30
-discard_threshold: 10
-min_metric_delta_pct: 0.5
 ---
 
-# Mission: crash-free task-completing agent (IBM-guide-aligned)
+# Mission: 继续朝 personal 方向完善和迭代：真实 GLM 下验证并强化 Ithaca 
 
 ## Goal
+继续朝 personal 方向完善和迭代：真实 GLM 下验证并强化 Ithaca 线。WP 方向——①有核探针基线：/ithaca add 填充 IthacaCore 任务栈后重跑 sycophancy/overreach/injection 三探针（当前基线是空核跑的，语义弱）；②lesson-recorder 真实闭环：live 失败→lesson 落盘→下次基线复利可测；③任务基线扩样 ≥10 并把 inc-function 型失败喂进 lesson 通道；④LLM-as-judge 评分升级替换 keyword 误报。验收线：全量测试保持绿（基线 4872）+ 每个航点产出可复跑的真实模型证据或能力测试。
 
-Make the Odysseus Spike a **crash-free agent that completes tasks end-to-end**.
-Acceptance line: a waypoint loop (checkpoint -> act -> verify -> commit/rollback)
-runs stable under a scripted LLM; a real code task produces an artifact that
-passes verify; error paths degrade gracefully instead of crashing. After the
-stability baseline, layer completeness per the consensus template (perception /
-memory retrieval / protocols / evals) is fair game.
+## Context
+Project type: typescript. Auto-detected guard: npm test 2>{{GUARD_DESC}}1.
+
+## Scope
+
+### Modifiable
+- (auto — all files not in Read-Only)
+
+### Read-Only (PROTECTED)
+- (none specified)
+
+## Metrics
+
+| Name | Unit | Measure Command | Direction |
+|------|------|----------------|-----------|
+| type_error_count | - | (auto-detected) | lower |
+
+## Guard
+```bash
+npm test 2>{{GUARD_CMD}}1
+```
+
+## Termination
+- Task complete (all checks pass AND metric improved)
+- OR stuck (10 consecutive discards)
+- OR user interrupt (/odyssey-cancel)
+- No iteration limit — runs until done
 
 ## What's Been Tried
 
 ### Wins
-- Ithaca MVP merged to main: protected core, /ithaca (CLI+TUI), prompt slot,
-  sycophancy+overreach probes, Perception hub, memory retrieval, MCP client.
-- Full suite 4817 pass; build + tsc clean (baseline state at mission start).
+{Auto-updated by engine.}
 
 ### Dead Ends
-- (none)
+{Auto-updated by engine.}
 
 ### Surprises
-- Full-suite failures come from a concurrent-timing flaky family (voyage-loop,
-  git-dependent tests) - single-run passes; judged against baseline worktree.
-
-## Waypoint Plan
-
-- WP1: DONE. Root cause found: bare `tsc --noEmit` in dirs without tsconfig.json
-  failed EVERY waypoint (help-text exit). Fix: single-file fallback over git-changed
-  .ts files + e2e proofs (checkpoint commit / crash graceful / rollback clean).
-- WP2: DONE. installProcessGuards (absorb + report, refcounted, never exit)
-  wired at main() start; report to stderr + events.jsonl (rule 3).
-- WP3+: Layer completeness per consensus template as stability allows.
-
-## Guard
-
-```
-npm test stays green (4817+ pass, flaky family judged by single-run);
-npm run build and tsc --noEmit stay clean;
-no edits to src/cerebellum/orchestrator.ts without human review note.
-```
+{Unexpected findings. Auto-updated in creative mode.}
 
 ## Current Best
+- metric: (baseline not yet measured)
+- Baseline: (pending)
 
-- metric: baseline (suite green, build clean, no e2e task-completion proof yet)
+## Ideas Backlog
+{Auto-populated. Can be manually edited.}
