@@ -9,3 +9,6 @@ coverage/
 .vitest-cache/
 .DS_Store
 .claude/
+autodev_results.tsv
+AUTODEV_NOTES.md
+.claude/autodev-loop.local.md
