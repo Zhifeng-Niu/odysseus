@@ -164,8 +164,11 @@ agent 低优（与既判一致：协议与 MCP/delta 正交，A2A 后置）。
   确定性 hashing embedder（FNV trigram，离线零依赖）+ 词法⊕向量加权混合，
   零词法命中条目可经向量路径浮现，provider 故障优雅降级纯词法。真实 embedding
   模型与 agentic-chunking 深读仍为后续。
-- **P3 注入防护**（security 对照）：外部内容进 prompt 的来源标注+隔离区；检索
-  内容带 provenance。
+- **P3 注入防护**（security 对照）——✅ 已实现（autodev iter4，
+  src/util/quarantine.ts）：nonce 隔离区（DATA-ONLY 标注+provenance 头；随机
+  nonce 承重——确定性 nonce 会被伪造 END 突破）接线 FileReadTool 与记忆 recall
+  路径；IthacaCore 写通道=防毒第 1 层，隔离区=第 2 层。MCP 工具输出隔离与
+  prompt-validation 层仍为后续。
 
 后置组：A2A/多代理（架构组）、工具降级路径、ReWOO verify 优化。
 
