@@ -12,6 +12,7 @@
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
+import { quarantineExternalContent } from '../util/quarantine.js';
 
 export interface McpToolDef {
   readonly name: string;
@@ -208,7 +209,16 @@ export async function registerMcpTools(
           if (result.isError) {
             return { ok: false, error: result.text.length > 0 ? result.text : 'MCP tool reported an error' };
           }
-          return { ok: true, value: result.text };
+          // M5 injection defense: MCP output is EXTERNAL data (a remote
+          // server's text enters the prompt) — nonce quarantine, same as
+          // file-read and memory recall.
+          return {
+            ok: true,
+            value: quarantineExternalContent(result.text, {
+              origin: 'mcp-tool',
+              provenance: `server=${command} tool=${mcpTool.name}`,
+            }),
+          };
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : String(err) };
         }

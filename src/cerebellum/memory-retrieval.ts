@@ -200,13 +200,23 @@ export async function searchMemoryHybrid(
 export async function recallMemoryAsPromptContext(
   rootDir: string,
   query: string,
-  options: SearchOptions & { readonly maxEntries?: number } = {}
+  options: SearchOptions & {
+    readonly maxEntries?: number;
+    /** Hybrid upgrade path: semantic recall via an embedding provider. */
+    readonly embedding?: EmbeddingProvider;
+  } = {}
 ): Promise<string> {
   const maxEntries = options.maxEntries ?? 5;
-  const scored = await searchMemory(rootDir, query, {
-    limit: maxEntries,
-    ...(options.categories ? { categories: options.categories } : {}),
-  });
+  const scored = options.embedding
+    ? await searchMemoryHybrid(rootDir, query, {
+        limit: maxEntries,
+        embedding: options.embedding,
+        ...(options.categories ? { categories: options.categories } : {}),
+      })
+    : await searchMemory(rootDir, query, {
+        limit: maxEntries,
+        ...(options.categories ? { categories: options.categories } : {}),
+      });
   if (scored.length === 0) return '';
 
   const block = scored
