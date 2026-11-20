@@ -1,0 +1,141 @@
+/**
+ * `odysseus init` — 一句话部署的落地端（OpenClaw/Hermes 式 one-command setup）。
+ *
+ * runInit：纯流程（.env 写入、~/.odysseus 种子、live key 验证、报告），
+ * 全部 I/O 可注入 → 测试零网络零 TTY。
+ * runInitCli：argv/stdin/readline 适配层，index.ts 在 loadConfig 之前分发
+ * （init 本身不需要 key）。
+ *
+ * 部署两路：①人类：curl -fsSL …/install.sh | bash（脚本结尾调 odysseus init）；
+ * ②给任何编码 agent 的一句话（README「一句话部署」节）。
+ */
+import { existsSync, writeFileSync, mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { GLMProvider } from './llm/glm.js';
+import { loadDotenv } from './util/dotenv.js';
+const DEFAULT_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4';
+const CODING_PLAN_BASE_URL = 'https://open.bigmodel.cn/api/coding/paas/v4';
+function envFile(apiKey, baseUrl, model) {
+    return [
+        `ODYSSEUS_LLM_API_KEY=${apiKey}`,
+        `ODYSSEUS_LLM_MODEL=${model}`,
+        `ODYSSEUS_LLM_BASE_URL=${baseUrl}`,
+        '',
+    ].join('\n');
+}
+export async function runInit(options) {
+    const { cwd, io } = options;
+    const homeDir = options.homeDir ?? homedir();
+    const steps = [];
+    // 1. API key — flag > prompt (prompt only helps when a human is attached;
+    //    headless runs land the placeholder and init stays unverified).
+    let apiKey = options.apiKey ?? '';
+    if (!apiKey) {
+        apiKey = (await io.prompt('GLM API key（直接回车可跳过，稍后写入 .env）: ')).trim();
+    }
+    const baseUrl = options.baseUrl ?? DEFAULT_BASE_URL;
+    const model = options.model ?? 'glm-5.2';
+    // 2. .env — preserve an existing one unless --force (re-init must not
+    //    silently clobber a working key).
+    const envPath = join(cwd, '.env');
+    let envWritten = false;
+    let envSkipped = false;
+    if (existsSync(envPath) && !options.force) {
+        envSkipped = true;
+        steps.push('保留现有 .env（--force 可覆盖）');
+    }
+    else {
+        writeFileSync(envPath, envFile(apiKey, baseUrl, model), 'utf8');
+        envWritten = true;
+        steps.push(`写入 ${envPath}`);
+    }
+    // 3. Personal-layer store seed (~/.odysseus) — /ithaca 与 delta 协议的家。
+    const storeDir = join(homeDir, '.odysseus');
+    mkdirSync(storeDir, { recursive: true });
+    steps.push(`个人层目录 ${storeDir} 就绪`);
+    // 4. Live key verification — one tiny call; a failure never aborts setup
+    //    (the env is still written; the human fixes the key and re-runs).
+    let verified = false;
+    let verifyError;
+    if (apiKey) {
+        const ping = options.ping ?? defaultPing;
+        try {
+            const result = await ping(apiKey, baseUrl, model);
+            verified = result.ok;
+            if (!result.ok)
+                verifyError = result.error ?? 'unknown';
+        }
+        catch (err) {
+            verifyError = err instanceof Error ? err.message : String(err);
+        }
+        steps.push(verified ? 'key 验证通过（live ping ok）' : `key 验证失败：${verifyError ?? 'unknown'}`);
+    }
+    else {
+        steps.push('未提供 key，跳过验证（agent 对话与 /ithaca 仍可用）');
+    }
+    for (const step of steps)
+        io.out(`✓ ${step}`);
+    io.out(verified
+        ? '\nOdysseus 就绪：odysseus "任务" 跑单任务；TTY 无参数启动 voyage console。'
+        : '\nOdysseus 已安装但未验证：把正确的 key 填进 .env 后重跑 odysseus init。');
+    return { envWritten, envSkipped, verified, ...(verifyError !== undefined ? { verifyError } : {}), steps };
+}
+async function defaultPing(apiKey, baseUrl, model) {
+    try {
+        const provider = new GLMProvider({ apiKey, model, baseUrl });
+        // Reasoning models (GLM-5.2) can burn a tiny max_tokens budget entirely
+        // on thinking and return empty content — give the ping real room.
+        const completion = await provider.complete('回复ok', { maxTokens: 512 });
+        return completion.content.length > 0 ? { ok: true } : { ok: false, error: 'empty reply' };
+    }
+    catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+}
+// ---------------------------------------------------------------------------
+// CLI adapter — argv + readline; dispatched by index.ts before loadConfig.
+// ---------------------------------------------------------------------------
+export async function runInitCli(_userInput) {
+    const cwd = process.cwd();
+    loadDotenv(join(cwd, '.env'));
+    const args = process.argv.slice(2).filter((a) => a !== 'init' && a !== 'setup');
+    const flag = (name) => {
+        const i = args.indexOf(name);
+        return i >= 0 ? args[i + 1] : undefined;
+    };
+    let baseUrl = flag('--base-url') ?? process.env.ODYSSEUS_LLM_BASE_URL;
+    let apiKey = flag('--api-key') ?? process.env.ODYSSEUS_LLM_API_KEY;
+    const readline = await import('node:readline/promises');
+    const isTTY = process.stdin.isTTY === true;
+    const rl = isTTY ? readline.createInterface({ input: process.stdin, output: process.stdout }) : null;
+    const io = {
+        prompt: async (text) => (rl ? await rl.question(text) : ''),
+        out: (text) => console.log(text),
+    };
+    // Coding-plan keys (GLM Coding Plan) are NOT valid on the standard
+    // endpoint — docs.bigmodel.cn/cn/coding-plan/quick-start. Ask once when a
+    // human is attached and no explicit base URL was given.
+    if (!baseUrl && isTTY && !apiKey) {
+        const answer = (await io.prompt(`key 类型？[1] 标准 API（默认 ${DEFAULT_BASE_URL}） [2] GLM Coding Plan（${CODING_PLAN_BASE_URL}）: `)).trim();
+        if (answer === '2')
+            baseUrl = CODING_PLAN_BASE_URL;
+    }
+    if (!apiKey && !isTTY) {
+        io.out('非交互环境：请用 --api-key 或环境变量提供 key，或稍后手动填写 .env。');
+    }
+    const model = flag('--model') ?? process.env.ODYSSEUS_LLM_MODEL;
+    const report = await runInit({
+        cwd: resolve(cwd),
+        ...(apiKey ? { apiKey } : {}),
+        ...(baseUrl !== undefined ? { baseUrl } : {}),
+        ...(model !== undefined ? { model } : {}),
+        force: args.includes('--force'),
+        io,
+    });
+    if (rl)
+        rl.close();
+    if (!report.verified)
+        process.exitCode = 1;
+}
+//# sourceMappingURL=setup.js.map

@@ -1,5 +1,7 @@
 node_modules/
-dist/
+# dist/ IS committed — one-sentence deployment installs straight from GitHub
+# with zero build on the user machine (npm git-dep prepare ran before
+# devDeps were present → tsc not found; see install.sh + README).
 .env
 .env.local
 *.log
