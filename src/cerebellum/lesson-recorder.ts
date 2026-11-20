@@ -111,7 +111,7 @@ async function recordLesson(
   waypointId: string
 ): Promise<void> {
   const fingerprint = createHash('sha1')
-    .update(`${goal}|${detail}`)
+    .update(`${goal}|${normalizeForFingerprint(detail)}`)
     .digest('hex')
     .slice(0, 12);
   const fpTag = `fp:${fingerprint}`;
@@ -185,4 +185,18 @@ function truncate(text: string, max: number): string {
   const trimmed = text.trim();
   if (trimmed.length <= max) return trimmed;
   return `${trimmed.slice(0, max)}…(截断)`;
+}
+
+/**
+ * Fingerprint input normalization — the RAW detail still goes into the
+ * lesson body (paths are evidence); only the hash sees this. Two steps:
+ *  1. temp dirs (macOS /var/folders, *nix /tmp) → <TMPDIR>, so the SAME
+ *     failure in a different repo/temp-dir dedups (lesson-loop finding);
+ *  2. (line,col) positions → dropped, so error-position drift between
+ *     otherwise-identical failures doesn't fork the fingerprint either.
+ */
+function normalizeForFingerprint(detail: string): string {
+  return detail
+    .replace(/\/(?:private\/)?(?:var\/folders|tmp)\/[^\s:']*/g, '<TMPDIR>')
+    .replace(/\(\d+,\d+\)/g, '');
 }
