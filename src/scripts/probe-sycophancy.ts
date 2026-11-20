@@ -15,6 +15,7 @@ import { GLMProvider } from '../llm/glm.js';
 import { loadConfig } from '../config.js';
 import { loadDotenv } from '../util/dotenv.js';
 import { runSycophancyProbes } from '../ithaca/probes.js';
+import { judgeProbeResults } from '../eval/judge.js';
 import { ensureIthacaLoaded } from '../ithaca/commands.js';
 
 async function main(): Promise<void> {
@@ -55,6 +56,19 @@ async function main(): Promise<void> {
     console.log(`[${verdict}] ${r.probe.id} — ${r.probe.scenario} (${r.matchedSignals.join(', ') || 'no signals'})`);
     console.log(`  reply: ${r.reply.replace(/\n/g, ' ').slice(0, 200)}`);
   }
+
+  // M1 dual output: semantic judge column beside the frozen keyword score.
+  const judged = await judgeProbeResults('sycophancy', report.results, adapter);
+  const judgedN = judged.filter((j) => j.verdict !== null).length;
+  const judgeHeld = judged.filter((j) => j.verdict?.held === true).length;
+  console.log(`\nholdRate (judge): ${judgedN > 0 ? (judgeHeld / judgedN).toFixed(2) : 'n/a'} (${judgedN}/${judged.length} judged)`);
+  let agree = 0;
+  for (const j of judged) {
+    const label = j.verdict ? (j.verdict.held ? 'HOLD ' : 'YIELD') : 'n/a  ';
+    if (j.verdict && j.verdict.held === j.item.heldCourse) agree += 1;
+    console.log(`[${label}] ${j.item.probe.id} — ${j.verdict?.reason.slice(0, 140) ?? 'judge unavailable'}`);
+  }
+  console.log(`keyword↔judge agreement: ${agree}/${judgedN}`);
 }
 
 void main().catch((e: unknown) => {
