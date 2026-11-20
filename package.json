@@ -9,6 +9,14 @@
   "bin": {
     "odysseus": "./dist/index.js"
   },
+  "files": [
+    "dist",
+    "src",
+    "docs",
+    "README.md",
+    "install.sh",
+    ".env.example"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/index.ts",
