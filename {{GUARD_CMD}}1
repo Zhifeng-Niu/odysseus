@@ -1,0 +1,72 @@
+stderr | tests/unit/backlog-enqueue-invariants.test.ts > enqueueBacklog — phantom item shape (dedup-blocked returns) > retry-exhausted phantom item has the same shape
+[backlog] blocking re-seed: retry counter exhausted (5/3) for goal: "retry goal"
+
+stderr | tests/unit/backlog-enqueue-invariants.test.ts > enqueueBacklog — retry counter timing (Iteration 24 contract) > retry-exhausted phantom does NOT increment counter (idempotent)
+[backlog] blocking re-seed: retry counter exhausted (5/3) for goal: "retry timing"
+
+stderr | tests/unit/backlog-enqueue-invariants.test.ts > enqueueBacklog — dedup check ordering > retry-exhausted is checked BEFORE already-completed
+[backlog] blocking re-seed: retry counter exhausted (5/3) for goal: "multi-trip-b"
+
+stderr | tests/unit/backlog-enqueue-invariants.test.ts > enqueueBacklog — dedup check ordering > skipped registry records each dedup reason distinctly when only one trips
+[backlog] blocking re-seed: retry counter exhausted (5/3) for goal: "reason-test-retry"
+
+stderr | tests/unit/backlog.test.ts > enqueueBacklog – retry counter blocks re-seed after 3 attempts > does not enqueue on the 5th attempt — returns item but backlog stays at 4
+[backlog] blocking re-seed: retry counter exhausted (4/3) for goal: "fix the login bug"
+
+stderr | tests/unit/backlog.test.ts > enqueueBacklog – retry counter blocks re-seed after 3 attempts > counts enqueue calls across different wordings of the same goal
+[backlog] blocking re-seed: retry counter exhausted (4/3) for goal: "fix the login Bug"
+
+stderr | tests/unit/backlog.test.ts > enqueueBacklog – retry counter blocks re-seed after 3 attempts > allows a different goal to be enqueued after the first goal is exhausted
+[backlog] blocking re-seed: retry counter exhausted (4/3) for goal: "goal A"
+
+stderr | tests/unit/backlog.test.ts > Iteration 18 — user-origin bypasses dedup checks > skipped registry records all three skip reasons distinctly
+[backlog] blocking re-seed: retry counter exhausted (5/3) for goal: "retry-exhausted-goal"
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/scripts-voyage-stats-invariants.test.ts [ tests/unit/scripts-voyage-stats-invariants.test.ts ]
+TypeError: Cannot read properties of undefined (reading 'length')
+ ❯ main src/scripts/voyage-stats.ts:122:15
+    120|   }
+    121| 
+    122|   if (records.length === 0) {
+       |               ^
+    123|     process.stdout.write('(no trace records found)\n');
+    124|     process.exit(0);
+ ❯ src/scripts/voyage-stats.ts:139:1
+ ❯ tests/unit/scripts-voyage-stats-invariants.test.ts:17:44
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/voyage-loop.test.ts > CerebellumOrchestrator voyage loop > auto-approve ON routes dream output into backlog and triggers next iteration
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+⎯⎯⎯⎯ Unhandled Rejection ⎯⎯⎯⎯⎯
+Error: after uninstall
+ ❯ tests/unit/agent-guards.test.ts:50:40
+     48|     installed = null;
+     49| 
+     50|     process.emit('unhandledRejection', new Error('after uninstall'), P…
+       |                                        ^
+     51|     expect(seen).toHaveLength(0);
+     52|   });
+ ❯ node_modules/@vitest/runner/dist/index.js:146:14
+ ❯ node_modules/@vitest/runner/dist/index.js:533:11
+ ❯ runWithTimeout node_modules/@vitest/runner/dist/index.js:39:7
+ ❯ runTest node_modules/@vitest/runner/dist/index.js:1056:17
+ ❯ processTicksAndRejections node:internal/process/task_queues:104:5
+ ❯ runSuite node_modules/@vitest/runner/dist/index.js:1205:15
+ ❯ runSuite node_modules/@vitest/runner/dist/index.js:1205:15
+ ❯ runFiles node_modules/@vitest/runner/dist/index.js:1262:5
+ ❯ startTests node_modules/@vitest/runner/dist/index.js:1271:3
+
+This error originated in "tests/unit/agent-guards.test.ts" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The latest test that might've caused the error is "uninstall restores the previous behavior (no more reporting)". It might mean one of the following:
+- The error was thrown, while Vitest was running this test.
+- If the error occurred after the test had been completed, this was the last documented test before it was thrown.
+

@@ -45,6 +45,7 @@ npm test 2>{{GUARD_CMD}}1
 ## What's Been Tried
 
 ### Wins
+- WP2 lesson-recorder 真实闭环（KEEP）：src/scripts/lesson-loop-demo.ts——真实 GLM 航点故意终局失败（要求保留类型错误）→ lesson mem_d6d3839567 落盘（fp:870a071496da，症状含真实 TS2322 输出，症状/根因/修法结构完整）→ loadLongTermMemoryMarkdown 机械验证携带 fresh lesson（下次航点必注入）。发现 lessons.md 已有 10 条历史条目（注入通道一直在工作）。可复跑：`npx tsx src/scripts/lesson-loop-demo.ts`。
 - WP1 有核探针基线（KEEP）：IthacaCore rev5（3 任务+2 价值观，故意与探针场景重叠）后重跑三探针。**Injection 0.75→1.0（4/4）**，回复直接引用保护层语义；**Overreach 保持 0/6 且核心感知**（还信用卡写进任务栈、体检自动带花生过敏备注）；**Sycophancy keyword 0.33 但语义 6/6 全 HOLD**——核感知回复用新词汇（受保护层/锚点/改写/明确确认），keyword 词表未覆盖 → 假 YIELD。结论：保护核真实改变行为，keyword 评分器在核感知语汇下失效（升级为 WP4 的实证）。
 - 评分器冻结决定：WP 间不改 keyword 词表（保持基线可比），LLM-as-judge 升级独立成航点。
 
@@ -60,7 +61,6 @@ npm test 2>{{GUARD_CMD}}1
 - Baseline: empty-core holdRate 0.67 / injectResist 0.75
 
 ## Ideas Backlog
-- WP2: lesson-recorder 真实闭环——live 失败→lesson 落盘→复跑可测复利
 - WP3: 任务基线扩样 ≥10（inc-function 型失败喂 lesson 通道）
 - WP4: LLM-as-judge 评分升级（修 keyword 误报，WP1 实证）
-- 后置: predictive perception 最小版；MCP 输出隔离；recall 的 embedder 透传
+- 后置: fingerprint 归一化（当前 detail 含临时路径，跨仓库同型失败不去重）；predictive perception 最小版；MCP 输出隔离；recall 的 embedder 透传

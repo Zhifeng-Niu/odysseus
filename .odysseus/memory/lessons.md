@@ -63,3 +63,21 @@ Recent sprints show tests being added immediately after recovery features ship. 
 Early termination, retry limiters, and dedup checks all shipped without tests because they were urgent fixes. Each untested loop-prevention mechanism is a latent infinite-loop risk. Test-follows-ship priority should be highest for code that prevents runaway loops.
 
 **[RESOLVED 2026-07-21]** Retry limiter test debt is paid — `src/cerebellum/retry-counter.ts` (Iteration 45) has `tests/unit/retry-counter.test.ts` (33 tests, Iteration 57) + `tests/unit/retry-counter-invariants.test.ts`. The lesson (test debt accumulates on loop-prevention code) remains valid as a general principle; the specific retry-limiter instance it tracked no longer exists.
+## [2026-11-20T07:23:33.635Z] verify失败: syntax · 创建 broken.ts，内容恰好为一行：export const v: number = "这是故意的类型错误"; 这…(截断)
+- **id**: mem_d6d3839567
+- **source**: failure
+- **tags**: autolearn, fp:870a071496da
+- **related**: wp_mwonjwq5001
+
+**症状**
+--- syntax ---
+../../../../../../../var/folders/d0/4fkh8gy10ys1pfzdyt5_dh480000gn/T/lesson-loop-Ayzq4q/broken.ts(1,14): error TS2322: Type 'string' is not assignable to type 'number'.
+
+2: Command failed: node /Users/stbz/code/Odysseus/.claude/worktrees/musing-galileo-ad89a7/node_modules/typescript/bin/tsc --noEmit /var/folders/d0/4fkh8gy10ys1pfzdyt5_dh480000gn/T/lesson-loop-Ayzq4q/broken.ts
+
+**根因**
+本次改动引入了编译错误（tsc 输出见症状），提交前未通过语法验证层。
+
+**修法方向**
+按症状中的 tsc 报错逐条修复类型/语法问题；修复后再走验证流程。
+
