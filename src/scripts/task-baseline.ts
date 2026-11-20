@@ -94,6 +94,7 @@ async function main(): Promise<void> {
     registry.register(new BashTool());
 
     if (task.acceptance) {
+      await fs.mkdir(join(root, '.odysseus'), { recursive: true });
       await fs.writeFile(
         join(root, '.odysseus', 'acceptance.json'),
         JSON.stringify(task.acceptance, null, 2) + '\n',

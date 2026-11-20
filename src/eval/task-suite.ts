@@ -127,6 +127,7 @@ async function runSingleCase(taskCase: TaskCase): Promise<TaskRunResult> {
   // M4: declared acceptance lands BEFORE the waypoint runs — the artifact
   // verify layer reads it at gate time (declared, not self-graded).
   if (taskCase.acceptance) {
+    await fs.mkdir(path.join(root, '.odysseus'), { recursive: true });
     await fs.writeFile(
       path.join(root, '.odysseus', 'acceptance.json'),
       JSON.stringify(taskCase.acceptance, null, 2) + '\n',
