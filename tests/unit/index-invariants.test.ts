@@ -29,14 +29,14 @@ import { readFile } from 'node:fs/promises';
 const SRC_PATH = 'src/index.ts';
 
 describe('index — module shape', () => {
-  test('has 15 import statements', async () => {
+  test('has 16 import statements', async () => {
     // 13 → 14: agent/guards.js (crash-free-task mission) — the entry point
     // owns process-guard installation.
     // 14 → 15: cerebellum/lesson-recorder.js (P1 learning element) — the
     // voyage console path wires verify-failure → lesson recording here.
     const src = await readFile(SRC_PATH, 'utf8');
     const imports = src.match(/^import\s/mg) ?? [];
-    expect(imports.length).toBe(15);
+    expect(imports.length).toBe(16);
   });
 
   test('imports from expected local modules', async () => {
@@ -120,10 +120,10 @@ describe('index — top-level functions', () => {
 // ---------------------------------------------------------------------------
 
 describe('index — tool registration', () => {
-  test('registers exactly 5 tools', async () => {
+  test('registers exactly 7 tools (5 code + reminder/note life tools)', async () => {
     const src = await readFile(SRC_PATH, 'utf8');
     const registrations = src.match(/registry\.register\(/g) ?? [];
-    expect(registrations.length).toBe(5);
+    expect(registrations.length).toBe(7);
   });
 
   test('registers tools in fixed order: FileRead, FileWrite, FileEdit, Git, Bash', async () => {
@@ -434,7 +434,7 @@ describe('index — source-level safety', () => {
 // ---------------------------------------------------------------------------
 
 describe('index — structural fingerprint', () => {
-  test('file is between 80 and 152 lines (compact entry point)', async () => {
+  test('file is between 80 and 156 lines (compact entry point)', async () => {
     // Upper bound 120 → 125: the /ithaca CLI surface (Ithaca MVP port) adds
     // a 3-line local dispatch — the protected core must never enter the LLM
     // path, so it cannot be folded into runAgentTurn.
@@ -450,7 +450,7 @@ describe('index — structural fingerprint', () => {
     const src = await readFile(SRC_PATH, 'utf8');
     const lines = src.split('\n');
     expect(lines.length).toBeGreaterThanOrEqual(80);
-    expect(lines.length).toBeLessThanOrEqual(152);
+    expect(lines.length).toBeLessThanOrEqual(156);
   });
 
   test('has no class declarations (function-only module)', async () => {
