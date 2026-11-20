@@ -24,6 +24,7 @@
 
 import { readMemory } from './memory.js';
 import { cosineSimilarity, type EmbeddingProvider } from './embedding.js';
+import { quarantineExternalContent } from '../util/quarantine.js';
 import type { MemoryCategory } from '../orchestrator/events.js';
 import type { MemoryEntry } from './memory.js';
 
@@ -208,12 +209,18 @@ export async function recallMemoryAsPromptContext(
   });
   if (scored.length === 0) return '';
 
-  return scored
+  const block = scored
     .map(
       (s) =>
         `## ${s.entry.title}\n_source: ${s.entry.source}, ${s.entry.category}, ts: ${s.entry.ts}_\n\n${s.entry.body}`
     )
     .join('\n\n---\n\n');
+  // P3 injection defense: recalled memory is DATA — memory poisoning is the
+  // threat (defense #1 is the IthacaCore write channel; this is layer #2).
+  return quarantineExternalContent(block, {
+    origin: 'memory-recall',
+    provenance: `entries=${scored.map((s) => s.entry.id).join(',')}`,
+  });
 }
 
 /**

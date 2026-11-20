@@ -37,6 +37,9 @@ function doneStep(): LLMCompletion {
 }
 
 describe('runTaskSuite — batched task-completion metrics', () => {
+  // 30s timeout: orchestrator waypoints with real `tsc` verify passes run
+  // multi-second under full-suite concurrency (same rationale as the
+  // five-task suite below). Default 5s times out on loaded machines.
   test('1 success + 1 verify-failure case → rates, tokens, latency, per-case fields', async () => {
     const cases: readonly TaskCase[] = [
       {
@@ -76,7 +79,7 @@ describe('runTaskSuite — batched task-completion metrics', () => {
     expect(s.results[0]?.tokens).toBeGreaterThan(0);
     expect(s.results[1]?.outcome).toBe('failure'); // syntax verify rejects the broken file
     expect(s.results[1]?.success).toBe(false);
-  });
+  }, 30000);
 
   test('empty suite → zeroed summary, no NaN', async () => {
     const s = await runTaskSuite([]);

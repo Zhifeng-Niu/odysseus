@@ -2,6 +2,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { Tool, ToolContext, ToolResult } from './types.js';
 import { truncateForLLM } from '../util/truncate.js';
+import { quarantineExternalContent } from '../util/quarantine.js';
 
 /**
  * Iteration 29 — default line/char caps on file-read.
@@ -61,7 +62,15 @@ export class FileReadTool implements Tool {
         maxChars: DEFAULT_CHAR_CAP,
         label: `file ${path} (lines ${offset}..${Math.min(offset + limit, totalLines)} of ${totalLines})`,
       });
-      return { ok: true, value: truncated.content };
+      // P3 injection defense: file content is EXTERNAL data — it enters the
+      // prompt inside a nonce quarantine so embedded instructions stay data.
+      return {
+        ok: true,
+        value: quarantineExternalContent(truncated.content, {
+          origin: 'file-read',
+          provenance: `path=${path}`,
+        }),
+      };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }

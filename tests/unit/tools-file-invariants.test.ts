@@ -46,6 +46,18 @@ import type { Tool, ToolResult } from '../../src/tools/types.js';
 
 let tempDir: string;
 
+/**
+ * P3 injection defense: file-read output is now quarantined (nonce BEGIN/
+ * END marker lines around the payload — see util/quarantine.ts). These
+ * behavioral assertions target the PAYLOAD, so they strip the two marker
+ * lines first. The wrapper contract itself is covered by
+ * p3-quarantine.test.ts.
+ */
+function readInner(value: string): string {
+  const lines = value.split('\n');
+  return lines.slice(1, -1).join('\n');
+}
+
 beforeEach(async () => {
   tempDir = await mkdtemp(join(tmpdir(), 'ody-file-inv-'));
 });
@@ -217,7 +229,7 @@ describe('FileReadTool — pagination', () => {
     const result = await tool.execute({ path }, { cwd: tempDir });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      const lines = result.value.split('\n');
+      const lines = readInner(result.value).split('\n');
       expect(lines.length).toBe(5);
     }
   });
@@ -230,7 +242,7 @@ describe('FileReadTool — pagination', () => {
     const result = await tool.execute({ path, offset: 2 }, { cwd: tempDir });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.value.startsWith('third')).toBe(true);
+      expect(readInner(result.value).startsWith('third')).toBe(true);
     }
   });
 
@@ -242,7 +254,7 @@ describe('FileReadTool — pagination', () => {
     const result = await tool.execute({ path, limit: 2 }, { cwd: tempDir });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      const lines = result.value.split('\n');
+      const lines = readInner(result.value).split('\n');
       expect(lines.length).toBe(2);
       expect(lines[0]).toBe('l1');
       expect(lines[1]).toBe('l2');
@@ -260,7 +272,7 @@ describe('FileReadTool — pagination', () => {
     );
     expect(result.ok).toBe(true);
     if (result.ok) {
-      const lines = result.value.split('\n');
+      const lines = readInner(result.value).split('\n');
       expect(lines).toEqual(['b', 'c']);
     }
   });
@@ -272,7 +284,7 @@ describe('FileReadTool — pagination', () => {
     const result = await tool.execute({ path, offset: 100 }, { cwd: tempDir });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.value).toBe('');
+      expect(readInner(result.value)).toBe('');
     }
   });
 });
@@ -338,7 +350,7 @@ describe('FileReadTool — parseNonNegativeInt clamping', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       // Offset falls back to 0, so we read from line 0.
-      expect(result.value.startsWith('a')).toBe(true);
+      expect(readInner(result.value).startsWith('a')).toBe(true);
     }
   });
 
@@ -352,7 +364,7 @@ describe('FileReadTool — parseNonNegativeInt clamping', () => {
     );
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.value.startsWith('a')).toBe(true);
+      expect(readInner(result.value).startsWith('a')).toBe(true);
     }
   });
 
@@ -366,7 +378,7 @@ describe('FileReadTool — parseNonNegativeInt clamping', () => {
     );
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.value.startsWith('a')).toBe(true);
+      expect(readInner(result.value).startsWith('a')).toBe(true);
     }
   });
 
@@ -381,7 +393,7 @@ describe('FileReadTool — parseNonNegativeInt clamping', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       // All 3 lines fit well under the 1000 default.
-      expect(result.value.split('\n').length).toBe(3);
+      expect(readInner(result.value).split('\n').length).toBe(3);
     }
   });
 
@@ -396,7 +408,7 @@ describe('FileReadTool — parseNonNegativeInt clamping', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       // Math.floor(1.9) = 1, so we read from line 1 ('b').
-      expect(result.value.startsWith('b')).toBe(true);
+      expect(readInner(result.value).startsWith('b')).toBe(true);
     }
   });
 });
@@ -674,13 +686,21 @@ describe('FileEditTool — argument validation', () => {
 // ---------------------------------------------------------------------------
 
 describe('determinism — same input produces same output', () => {
-  test('FileReadTool is deterministic', async () => {
+  test('FileReadTool payload is deterministic; the quarantine nonce is not', async () => {
+    // P3: the quarantine wrapper carries a RANDOM per-call nonce — this is
+    // load-bearing (a deterministic nonce would let injected content forge
+    // the exact END marker and break out). Determinism therefore holds for
+    // the payload, not the full wrapper.
     const path = join(tempDir, 'det.txt');
     await writeFile(path, 'deterministic\ncontent');
     const tool = new FileReadTool();
     const a = await tool.execute({ path }, { cwd: tempDir });
     const b = await tool.execute({ path }, { cwd: tempDir });
-    expect(a).toEqual(b);
+    expect(a.ok).toBe(true);
+    expect(b.ok).toBe(true);
+    if (a.ok && b.ok) {
+      expect(readInner(a.value)).toBe(readInner(b.value));
+    }
   });
 });
 

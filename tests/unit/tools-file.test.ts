@@ -4,6 +4,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FileReadTool, FileWriteTool, FileEditTool } from '../../src/tools/file.js';
 
+/**
+ * P3 injection defense: file-read output is quarantined (nonce BEGIN/END
+ * markers around the content, provenance in the header). These tests assert
+ * the PAYLOAD semantics, so they strip the two marker lines first — the
+ * wrapper itself is covered by p3-quarantine.test.ts.
+ */
+function quarantineInner(value: string): string {
+  const lines = value.split('\n');
+  return lines.slice(1, -1).join('\n');
+}
+
 describe('file tools', () => {
   let workdir: string;
   const writeTool = new FileWriteTool();
@@ -30,7 +41,7 @@ describe('file tools', () => {
     const tool = new FileReadTool();
     const result = await tool.execute({ path }, { cwd: workdir });
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.value).toBe('data');
+    if (result.ok) expect(quarantineInner(result.value)).toBe('data');
   });
 
   test('file-read returns error on missing file', async () => {
@@ -94,8 +105,8 @@ describe('file tools', () => {
       const result = await tool.execute({ path }, { cwd: workdir });
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value).toBe(content);
-        expect(result.value).not.toContain('[truncated:');
+        expect(quarantineInner(result.value)).toBe(content);
+        expect(quarantineInner(result.value)).not.toContain('[truncated:');
       }
     });
 
@@ -105,7 +116,7 @@ describe('file tools', () => {
       const tool = new FileReadTool();
       const result = await tool.execute({ path }, { cwd: workdir });
       expect(result.ok).toBe(true);
-      if (result.ok) expect(result.value).toBe('one\ntwo\nthree');
+      if (result.ok) expect(quarantineInner(result.value)).toBe('one\ntwo\nthree');
     });
 
     test('offset skips the first N lines', async () => {
@@ -116,7 +127,7 @@ describe('file tools', () => {
       const result = await tool.execute({ path, offset: 3, limit: 2 }, { cwd: workdir });
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value).toBe('line 3\nline 4');
+        expect(quarantineInner(result.value)).toBe('line 3\nline 4');
       }
     });
 
@@ -160,7 +171,7 @@ describe('file tools', () => {
       const tool = new FileReadTool();
       const result = await tool.execute({ path, offset: 100 }, { cwd: workdir });
       expect(result.ok).toBe(true);
-      if (result.ok) expect(result.value).toBe('');
+      if (result.ok) expect(quarantineInner(result.value)).toBe('');
     });
 
     test('explicit limit overrides the default', async () => {
@@ -171,7 +182,9 @@ describe('file tools', () => {
       const result = await tool.execute({ path, limit: 5 }, { cwd: workdir });
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value).toBe('line 0\nline 1\nline 2\nline 3\nline 4');
+        expect(quarantineInner(result.value)).toBe(
+          'line 0\nline 1\nline 2\nline 3\nline 4'
+        );
       }
     });
 
@@ -182,7 +195,7 @@ describe('file tools', () => {
       // @ts-expect-error — testing runtime guard against bad input
       const result = await tool.execute({ path, offset: -5 }, { cwd: workdir });
       expect(result.ok).toBe(true);
-      if (result.ok) expect(result.value.startsWith('a')).toBe(true);
+      if (result.ok) expect(quarantineInner(result.value).startsWith('a')).toBe(true);
     });
 
     test('non-numeric limit falls back to default', async () => {
@@ -192,7 +205,7 @@ describe('file tools', () => {
       // @ts-expect-error — testing runtime guard against bad input
       const result = await tool.execute({ path, limit: 'many' }, { cwd: workdir });
       expect(result.ok).toBe(true);
-      if (result.ok) expect(result.value).toBe('x\ny\nz');
+      if (result.ok) expect(quarantineInner(result.value)).toBe('x\ny\nz');
     });
   });
 });

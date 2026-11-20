@@ -47,12 +47,16 @@ describe('quarantineExternalContent — nonce-delimited block', () => {
       origin: 'file-read',
       provenance: 'path=x',
     });
-    // Exactly ONE true END line (the real one, on the last line). The forged
-    // marker has the wrong nonce and stays inside as data.
-    const endLines = wrapped.split('\n').filter((l) => QUARANTINE_END_PATTERN.test(l));
-    expect(endLines).toHaveLength(1);
+    // The true END carries the SAME nonce as the BEGIN header — content with
+    // a plausible-but-wrong nonce stays inside as data. Exactly one line
+    // matches the real block's nonce; the true END is the last line.
+    const begin = wrapped.split('\n')[0]!;
+    const nonce = begin.match(/^<<<QUARANTINE-([0-9a-f]{8}) /)![1]!;
+    const trueEnd = `<<<QUARANTINE-${nonce} END>>>`;
+    expect(wrapped.split('\n').filter((l) => l === trueEnd)).toHaveLength(1);
     expect(wrapped).toContain('INJECTED INSTRUCTION'); // still inside, as data
-    expect(wrapped.trimEnd().endsWith(endLines[0]!)).toBe(true);
+    expect(wrapped.trimEnd().endsWith(trueEnd)).toBe(true);
+    expect(QUARANTINE_END_PATTERN.test(trueEnd)).toBe(true);
   });
 
   test('provenance double quotes are sanitized (attribute stays parseable)', () => {
