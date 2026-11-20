@@ -1,13 +1,17 @@
 ---
 orientation: [engineer]
-status: active
+status: superseded-by-autodev
 started_at: 2026-11-20T07:14:03Z
 expedition_branch: odyssey/personal-ithaca-20261120
 baseline_metric: "suite 4872 pass; live baseline: tasks 2/3, holdRate 0.67, overreach 0, injectResist 0.75 (empty core)"
-best_metric: "suite 4872 pass; live baseline: tasks 2/3, holdRate 0.67, overreach 0, injectResist 0.75 (empty core)"
-total_waypoints: 0
+best_metric: "with-core: injectResist 1.0, overreach 0/6, semantic holds 6/6; lesson-loop live closed"
+total_waypoints: 2
 consecutive_discards: 0
 ---
+
+> 2026-11-20：WP1/WP2 完成后，用户切换到 /autodev 引擎推进「personal agent 完全体」。
+> 本任务剩余 backlog（WP3 扩样基线、WP4 LLM-as-judge）已并入 autodev nov20b 的
+> program.md 里程碑，继续在同一分支线上演进。
 
 # Mission: 继续朝 personal 方向完善和迭代：真实 GLM 下验证并强化 Ithaca 
 
