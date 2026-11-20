@@ -75,7 +75,8 @@ describe('runArtifactVerify — declared acceptance checks', () => {
   test('relative paths resolve against the agent cwd (not process.cwd())', async () => {
     // The lesson from the first live baseline: relative paths must resolve
     // against ctx cwd. Artifact checks are cwd-relative by contract.
-    writeFileSync(join(cwd, 'nested', 'out.md'), 'done', { recursive: true } as never);
+    mkdirSync(join(cwd, 'nested'), { recursive: true });
+    writeFileSync(join(cwd, 'nested', 'out.md'), 'done');
     writeSpec({ checks: [{ path: 'nested/out.md', existsOnly: true }] });
     const r = await runArtifactVerify(cwd);
     expect(r.result).toBe('pass');

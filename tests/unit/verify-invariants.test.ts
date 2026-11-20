@@ -48,11 +48,14 @@ const SHELL_SPAWN_TOKEN = ['spawn', '('].join('');
 // ---------------------------------------------------------------------------
 
 describe('verify — module shape', () => {
-  test('file is between 130 and 160 lines', async () => {
+  test('file is between 130 and 185 lines', async () => {
+    // 160 → 185: artifact layer (M1, nov20c) — declared non-code acceptance
+    // via .odysseus/acceptance.json; the dispatch is one lazy-import block,
+    // the spec logic lives in verify-artifact.ts.
     const src = await readFile(SRC_PATH, 'utf8');
     const lines = src.split('\n');
     expect(lines.length).toBeGreaterThanOrEqual(130);
-    expect(lines.length).toBeLessThanOrEqual(160);
+    expect(lines.length).toBeLessThanOrEqual(185);
   });
 
   test('imports execFileNoThrow from util/exec (NOT node:child_process)', async () => {

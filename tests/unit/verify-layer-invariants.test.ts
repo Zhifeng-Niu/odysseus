@@ -62,6 +62,7 @@ describe('runVerify — layer aggregation contract', () => {
       tests: 'skipped',
       metric: 'skipped',
       progress: 'skipped',
+      artifact: 'skipped', // M1 (nov20c): declared non-code acceptance layer
     });
   });
 
@@ -271,14 +272,15 @@ describe('runVerify — layer aggregation contract', () => {
   // VerifyLayer / VerifyLayerResult — type-level exhaustiveness
   // -------------------------------------------------------------------------
 
-  test('results object always has all 5 layer keys, regardless of input', async () => {
+  test('results object always has all 6 layer keys, regardless of input', async () => {
     // The results object is initialized with every layer set to
     // 'skipped' before any layer runs. Pinning that the SHAPE is
-    // always { syntax, lint, tests, metric, progress } — a future
+    // always { syntax, lint, tests, metric, progress, artifact } — a future
     // extraction that splits the layer set could silently drop a key.
+    // 5 → 6: artifact layer (M1, nov20c) — declared non-code acceptance.
     const result = await runVerify({ cwd: workdir, layers: [] });
     expect(Object.keys(result.results).sort()).toEqual(
-      ['lint', 'metric', 'progress', 'syntax', 'tests'].sort(),
+      ['artifact', 'lint', 'metric', 'progress', 'syntax', 'tests'].sort(),
     );
   });
 
