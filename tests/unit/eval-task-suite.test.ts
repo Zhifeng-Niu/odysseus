@@ -171,11 +171,14 @@ describe('runTaskSuite — 10-task capability (M3 acceptance)', () => {
       const isTs = i === 0 || i === 5; // exactly two ts-cases
       const fileName = isTs ? `mod-${i}.ts` : `notes-${i}.md`;
       const marker = `payload-${i}`;
+      // ts-cases must carry VALID TypeScript — the syntax layer correctly
+      // rejects bare identifiers (this caught the test's own first draft).
+      const content = isTs ? `export const payload${i} = '${marker}';\n` : `${marker}\n`;
       cases.push({
         id: `scale-${i}`,
         goal: `创建文件 ${fileName}，内容包含一行：${marker}`,
         steps: (root) => [
-          writeStep(path.join(root, fileName), `${marker}\n`),
+          writeStep(path.join(root, fileName), content),
           doneStep(),
         ],
         verify: (root) =>
