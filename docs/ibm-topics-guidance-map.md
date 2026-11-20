@@ -159,8 +159,11 @@ agent 低优（与既判一致：协议与 MCP/delta 正交，A2A 后置）。
   （orchestrator 不动）→ 终局失败写结构化 lesson（症状/根因/修法方向，sha1
   指纹去重）→ lessons.md 经 loadLongTermMemoryMarkdown 注入后续 waypoint。
   附带 predictive perception 最小版（重复失败模式→自动入 backlog）仍为待办。
-- **P2 语义检索**（agentic RAG 对照）：词法→embedding 升级路径（既有立项前提）；
-  启动时深读 agentic-chunking。
+- **P2 语义检索**（agentic RAG 对照）——✅ 已实现（autodev iter3，
+  src/cerebellum/embedding.ts + searchMemoryHybrid）：EmbeddingProvider 接缝 +
+  确定性 hashing embedder（FNV trigram，离线零依赖）+ 词法⊕向量加权混合，
+  零词法命中条目可经向量路径浮现，provider 故障优雅降级纯词法。真实 embedding
+  模型与 agentic-chunking 深读仍为后续。
 - **P3 注入防护**（security 对照）：外部内容进 prompt 的来源标注+隔离区；检索
   内容带 provenance。
 
