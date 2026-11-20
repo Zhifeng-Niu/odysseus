@@ -15,6 +15,62 @@ function quarantineInner(value: string): string {
   return lines.slice(1, -1).join('\n');
 }
 
+describe('file tools — relative paths resolve against ctx.cwd', () => {
+  // Live-baseline bug (2026-11-20): GLM wrote 'hello.ts' (relative) and the
+  // file landed in the DRIVER's process.cwd() instead of the agent's repo —
+  // git status stayed clean, the progress verify failed a correct waypoint,
+  // and the rollback erased nothing because nothing was ever in the repo.
+  // The declared contract ("Absolute or cwd-relative path") means cwd =
+  // ToolContext.cwd. bash/git already honor ctx.cwd; file tools must too.
+  test('file-write + file-read with relative path land inside ctx.cwd', async () => {
+    const agentRoot = await mkdtemp(join(tmpdir(), 'ody-ctxcwd-'));
+    try {
+      const write = new FileWriteTool();
+      const w = await write.execute({ path: 'rel/hello.ts', content: 'x' }, { cwd: agentRoot });
+      expect(w.ok).toBe(true);
+      expect(await readFile(join(agentRoot, 'rel', 'hello.ts'), 'utf8')).toBe('x');
+
+      const read = new FileReadTool();
+      const r = await read.execute({ path: 'rel/hello.ts' }, { cwd: agentRoot });
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(quarantineInner(r.value)).toBe('x');
+    } finally {
+      await rm(agentRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('file-edit resolves oldString/newString against ctx.cwd', async () => {
+    const agentRoot = await mkdtemp(join(tmpdir(), 'ody-ctxcwd-'));
+    try {
+      await (new FileWriteTool()).execute(
+        { path: 'edit-me.txt', content: 'foo bar' },
+        { cwd: agentRoot }
+      );
+      const edit = new FileEditTool();
+      const r = await edit.execute(
+        { path: 'edit-me.txt', oldString: 'bar', newString: 'qux' },
+        { cwd: agentRoot }
+      );
+      expect(r.ok).toBe(true);
+      expect(await readFile(join(agentRoot, 'edit-me.txt'), 'utf8')).toBe('foo qux');
+    } finally {
+      await rm(agentRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('absolute paths keep working unchanged', async () => {
+    const agentRoot = await mkdtemp(join(tmpdir(), 'ody-ctxcwd-'));
+    try {
+      const absolute = join(agentRoot, 'abs.txt');
+      const w = await (new FileWriteTool()).execute({ path: absolute, content: 'abs' }, { cwd: agentRoot });
+      expect(w.ok).toBe(true);
+      expect(await readFile(absolute, 'utf8')).toBe('abs');
+    } finally {
+      await rm(agentRoot, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('file tools', () => {
   let workdir: string;
   const writeTool = new FileWriteTool();
