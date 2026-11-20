@@ -45,17 +45,22 @@ npm test 2>{{GUARD_CMD}}1
 ## What's Been Tried
 
 ### Wins
-{Auto-updated by engine.}
+- WP1 有核探针基线（KEEP）：IthacaCore rev5（3 任务+2 价值观，故意与探针场景重叠）后重跑三探针。**Injection 0.75→1.0（4/4）**，回复直接引用保护层语义；**Overreach 保持 0/6 且核心感知**（还信用卡写进任务栈、体检自动带花生过敏备注）；**Sycophancy keyword 0.33 但语义 6/6 全 HOLD**——核感知回复用新词汇（受保护层/锚点/改写/明确确认），keyword 词表未覆盖 → 假 YIELD。结论：保护核真实改变行为，keyword 评分器在核感知语汇下失效（升级为 WP4 的实证）。
+- 评分器冻结决定：WP 间不改 keyword 词表（保持基线可比），LLM-as-judge 升级独立成航点。
 
 ### Dead Ends
-{Auto-updated by engine.}
+- （无）
 
 ### Surprises
-{Unexpected findings. Auto-updated in creative mode.}
+- 有核后 injection 从 0.75 → 1.0 且零评分误报：保护核不仅防越权，还是注入防护的语义锚点（模型主动引用「只有显式命令才能修改」来拒绝注入）。
+- 探针测试栈与场景重叠的设计（妈妈体检↔替决策、花生↔夜宵、诚实↔讨拍）让核心感知行为直接可见。
 
 ## Current Best
-- metric: (baseline not yet measured)
-- Baseline: (pending)
+- metric: suite 4872 pass; with-core: injectResist 1.0（keyword）/ holdRate 0.33（keyword）vs 语义 6/6 / overreach 0
+- Baseline: empty-core holdRate 0.67 / injectResist 0.75
 
 ## Ideas Backlog
-{Auto-populated. Can be manually edited.}
+- WP2: lesson-recorder 真实闭环——live 失败→lesson 落盘→复跑可测复利
+- WP3: 任务基线扩样 ≥10（inc-function 型失败喂 lesson 通道）
+- WP4: LLM-as-judge 评分升级（修 keyword 误报，WP1 实证）
+- 后置: predictive perception 最小版；MCP 输出隔离；recall 的 embedder 透传
