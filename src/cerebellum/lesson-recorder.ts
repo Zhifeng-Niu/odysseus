@@ -21,6 +21,7 @@ import { dirname, join } from 'node:path';
 import type { OrchestratorEvent } from '../orchestrator/events.js';
 import { readMemory, writeMemory } from './memory.js';
 import { serializeEntry } from './memory-parse.js';
+import { maybeEnqueuePredictive } from './predictive-perception.js';
 
 export interface LessonRecorderHandle {
   detach: () => void;
@@ -148,6 +149,11 @@ async function recordLesson(
     tags: ['autolearn', fpTag],
     relatedWaypointId: waypointId,
   });
+
+  // M4 predictive perception: a recurring error signature crossing the
+  // threshold surfaces as proactive backlog work (best-effort, like the
+  // write itself).
+  await maybeEnqueuePredictive(memoryRoot, detail, goal).catch(() => undefined);
 }
 
 /** Verify details carry `--- <layer> ---` prefixes (see cerebellum/verify.ts). */

@@ -94,6 +94,15 @@ describe('maybeEnqueuePredictive — edge-triggered backlog item', () => {
       });
     }
     expect(await maybeEnqueuePredictive(memRoot(), detailWith('TS2345', 'new'), 'g1')).toBe(true);
+    // Mirror the real recorder flow: the crossing lesson is WRITTEN before
+    // the predictive check runs on the next failure, so the count advances.
+    await writeMemory(memRoot(), {
+      category: 'lessons',
+      source: 'failure',
+      title: 'the crossing lesson',
+      body: detailWith('TS2345', 'new'),
+      tags: ['autolearn', 'fp:new'],
+    });
     expect(await maybeEnqueuePredictive(memRoot(), detailWith('TS2345', 'again'), 'g2')).toBe(false);
     const file = await loadBacklogFile(memRoot());
     expect(file.items.filter((i) => i.origin === 'perception')).toHaveLength(1);
