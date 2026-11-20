@@ -126,8 +126,15 @@ async function main(): Promise<void> {
     });
 
     const result = await orch.runWaypoint({ goal: task.goal });
+    // Throwing verifier = artifact mismatch (live models may skip the
+    // expected filename); a baseline harness must never crash on a verdict.
     const artifactOk =
-      result.outcome === 'success' ? await task.verify(root) : false;
+      result.outcome === 'success'
+        ? await Promise.resolve()
+            .then(() => task.verify(root))
+            .then((ok) => Boolean(ok))
+            .catch(() => false)
+        : false;
     const row: TaskRow = {
       id: task.id,
       outcome: result.outcome,

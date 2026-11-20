@@ -124,8 +124,16 @@ async function runSingleCase(taskCase: TaskCase): Promise<TaskRunResult> {
   outcome = result.outcome;
   iterationsUsed = result.iterationsUsed;
 
+  // A throwing verifier counts as artifact-mismatch, never a suite crash —
+  // found by the first live baseline (real models don't always create the
+  // expected filename; ENOENT is a verdict, not an error).
   const artifactOk =
-    outcome === 'success' ? Boolean(await taskCase.verify(root)) : false;
+    outcome === 'success'
+      ? await Promise.resolve()
+          .then(() => taskCase.verify(root))
+          .then((ok) => Boolean(ok))
+          .catch(() => false)
+      : false;
   const latencyMs = Date.now() - startedAt;
 
   await fs.rm(root, { recursive: true, force: true });
