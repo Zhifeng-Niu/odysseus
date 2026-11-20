@@ -192,3 +192,62 @@ describe('runTaskSuite — 10-task capability (M3 acceptance)', () => {
     expect(s.totalTokens).toBeGreaterThanOrEqual(15 * 20); // 2 steps × 15 tokens × 10
   }, 60000);
 });
+
+describe('runTaskSuite — life-domain tasks with artifact acceptance (M4)', () => {
+  test('life tasks verify through the declared acceptance.json (not tsc)', async () => {
+    const life = (id: string, file: string, marker: string): TaskCase => ({
+      id,
+      goal: `写 ${file}，内容包含「${marker}」`,
+      verifyLayers: ['progress', 'artifact'],
+      acceptance: { checks: [{ path: file, contains: marker }] },
+      steps: (root) => [
+        writeStep(path.join(root, file), `${marker}\n`),
+        doneStep(),
+      ],
+      verify: (root) =>
+        fs.readFileSync(path.join(root, file), 'utf8').includes(marker),
+    });
+    const cases: TaskCase[] = [
+      life('life-weekly', 'weekly-report.md', '本周完成基线扩样'),
+      life('life-expense', 'expenses.csv', '日期,金额,说明'),
+      life('life-reminder', 'reminders.md', '提醒一：跑步'),
+    ];
+    const s = await runTaskSuite(cases);
+    expect(s.total).toBe(3);
+    expect(s.succeeded).toBe(3);
+    expect(s.successRate).toBeCloseTo(1);
+    // Fast: no tsc (non-ts files) — proves the artifact layer carries these.
+  }, 60000);
+
+  test('artifact miss fails a life task through the gate', async () => {
+    const cases: TaskCase[] = [
+      {
+        id: 'life-miss',
+        goal: 'write report.md with 周报',
+        verifyLayers: ['progress', 'artifact'],
+        acceptance: { checks: [{ path: 'report.md', contains: '周报' }] },
+        steps: (root) => [
+          writeStep(path.join(root, 'report.md'), '不相干的内容'),
+          doneStep(),
+        ],
+        verify: () => false,
+      },
+    ];
+    const s = await runTaskSuite(cases);
+    expect(s.succeeded).toBe(0);
+    expect(s.results[0]?.outcome).toBe('failure'); // artifact gate caught it
+  });
+});
+
+describe('BASELINE_TASKS — M4 scale + life coverage', () => {
+  test('has ≥15 tasks and every life task declares acceptance', async () => {
+    const { BASELINE_TASKS } = await import('../../src/eval/baseline-tasks.js');
+    expect(BASELINE_TASKS.length).toBeGreaterThanOrEqual(15);
+    const lifeTasks = BASELINE_TASKS.filter((t) => t.acceptance !== undefined);
+    expect(lifeTasks.length).toBeGreaterThanOrEqual(5);
+    for (const task of lifeTasks) {
+      expect(task.verifyLayers).toEqual(['progress', 'artifact']);
+      expect((task.acceptance?.checks.length ?? 0)).toBeGreaterThan(0);
+    }
+  });
+});
