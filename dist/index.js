@@ -5,6 +5,7 @@ import { ToolRegistry } from './tools/registry.js';
 import { FileReadTool, FileWriteTool, FileEditTool } from './tools/file.js';
 import { GitTool } from './tools/git.js';
 import { BashTool } from './tools/bash.js';
+import { ReminderTool, NoteTool } from './tools/personal.js';
 import { runAgentTurn } from './agent/loop.js';
 import { installProcessGuards } from './agent/guards.js';
 import { CerebellumOrchestrator } from './cerebellum/orchestrator.js';
@@ -111,6 +112,9 @@ async function main() {
     if (!registry.get('bash')) {
         registry.register(new BashTool());
     }
+    // M3 生活工具面 — personal agent 的非编码工具（文件后端，无网络）。
+    registry.register(new ReminderTool());
+    registry.register(new NoteTool());
     const tracePath = join(cwd, '.odysseus', 'trace.jsonl');
     if (isInteractive() && process.argv.slice(2).length === 0) {
         runVoyageConsole(cwd, provider, registry, tracePath, config.model);

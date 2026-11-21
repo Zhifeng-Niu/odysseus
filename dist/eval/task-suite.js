@@ -71,12 +71,18 @@ async function runSingleCase(taskCase) {
     registry.register(new FileReadTool());
     const tracePath = path.join(root, '.odysseus', 'trace.jsonl');
     await fs.mkdir(path.dirname(tracePath), { recursive: true });
+    // M4: declared acceptance lands BEFORE the waypoint runs — the artifact
+    // verify layer reads it at gate time (declared, not self-graded).
+    if (taskCase.acceptance) {
+        await fs.mkdir(path.join(root, '.odysseus'), { recursive: true });
+        await fs.writeFile(path.join(root, '.odysseus', 'acceptance.json'), JSON.stringify(taskCase.acceptance, null, 2) + '\n', 'utf8');
+    }
     const orch = new CerebellumOrchestrator({
         cwd: root,
         provider,
         registry,
         tracePath,
-        verifyLayers: ['syntax'],
+        verifyLayers: taskCase.verifyLayers ?? ['syntax'],
         autoApprove: true,
     });
     let outcome = 'abandoned';

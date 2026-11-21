@@ -1,6 +1,7 @@
 import { Box, Text } from 'ink';
 import type { OrchestratorEvent } from '../orchestrator/events.js';
 import { theme } from './theme.js';
+import { summarizeWaypoint, type WaypointSummary } from './waypoint-summary.js';
 
 interface WaypointCardProps {
   waypointId: string;
@@ -19,47 +20,13 @@ interface WaypointCardProps {
   planStepInfo?: { current: number; total: number; planGoal: string };
 }
 
-interface WaypointSummary {
-  status: 'active' | 'committed' | 'rolled-back' | 'failed' | 'awaiting-approval';
-  iterationsUsed: number;
-  commitSha?: string;
-  failReason?: string;
-}
-
-function summarize(events: readonly OrchestratorEvent[]): WaypointSummary {
-  let status: WaypointSummary['status'] = 'active';
-  let iterationsUsed = 0;
-  let commitSha: string | undefined;
-  let failReason: string | undefined;
-
-  for (const e of events) {
-    if (e.type === 'waypoint-iteration') {
-      iterationsUsed = Math.max(iterationsUsed, e.iteration);
-    } else if (e.type === 'waypoint-awaiting-approval') {
-      status = 'awaiting-approval';
-    } else if (e.type === 'waypoint-committed') {
-      status = 'committed';
-      commitSha = e.sha;
-      iterationsUsed = e.iterationsUsed;
-    } else if (e.type === 'waypoint-rolled-back') {
-      status = 'rolled-back';
-      failReason = e.reason;
-      iterationsUsed = e.iterationsUsed;
-    } else if (e.type === 'waypoint-failed') {
-      status = 'failed';
-      failReason = e.error;
-    }
-  }
-
-  return { status, iterationsUsed, ...(commitSha !== undefined ? { commitSha } : {}), ...(failReason !== undefined ? { failReason } : {}) };
-}
-
 const STATUS_BADGE: Record<WaypointSummary['status'], { label: string; color: string }> = {
   active: { label: 'ACTIVE', color: theme.waypoint.started },
   'awaiting-approval': { label: 'AWAIT', color: theme.waypoint.awaitingApproval },
   committed: { label: 'OK', color: theme.waypoint.committed },
   'rolled-back': { label: 'ROLLBACK', color: theme.waypoint.rolledBack },
   failed: { label: 'FAIL', color: theme.waypoint.failed },
+  chat: { label: 'CHAT', color: theme.text.secondary },
 };
 
 function shortId(waypointId: string): string {
@@ -77,7 +44,7 @@ export function WaypointCard({
   events,
   planStepInfo,
 }: WaypointCardProps): JSX.Element {
-  const summary = summarize(events);
+  const summary = summarizeWaypoint(events);
   const badge = STATUS_BADGE[summary.status];
 
   return (

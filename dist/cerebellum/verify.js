@@ -30,6 +30,7 @@ export async function runVerify(input) {
         tests: 'skipped',
         metric: 'skipped',
         progress: 'skipped',
+        artifact: 'skipped',
     };
     const details = [];
     for (const layer of input.layers) {
@@ -83,6 +84,17 @@ export async function runVerify(input) {
             results.tests = r.exitCode === 0 ? 'pass' : 'fail';
             if (r.exitCode !== 0) {
                 details.push(`--- tests ---\n${r.stdout}\n${r.stderr}`);
+            }
+        }
+        if (layer === 'artifact') {
+            // M1 pluggable verification — declared acceptance (never self-graded).
+            // No spec = nothing to check = 'skipped' (gate treats non-pass as fail:
+            // configuring the artifact layer REQUIRES a declared spec).
+            const { runArtifactVerify } = await import('./verify-artifact.js');
+            const r = await runArtifactVerify(input.cwd);
+            results.artifact = r.result;
+            if (r.result !== 'pass' && r.detail) {
+                details.push(`--- artifact ---\n${r.detail}`);
             }
         }
         if (layer === 'progress') {

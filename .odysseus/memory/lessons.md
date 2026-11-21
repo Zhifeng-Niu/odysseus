@@ -63,36 +63,4 @@ Recent sprints show tests being added immediately after recovery features ship. 
 Early termination, retry limiters, and dedup checks all shipped without tests because they were urgent fixes. Each untested loop-prevention mechanism is a latent infinite-loop risk. Test-follows-ship priority should be highest for code that prevents runaway loops.
 
 **[RESOLVED 2026-07-21]** Retry limiter test debt is paid — `src/cerebellum/retry-counter.ts` (Iteration 45) has `tests/unit/retry-counter.test.ts` (33 tests, Iteration 57) + `tests/unit/retry-counter-invariants.test.ts`. The lesson (test debt accumulates on loop-prevention code) remains valid as a general principle; the specific retry-limiter instance it tracked no longer exists.
-## [2026-11-20T15:52:38.606Z] verify失败: unknown · 创建 counter.ts，实现并导出函数 inc(n: number): number，返回 n + 1。
-- **id**: mem_a8e7ce8473
-- **source**: failure
-- **tags**: autolearn, fp:ab6495f4678b
-- **related**: wp_mwp5qh0q003
-
-**症状**
-agent emitted [CONVERSATIONAL-DONE]: conversational turn complete (no code task to perform). Last reply: "好的 —— `src/util/counter.ts` 已创建并导出 `inc(n: number): number`，返回 `n + 1`。任务已完成，无需进一步操作。"
-
-**根因**
-验证失败的具体层未知（无层前缀），需结合症状判断。
-
-**修法方向**
-复现失败场景，定位失败层后按对应策略修复。
-
-## [2026-11-20T15:54:04.890Z] verify失败: syntax · 创建 three.ts（export const three = 3;）和 four.ts（从 three 导入并导出 …(截断)
-- **id**: mem_aa38da15be
-- **source**: failure
-- **tags**: autolearn, fp:4d4261e9b99d
-- **related**: wp_mwp5s141008
-
-**症状**
---- syntax ---
-../../../../../../../var/folders/d0/4fkh8gy10ys1pfzdyt5_dh480000gn/T/task-baseline-WZeldw/four.ts(1,23): error TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled.
-
-2: Command failed: node /Users/stbz/code/Odysseus/.claude/worktrees/musing-galileo-ad89a7/node_modules/typescript/bin/tsc --noEmit /var/folders/d0/4fkh8gy10ys1pfzdyt5_dh480000gn/T/task-baseline-WZeldw/four.ts /var/folders/d0/4fkh8gy10ys1pfzdyt5_dh480000gn/T/task-baseline-WZeldw/three.ts
-
-**根因**
-本次改动引入了编译错误（tsc 输出见症状），提交前未通过语法验证层。
-
-**修法方向**
-按症状中的 tsc 报错逐条修复类型/语法问题；修复后再走验证流程。
 

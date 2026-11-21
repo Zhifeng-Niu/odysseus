@@ -191,5 +191,29 @@ export const BASELINE_TASKS = [
             return r.includes('# live baseline task') && r.includes('baseline-run-note');
         },
     },
+    // ── M4 生活域任务（artifact 验收层，progress+artifact 双层验证）──
+    lifeTask('life-weekly-report', '写本周周报 weekly-report.md，必须包含一行「本周完成：基线扩样 9/10」。', 'weekly-report.md', '本周完成：基线扩样 9/10'),
+    lifeTask('life-expense-csv', '创建记账文件 expenses.csv，首行为表头「日期,金额,说明」，并补一行今日示例支出。', 'expenses.csv', '日期,金额,说明'),
+    lifeTask('life-reminders', '创建提醒清单 reminders.md，包含三行：「提醒一：明早跑步」「提醒二：妈妈复查」「提醒三：还信用卡」。', 'reminders.md', '提醒一：明早跑步'),
+    lifeTask('life-meeting-notes', '写会议纪要 meeting-notes.md，包含「会议纪要」标题和「行动项：跟进发布时间」一行。', 'meeting-notes.md', '行动项：跟进发布时间'),
+    lifeTask('life-reading-notes', '写读书笔记 reading-notes.md，包含书名《奥德赛》和一句「摘要：归乡与身份的漫长试炼」。', 'reading-notes.md', '摘要：归乡与身份的漫长试炼'),
 ];
+/**
+ * 生活域任务工厂：goal + artifact 验收声明（path/contains），双层验证
+ * progress+artifact（无 tsc——非代码产物），harness 级 verify 仍做
+ * artifact 同判（outcome ∧ artifact 双验的 eval 契约不变）。
+ */
+function lifeTask(id, goal, file, marker) {
+    return {
+        id,
+        goal,
+        steps: (root) => [
+            writeStep(join(root, file), `${marker}\n`),
+            doneStep(),
+        ],
+        verify: async (root) => (await fs.readFile(join(root, file), 'utf8')).includes(marker),
+        acceptance: { checks: [{ path: file, contains: marker }] },
+        verifyLayers: ['progress', 'artifact'],
+    };
+}
 //# sourceMappingURL=baseline-tasks.js.map

@@ -119,16 +119,19 @@ export async function runInit(options: InitOptions): Promise<InitReport> {
   //    (the env is still written; the human fixes the key and re-runs).
   let verified = false;
   let verifyError: string | undefined;
-  if (apiKey) {
-    const ping = options.ping ?? defaultPing;
+  if (apiKey && options.ping) {
+    // runInit stays PURE: no hidden network. The CLI adapter (runInitCli)
+    // injects defaultPing; tests inject fakes or omit ping entirely.
     try {
-      const result = await ping(apiKey, baseUrl, model);
+      const result = await options.ping(apiKey, baseUrl, model);
       verified = result.ok;
       if (!result.ok) verifyError = result.error ?? 'unknown';
     } catch (err) {
       verifyError = err instanceof Error ? err.message : String(err);
     }
     steps.push(verified ? 'key 验证通过（live ping ok）' : `key 验证失败：${verifyError ?? 'unknown'}`);
+  } else if (apiKey) {
+    steps.push('未注入 ping，跳过 live 验证');
   } else {
     steps.push('未提供 key，跳过验证（agent 对话与 /ithaca 仍可用）');
   }
@@ -198,6 +201,7 @@ export async function runInitCli(_userInput: string): Promise<void> {
   const model = flag('--model') ?? process.env.ODYSSEUS_LLM_MODEL;
   const report = await runInit({
     cwd: resolve(cwd),
+    ping: defaultPing,
     ...(apiKey ? { apiKey } : {}),
     ...(baseUrl !== undefined ? { baseUrl } : {}),
     ...(model !== undefined ? { model } : {}),
