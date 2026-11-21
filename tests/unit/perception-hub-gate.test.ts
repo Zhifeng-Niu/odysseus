@@ -7,6 +7,7 @@
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createPerceptionHub, type PerceptionHubOptions } from '../../src/perception/hub.js';
 import type { PerceptionChannelAdapter, PerceptionEvent } from '../../src/perception/types.js';
 import { loadBacklogFile } from '../../src/cerebellum/backlog.js';
@@ -75,5 +76,23 @@ describe('PerceptionHub gate — selective enqueue', () => {
       gate: async () => false,
     });
     expect(hub.collect(new Date())).toHaveLength(1);
+  });
+});
+
+describe('createVoyagePerceptionHub — real-core integration', () => {
+  test('empty protected core blocks clock check-in (real store, no fake)', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'hub-bootstrap-'));
+    try {
+      const { createVoyagePerceptionHub } = await import('../../src/perception/bootstrap.js');
+      const hub = await createVoyagePerceptionHub(root);
+      const n = await hub.drainToBacklog(root, new Date());
+      // Empty core → clock check-in gated out. Holds both before 08:00
+      // (clock emits nothing) and after (gate blocks) — deterministic.
+      expect(n).toBe(0);
+      const file = await loadBacklogFile(root);
+      expect(file.items.filter((i) => i.goal.includes('[perception:clock]'))).toHaveLength(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

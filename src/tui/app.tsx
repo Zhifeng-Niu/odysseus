@@ -143,17 +143,12 @@ export function App({ orch, model }: AppProps): JSX.Element {
     let timer: ReturnType<typeof setInterval> | undefined;
     void (async () => {
       try {
-        const { createFileWatcher } = await import('../perception/file-watcher.js');
-        const { createClockChannel } = await import('../perception/clock.js');
-        const { createPerceptionHub } = await import('../perception/hub.js');
+        // M2 感知守卫：装配（含「保护核非空才放行 clock check-in」的 gate）
+        // 收拢在 perception/bootstrap.ts——app.tsx 只消费现成的 hub。
+        const { createVoyagePerceptionHub } = await import('../perception/bootstrap.js');
         const { resolve } = await import('node:path');
-        const hub = createPerceptionHub({
-          channels: [
-            createFileWatcher([resolve(process.cwd(), 'src')]),
-            createClockChannel(['08:00']),
-          ],
-        });
         const rootDir = resolve(process.cwd(), '.odysseus');
+        const hub = await createVoyagePerceptionHub(rootDir);
         timer = setInterval(() => {
           void hub.drainToBacklog(rootDir, new Date()).catch(() => undefined);
         }, 5 * 60_000);
