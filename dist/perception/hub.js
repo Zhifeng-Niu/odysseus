@@ -9,6 +9,7 @@
 import { enqueueBacklog } from '../cerebellum/backlog-enqueue.js';
 export function createPerceptionHub(options) {
     const channels = options.channels;
+    const gate = options.gate;
     return {
         collect(now) {
             const events = [];
@@ -19,10 +20,21 @@ export function createPerceptionHub(options) {
         },
         async drainToBacklog(rootDir, now) {
             const events = this.collect(now);
+            let enqueued = 0;
             for (const event of events) {
+                if (gate) {
+                    try {
+                        if (!(await gate(event)))
+                            continue;
+                    }
+                    catch {
+                        continue; // fail-closed: a broken gate blocks, never crashes
+                    }
+                }
                 await enqueueBacklog(rootDir, `[perception:${event.channel}] ${event.summary}`, 'perception');
+                enqueued += 1;
             }
-            return events.length;
+            return enqueued;
         },
     };
 }
