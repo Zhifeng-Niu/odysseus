@@ -1,74 +1,80 @@
-# autodev — Personal Agent 完全体·personal 化（nov20c）
+# autodev — 舒服的产品·显示分级与感知守卫（nov21）
 
 ## Project Context
 
-Odysseus Spike：编码域的自主 agent 已完全体（nov20b：评测/学习/语义检索/防护/
-预测感知全绿，live 任务基线 9/10）。**本 run 把「以编码为验证域的 Spike」推进为
-「个人 agent」**：内核（保护核/记忆/lesson/探针/防注入）已域无关，差的是
-①验证层可插拔 ②personal 身份与策略 ③生活工具面。真实 GLM 可用
-（.env 已配 coding-plan 端点），基线见 docs/baseline-2026-11-20.md。
+Odysseus Spike personal 化已完成（nov20c：artifact 验收层/personal 策略/生活
+工具/15 任务 live 14/15）。用户实测 voyage console 反馈：**一句话刷满屏**——
+聊天轮次显示 ROLLBACK、home 目录下感知 check-in 自动触发并把失败探测刷了
+满墙。透明性保留，响度必须分级。
+
+关键接缝（已勘察）：`[ROLLBACK]` 标签在 `src/tui/waypoint-card.tsx:61` 的
+STATUS_BADGE；状态由纯函数 `summarize(events)` 推导（可抽测）；`summarize`
+把有 `waypoint-rolled-back` 事件的航点一律标 ROLLBACK——纯聊天航点（零工具
+调用 + 有 assistant 回复）被误标。感知侧：`perception/clock.ts` 无条件产生
+check-in 事件，`perception/hub.ts` 入队无守卫。
 
 - Build: `npm run build`；Typecheck: `npm run typecheck`；Test: `npm test`
-- 套件基线 ~4908 tests；已知 flaky 家族见 Constraints
+- ink-testing-library 在 devDeps（TUI 渲染测试可用）
+- 已知 flaky 见 Constraints
 
 ## Objective
 
-**M1 可插拔验证层·artifact 类型（3 分）**：VerifyLayer 增加 `'artifact'`——
-runVerify 读 `${cwd}/.odysseus/acceptance.json`（声明式验收：`[{path, contains?,
-existsOnly?}]`，由任务/harness 声明而非 agent 自评）。验收测试：spec 存在且全部
-满足=pass；任一不满足=fail（detail 列出缺哪条）；无 spec=skipped；损坏 spec
-（坏 JSON）=fail。编排器零改动（config.verifyLayers 本就可传任意层列表）。
+**M1 航点显示分级·CHAT 标签（3 分）**：`summarize` 抽到
+`src/tui/waypoint-summary.ts`（纯函数，单测）；规则扩展——rolled-back +
+**零工具调用** + 有 assistant 回复 → 状态 `'chat'`、标签 `CHAT`（不再误标
+ROLLBACK）；有工具调用的失败航点保持 ROLLBACK（诚实）。ink-testing-library
+渲染测试：用真实会话 fixture（「你好你是谁」事件序列形态）断言。
 
-**M2 personal 身份与策略（2 分）**：①`odysseus init` 种子
-`.odysseus/self-model.md`（个人 agent 身份：不只是编码 agent，承接生活任务，
-声明 artifact 验收习惯）；②strategy-prompt 增加个人域段落——goal 无代码产物
-时引导 agent 用 artifact 验收声明而非硬套 progress 层。验收=单测覆盖种子内容
-与策略段落文本（fixture 断言），orchestrator 不动。
+**M2 感知守卫（2 分）**：`PerceptionHubOptions` 增可注入
+`gate?: (event) => Promise<boolean>`（false → 该事件不入队）；index.ts
+voyage console 接线：clock 事件仅当保护核非空（renderForPrompt 非空）放行。
+hub 单测用 fake gate；hub 保持纯净（不 import ithaca）。
 
-**M3 生活工具面 v0（2 分）**：新增两个本地机械工具（走 registry 既有契约，
-含 quarantine 产物 + mutates 声明）：`reminder add|list|done`（文件后端
-`~/.odysseus/reminders.json`）与 `note write|read`（`~/.odysseus/notes/`）。
-index.ts 注册（守卫更新带理由）。验收=工具单测（相对 cwd 注入、无网络）。
+**M3 常规步骤折叠·错误浮出（3 分）**：WaypointCard 的事件列表分级渲染——
+**连续成功的工具调用**折叠为单行摘要（`· N tool calls ok（file-read ×2,
+git ×1）`）；错误（✗）、verify 失败、审批、assistant 回复**全文浮出**。
+折叠逻辑抽纯函数 `collapseToolCalls(events)` 单测 + 渲染断言。
 
-**M4 生活域基线扩样 + live（3 分）**：baseline-tasks 增 ≥5 个生活域任务
-（写周报 md/记账 csv/提醒文件/会议纪要/读书笔记——全部 artifact 验收），
-verifyLayers 用 `['progress','artifact']`；harness 能力测试（scripted 全绿）
-+ live ≥15 任务跑一轮记录进 baseline 文档。
+**M4 真实会话 fixture 全量验收（2 分）**：把用户实跑的两次航点（「你好你是
+谁」聊天 + home-dir check-in 探测墙）录成事件 fixtures，新渲染下断言：
+①聊天航点零 ROLLBACK 字样、有 CHAT ②check-in 的每次错误探测全文保留（可
+归因）③成功工具调用折叠 ④events.jsonl 记录契约不变（轨迹无丢失）。
 
-**完成判据**：①M1–M4 各有真实测试且全绿 ②全量 `npm test` 无新失败（已知
-flaky 按单跑判定）③build + typecheck 干净 ④M4 live ≥15 记录在案。
+**完成判据**：①M1–M4 测试全绿 ②全量 `npm test` 无新失败（已知 flaky 按单
+跑判定）③build + typecheck 干净。
 
 ## Scope
 
-- IN SCOPE: `src/**`（OUT 除外）、`tests/**`、`docs/**`
-- OUT OF SCOPE: `src/cerebellum/orchestrator.ts`（人工审查规则——自主循环禁改）、
-  `package.json`、`tsconfig.json`、`.github/**`、既有测试删除/弱化
+- IN SCOPE: `src/tui/**`、`src/perception/**`、`src/index.ts`（接线，守卫
+  更新带理由）、`tests/**`、`docs/**`
+- OUT OF SCOPE: `src/cerebellum/orchestrator.ts`（人工审查规则——自主循环
+  禁改）、`package.json`、`tsconfig.json`、`.github/**`、既有测试删除/弱化、
+  `events.jsonl` 记录契约（M4 验收恰恰要求它不变）
 
 ## Constraints
 
-- 每文件 <300 行；形状守卫更新必须附理由注释
-- 子进程只走 `execFileNoThrow` / spawn argv + `shell:false`；禁 `child_process.exec`
-- ESM `.js` 导入；`noUncheckedIndexedAccess` / `exactOptionalPropertyTypes` 全绿；
-  禁 `as any`；不可变模式
-- TDD：RED→GREEN 检查点提交；计分区间=上个 keep..HEAD
-- 测试不依赖网络（live 只在 scripts）
-- 已知 flaky：voyage-loop / voyage-stats-invariants（存量）/ agent-guards stray；
-  含真实 tsc/vitest 的测试需显式 30s 超时
-- memory 条目 body 禁用 `## ` 标题
+- 每文件 <300 行（`app.tsx` 已 300 满载、`chat-panel.tsx` 334——新逻辑一律
+  放独立模块，改动处只加引用）；形状守卫更新附理由
+- TUI 渲染测试用 ink-testing-library 或纯函数直测（display-level 逻辑必须
+  抽纯函数，组件只做渲染）
+- `summarize`/`collapseToolCalls` 等纯函数放 `waypoint-summary.ts`；不 import
+  ink（保证 Node 直测）
+- 子进程只走 `execFileNoThrow`；ESM `.js` 导入；禁 `as any`；不可变模式
+- 已知 flaky：voyage-loop / voyage-stats-invariants（存量）/ agent-guards
+  stray；含真实子进程的测试显式 30s 超时
 
 ## Quality Gate Weights
 
 权重：L1=0.30, L2=0.25, L3=0.25, L4=0.20。
-**L2 = 里程碑覆盖度**：M1=3、M2=2、M3=2、M4=3（满分 10）。验收测试全绿=满分，
-半=半分，未做=0。基线：**7.50**。
-阶梯：M1→8.25 / +M2→9.00 / +M3→9.75 / +M4→10.00。
+**L2 = 里程碑覆盖度**：M1=3、M2=2、M3=3、M4=2（满分 10）。基线 **7.50**。
+阶梯：M1→8.25 / +M2→8.75 / +M3→9.50 / +M4→10.00。
 
 ## Ideas Backlog
 
-1. M1 artifact 验证层（先做——生活任务的验收基座）
-2. M2 personal 身份与策略
-3. M3 生活工具面 v0
-4. M4 生活域基线扩样 + live
+1. M1 CHAT 标签 + summarize 抽取（先做——直接回应用户抱怨）
+2. M2 感知守卫（hub gate 可注入 + 保护核非空接线）
+3. M3 常规折叠·错误浮出（分级显示主体）
+4. M4 真实会话 fixtures 全量验收（收官）
 
 ## Baseline
 
