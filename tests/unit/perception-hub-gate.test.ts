@@ -35,7 +35,7 @@ describe('PerceptionHub gate — selective enqueue', () => {
 
   test('gate false → event not enqueued; gate true → enqueued', async () => {
     const opts: PerceptionHubOptions = {
-      channels: [fixedChannel([event('daily check-in'), event('clock', 'other')])],
+      channels: [fixedChannel([event('daily check-in'), event('other tick')])],
       gate: async (e) => e.summary !== 'daily check-in',
     };
     const hub = createPerceptionHub(opts);
@@ -43,12 +43,12 @@ describe('PerceptionHub gate — selective enqueue', () => {
     expect(n).toBe(1); // one gated out
     const file = await loadBacklogFile(rootDir);
     expect(file.items).toHaveLength(1);
-    expect(file.items[0]!.goal).toContain('other');
+    expect(file.items[0]!.goal).toContain('other tick');
   });
 
   test('no gate → all events enqueue (default behavior unchanged)', async () => {
     const hub = createPerceptionHub({
-      channels: [fixedChannel([event('check-in'), event('clock', 'second')])],
+      channels: [fixedChannel([event('check-in'), event('second tick')])],
     });
     const n = await hub.drainToBacklog(rootDir, new Date());
     expect(n).toBe(2);
