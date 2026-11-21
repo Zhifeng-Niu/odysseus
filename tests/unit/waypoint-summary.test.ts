@@ -84,3 +84,50 @@ describe('summarizeWaypoint — CHAT classification', () => {
     expect(JSON.stringify(events)).toBe(snapshot);
   });
 });
+
+// ─── M3 常规折叠·错误浮出 ──────────────────────────────────────────────
+import { collapseToolCalls } from '../../src/tui/waypoint-summary.js';
+
+function started(i: number, tool = 'file-read'): OrchestratorEvent {
+  return { type: 'tool-call-started', waypointId: 'w', callId: `c${i}`, tool, args: {}, ts: i };
+}
+function completed(i: number, ok: boolean): OrchestratorEvent {
+  return { type: 'tool-call-completed', waypointId: 'w', callId: `c${i}`, result: '', ok, ts: i };
+}
+
+describe('collapseToolCalls — ok runs collapse, errors surface', () => {
+  test('three consecutive ok tool calls → one collapsed group', () => {
+    const events = [started(1), completed(1, true), started(2), completed(2, true), started(3), completed(3, true)];
+    const out = collapseToolCalls(events);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ type: 'collapsed-tool-calls', count: 3 });
+  });
+
+  test('an errored call breaks the run — error events stay full', () => {
+    const events = [started(1), completed(1, true), started(2), completed(2, false)];
+    const out = collapseToolCalls(events);
+    // ok pair collapses; the errored pair stays as raw events
+    const collapsed = out.filter((e) => (e as { type?: string }).type === 'collapsed-tool-calls');
+    const raw = out.filter((e) => (e as { type?: string }).type === 'tool-call-started');
+    expect(collapsed).toHaveLength(1);
+    expect(raw.length).toBeGreaterThanOrEqual(1);
+  });
+
+  test('assistant message breaks the run (never swallowed)', () => {
+    const events = [
+      started(1),
+      completed(1, true),
+      { type: 'assistant-message', waypointId: 'w', content: 'answer', ts: 5 } as OrchestratorEvent,
+      started(2),
+      completed(2, true),
+    ];
+    const out = collapseToolCalls(events);
+    const kinds = out.map((e) => (e as { type?: string }).type);
+    expect(kinds).toContain('assistant-message');
+    expect(kinds.filter((k) => k === 'collapsed-tool-calls')).toHaveLength(2);
+  });
+
+  test('empty input → empty output', () => {
+    expect(collapseToolCalls([])).toHaveLength(0);
+  });
+});
