@@ -67,3 +67,70 @@ export function summarizeWaypoint(events: readonly import('../orchestrator/event
     ...(failReason !== undefined ? { failReason } : {}),
   };
 }
+
+// ─── M3 常规折叠·错误浮出 ──────────────────────────────────────────────
+
+export interface CollapsedToolCalls {
+  type: 'collapsed-tool-calls';
+  /** Number of tool calls folded into this group (all completed ok). */
+  count: number;
+  /** tool name → occurrences, for the summary line. */
+  tools: Readonly<Record<string, number>>;
+}
+
+/**
+ * Collapse consecutive SUCCESSFUL tool-call pairs into one summary group;
+ * anything else (assistant, verify, approval, errored calls) passes through
+ * untouched — errors must surface verbatim. A collapsed group is a distinct
+ * item; the renderer draws it as one dim line.
+ */
+export function collapseToolCalls(
+  events: readonly import('../orchestrator/events.js').OrchestratorEvent[]
+): Array<import('../orchestrator/events.js').OrchestratorEvent | CollapsedToolCalls> {
+  const out: Array<import('../orchestrator/events.js').OrchestratorEvent | CollapsedToolCalls> = [];
+  let okCount = 0;
+  const tools: Record<string, number> = {};
+  let pendingStarted: { tool: string; event: import('../orchestrator/events.js').OrchestratorEvent } | null =
+    null;
+
+  const flushOkRun = (): void => {
+    if (okCount > 0) {
+      out.push({ type: 'collapsed-tool-calls', count: okCount, tools: { ...tools } });
+      okCount = 0;
+      for (const key of Object.keys(tools)) delete tools[key];
+    }
+  };
+
+  for (const event of events) {
+    if (event.type === 'tool-call-started') {
+      if (pendingStarted) {
+        // Dangling started (never completed) — surface raw, flush the ok run.
+        flushOkRun();
+        out.push(pendingStarted.event);
+      }
+      pendingStarted = { tool: event.tool, event };
+      continue;
+    }
+    if (event.type === 'tool-call-completed') {
+      if (event.ok && pendingStarted) {
+        okCount += 1;
+        tools[pendingStarted.tool] = (tools[pendingStarted.tool] ?? 0) + 1;
+        pendingStarted = null;
+        continue;
+      }
+      // Errored completion (or completed without a held started): surface raw.
+      flushOkRun();
+      out.push(event);
+      continue;
+    }
+    flushOkRun();
+    if (pendingStarted) {
+      out.push(pendingStarted.event);
+      pendingStarted = null;
+    }
+    out.push(event);
+  }
+  flushOkRun();
+  if (pendingStarted) out.push(pendingStarted.event);
+  return out;
+}
