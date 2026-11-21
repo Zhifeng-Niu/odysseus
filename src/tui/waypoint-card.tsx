@@ -1,7 +1,12 @@
 import { Box, Text } from 'ink';
 import type { OrchestratorEvent } from '../orchestrator/events.js';
 import { theme } from './theme.js';
-import { summarizeWaypoint, type WaypointSummary } from './waypoint-summary.js';
+import {
+  collapseToolCalls,
+  summarizeWaypoint,
+  type CollapsedToolCalls,
+  type WaypointSummary,
+} from './waypoint-summary.js';
 
 interface WaypointCardProps {
   waypointId: string;
@@ -78,9 +83,13 @@ export function WaypointCard({
       <Text color={theme.text.primary}>  {goal}</Text>
 
       <Box flexDirection="column" marginTop={0}>
-        {events.map((e, i) => (
-          <EventLine key={i} event={e} />
-        ))}
+        {collapseToolCalls(events).map((item, i) =>
+          'type' in item && item.type === 'collapsed-tool-calls' ? (
+            <CollapsedLine key={i} group={item as CollapsedToolCalls} />
+          ) : (
+            <EventLine key={i} event={item as OrchestratorEvent} />
+          )
+        )}
       </Box>
 
       {summary.failReason !== undefined && (
@@ -192,4 +201,16 @@ function formatArgsPreview(args: unknown): string {
     .map(([k, v]) => `${k}=${typeof v === 'string' ? `"${v.slice(0, 40)}"` : String(v)}`)
     .join(', ');
   return ` (${preview}${entries.length > 2 ? ', …' : ''})`;
+}
+
+function CollapsedLine({ group }: { group: CollapsedToolCalls }): JSX.Element {
+  const breakdown = Object.entries(group.tools)
+    .map(([tool, n]) => (n > 1 ? `${tool} ×${n}` : tool))
+    .join(', ');
+  return (
+    <Text color={theme.text.muted}>
+      {'  · '}
+      {group.count} tool calls ok（{breakdown}）
+    </Text>
+  );
 }
