@@ -1,80 +1,77 @@
-# autodev — 舒服的产品·显示分级与感知守卫（nov21）
+# autodev — RSI 闭环·自举型递归自我改进（nov24）
 
 ## Project Context
 
-Odysseus Spike personal 化已完成（nov20c：artifact 验收层/personal 策略/生活
-工具/15 任务 live 14/15）。用户实测 voyage console 反馈：**一句话刷满屏**——
-聊天轮次显示 ROLLBACK、home 目录下感知 check-in 自动触发并把失败探测刷了
-满墙。透明性保留，响度必须分级。
-
-关键接缝（已勘察）：`[ROLLBACK]` 标签在 `src/tui/waypoint-card.tsx:61` 的
-STATUS_BADGE；状态由纯函数 `summarize(events)` 推导（可抽测）；`summarize`
-把有 `waypoint-rolled-back` 事件的航点一律标 ROLLBACK——纯聊天航点（零工具
-调用 + 有 assistant 回复）被误标。感知侧：`perception/clock.ts` 无条件产生
-check-in 事件，`perception/hub.ts` 入队无守卫。
+Odysseus Spike personal 化完成（nov20c：artifact 验收层/personal 策略/生活
+工具/15 任务 live 14/15）。用户定位明确：**自举型 RSI agent**——安全结构已备
+（orchestrator 人工审查=控制面隔离、IthacaCore=价值写保护、checkpoint/rollback=
+自改安全网），评测层=适应度函数；**缺的是闭环**：Odysseus 自己从未跑过
+「改自己→测自己→留优汰劣」的完整一圈。
 
 - Build: `npm run build`；Typecheck: `npm run typecheck`；Test: `npm test`
-- ink-testing-library 在 devDeps（TUI 渲染测试可用）
-- 已知 flaky 见 Constraints
+- 套件基线 ~4948 tests；已知 flaky 见 Constraints
+- 真实 GLM key 在 .env（coding-plan 端点）；自改航点跑在**当前 checkout**
+  （checkpoint/rollback 保护真仓库）
 
 ## Objective
 
-**M1 航点显示分级·CHAT 标签（3 分）**：`summarize` 抽到
-`src/tui/waypoint-summary.ts`（纯函数，单测）；规则扩展——rolled-back +
-**零工具调用** + 有 assistant 回复 → 状态 `'chat'`、标签 `CHAT`（不再误标
-ROLLBACK）；有工具调用的失败航点保持 ROLLBACK（诚实）。ink-testing-library
-渲染测试：用真实会话 fixture（「你好你是谁」事件序列形态）断言。
+**M1 fitness 函数确定性化（2 分）**：`src/eval/fitness.ts`——
+`measureFitness(cwd)` 返回复合适应度：{scriptedSuite 成功率（runTaskSuite 驱动
+15 任务，确定性度量编排器/工具机器自身）, unitPass 布尔, score 0-10 加权}。
+验收=单测（scripted 全成功→高分；注入一个必然失败 case→分数下降）。全程无
+live 调用（scripted provider）。
 
-**M2 感知守卫（2 分）**：`PerceptionHubOptions` 增可注入
-`gate?: (event) => Promise<boolean>`（false → 该事件不入队）；index.ts
-voyage console 接线：clock 事件仅当保护核非空（renderForPrompt 非空）放行。
-hub 单测用 fake gate；hub 保持纯净（不 import ithaca）。
+**M2 self-improve runner + 控制面守卫（3 分）**：`src/scripts/self-improve.ts`：
+`--goal "..."` 单发模式——在当前 checkout 跑一个自改航点（checkpoint 自动），
+航点后：fitness before/after 对比 + **控制面守卫**（diff 若触及
+src/cerebellum/orchestrator.ts → 强制回滚 + curve 记录 control-plane rejected，
+纯函数 `guardControlPlane(files)` 可测）。守卫单测 + runner 集成测试
+（scripted provider 或 dry 模式）。
 
-**M3 常规步骤折叠·错误浮出（3 分）**：WaypointCard 的事件列表分级渲染——
-**连续成功的工具调用**折叠为单行摘要（`· N tool calls ok（file-read ×2,
-git ×1）`）；错误（✗）、verify 失败、审批、assistant 回复**全文浮出**。
-折叠逻辑抽纯函数 `collapseToolCalls(events)` 单测 + 渲染断言。
+**M3 递归曲线记录（2 分）**：`rsi-curve.jsonl`（根目录，tracked）——每轮追加
+`{ts, proposal, commit, fitnessBefore, fitnessAfter, delta, verdict}`；纯函数
+`appendCurveEntry` + 读取聚合 `readCurve`（首尾 delta、单调性）。验收=单测
+（追加/聚合/损坏行容错）。
 
-**M4 真实会话 fixture 全量验收（2 分）**：把用户实跑的两次航点（「你好你是
-谁」聊天 + home-dir check-in 探测墙）录成事件 fixtures，新渲染下断言：
-①聊天航点零 ROLLBACK 字样、有 CHAT ②check-in 的每次错误探测全文保留（可
-归因）③成功工具调用折叠 ④events.jsonl 记录契约不变（轨迹无丢失）。
+**M4 live co-evolution 首圈（3 分）**：真实 GLM 跑通第一圈完整递归——从
+backlog 取一条 perception 提案（或已知改进项）→ self-improve 航点自改 →
+fitness 对比 → curve 落一条真实记录 → 审计（全量套件）合格。验收=curve 有
+≥1 条真实记录 + 审计绿 + docs 记录首圈。
 
-**完成判据**：①M1–M4 测试全绿 ②全量 `npm test` 无新失败（已知 flaky 按单
-跑判定）③build + typecheck 干净。
+**完成判据**：①M1–M3 测试全绿 ②全量 `npm test` 无新失败（已知 flaky 按单跑
+判定）③build + typecheck 干净 ④M4 live 首圈在案且审计合格。
 
 ## Scope
 
-- IN SCOPE: `src/tui/**`、`src/perception/**`、`src/index.ts`（接线，守卫
-  更新带理由）、`tests/**`、`docs/**`
-- OUT OF SCOPE: `src/cerebellum/orchestrator.ts`（人工审查规则——自主循环
-  禁改）、`package.json`、`tsconfig.json`、`.github/**`、既有测试删除/弱化、
-  `events.jsonl` 记录契约（M4 验收恰恰要求它不变）
+- IN SCOPE: `src/eval/**`、`src/scripts/**`、`src/cerebellum/**`（OUT 除外）、
+  `src/index.ts`（接线守卫更新带理由）、`tests/**`、`docs/**`、`rsi-curve.jsonl`
+- OUT OF SCOPE: **`src/cerebellum/orchestrator.ts`（本 run 的主题就是这条规则
+  的活体证明——RSI 控制面隔离，禁改）**、`package.json`、`tsconfig.json`、
+  `.github/**`、既有测试删除/弱化
 
 ## Constraints
 
-- 每文件 <300 行（`app.tsx` 已 300 满载、`chat-panel.tsx` 334——新逻辑一律
-  放独立模块，改动处只加引用）；形状守卫更新附理由
-- TUI 渲染测试用 ink-testing-library 或纯函数直测（display-level 逻辑必须
-  抽纯函数，组件只做渲染）
-- `summarize`/`collapseToolCalls` 等纯函数放 `waypoint-summary.ts`；不 import
-  ink（保证 Node 直测）
+- 每文件 <300 行；形状守卫更新附理由
 - 子进程只走 `execFileNoThrow`；ESM `.js` 导入；禁 `as any`；不可变模式
+- TDD：RED→GREEN 检查点提交；计分区间=上个 keep..HEAD
+- 测试不依赖网络；**live 自改只在 scripts 单发模式跑**
 - 已知 flaky：voyage-loop / voyage-stats-invariants（存量）/ agent-guards
-  stray；含真实子进程的测试显式 30s 超时
+  stray；真实子进程测试显式 30s 超时
+- memory 条目 body 禁用 `## `
+- 自改航点跑在当前 checkout：rollback 保护真仓库；控制面守卫是最后一道闸
 
 ## Quality Gate Weights
 
 权重：L1=0.30, L2=0.25, L3=0.25, L4=0.20。
-**L2 = 里程碑覆盖度**：M1=3、M2=2、M3=3、M4=2（满分 10）。基线 **7.50**。
-阶梯：M1→8.25 / +M2→8.75 / +M3→9.50 / +M4→10.00。
+**L2 = 里程碑覆盖度**：M1=2、M2=3、M3=2、M4=3（满分 10）。基线 **7.50**。
+阶梯：M1→8.25 / +M2→9.00 / +M3→9.50 / +M4→10.00。
 
 ## Ideas Backlog
 
-1. M1 CHAT 标签 + summarize 抽取（先做——直接回应用户抱怨）
-2. M2 感知守卫（hub gate 可注入 + 保护核非空接线）
-3. M3 常规折叠·错误浮出（分级显示主体）
-4. M4 真实会话 fixtures 全量验收（收官）
+1. M1 fitness 函数（先做——没有度量就没有 RSI）
+2. M2 self-improve runner + 控制面守卫
+3. M3 递归曲线
+4. M4 live 首圈（从 backlog 提案起步）
 
 ## Baseline
 
