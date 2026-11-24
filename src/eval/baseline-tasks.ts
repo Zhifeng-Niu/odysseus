@@ -209,15 +209,18 @@ export const BASELINE_TASKS: readonly LiveTask[] = [
   },
   {
     id: 'readme-append',
-    goal: 'README.md 已存在（首行是 # live baseline task）。先读它，然后在末尾追加一行 baseline-run-note。',
+    // fixture README 首行是 '# task fixture'（task-suite 的 makeRepo 契约）——
+    // goal/steps/verify 必须与该契约一致（此前假设 live runner 的 README
+    // 内容，scripted 跑 edit 时 oldString not found → 假完成）。
+    goal: 'README.md 已存在（首行是 # task fixture）。先读它，然后在末尾追加一行 baseline-run-note。',
     steps: (root) => [
       readStep(join(root, 'README.md')),
-      editStep(join(root, 'README.md'), '# live baseline task', '# live baseline task\nbaseline-run-note'),
+      editStep(join(root, 'README.md'), '# task fixture', '# task fixture\nbaseline-run-note'),
       doneStep(),
     ],
     verify: async (root) => {
       const r = await fs.readFile(join(root, 'README.md'), 'utf8');
-      return r.includes('# live baseline task') && r.includes('baseline-run-note');
+      return r.includes('# task fixture') && r.includes('baseline-run-note');
     },
   },
   // ── M4 生活域任务（artifact 验收层，progress+artifact 双层验证）──

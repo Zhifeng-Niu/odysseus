@@ -18,9 +18,12 @@ import * as path from 'node:path';
 import { execFileNoThrow } from '../util/exec.js';
 import type { LLMCompletion, LLMProvider } from '../llm/provider.js';
 import type { VerifyLayer } from '../cerebellum/verify.js';
+import type { OrchestratorEvent } from '../orchestrator/events.js';
 import { CerebellumOrchestrator } from '../cerebellum/orchestrator.js';
 import { ToolRegistry } from '../tools/registry.js';
-import { FileReadTool, FileWriteTool } from '../tools/file.js';
+import { FileReadTool, FileWriteTool, FileEditTool } from '../tools/file.js';
+import { GitTool } from '../tools/git.js';
+import { BashTool } from '../tools/bash.js';
 
 export interface TaskCase {
   readonly id: string;
@@ -54,6 +57,8 @@ export interface TaskRunResult {
   readonly tokens: number;
   readonly latencyMs: number;
   readonly iterationsUsed: number;
+  /** 工具级错误摘要（诊断假完成：success 但工具曾报错）。 */
+  readonly toolErrors: readonly string[];
 }
 
 export interface TaskSuiteSummary {
@@ -121,6 +126,13 @@ async function runSingleCase(taskCase: TaskCase): Promise<TaskRunResult> {
   const registry = new ToolRegistry();
   registry.register(new FileWriteTool());
   registry.register(new FileReadTool());
+  // M4: scripted 多步任务（write+edit 等）需要与生产面一致的编辑能力——
+  // 缺 file-edit 时 edit 步骤报 Unknown tool，假 DONE 直接通过（0.73 假低分
+  // 的根因）。Git/Bash 仅供透传（scripted 套件不触发）。
+  registry.register(new FileEditTool());
+  // 生产面对齐：scripted 任务的 bash/git 步骤同样需要这两个工具在册。
+  registry.register(new GitTool());
+  registry.register(new BashTool());
   const tracePath = path.join(root, '.odysseus', 'trace.jsonl');
   await fs.mkdir(path.dirname(tracePath), { recursive: true });
 
@@ -142,6 +154,13 @@ async function runSingleCase(taskCase: TaskCase): Promise<TaskRunResult> {
     tracePath,
     verifyLayers: taskCase.verifyLayers ?? ['syntax'],
     autoApprove: true,
+  });
+
+  const toolErrors: string[] = [];
+  orch.on('event', (event: OrchestratorEvent) => {
+    if (event.type === 'tool-call-completed' && !event.ok) {
+      toolErrors.push(`${event.result ?? event.callId}`);
+    }
   });
 
   let outcome: TaskRunResult['outcome'] = 'abandoned';
@@ -172,6 +191,7 @@ async function runSingleCase(taskCase: TaskCase): Promise<TaskRunResult> {
     tokens,
     latencyMs,
     iterationsUsed,
+    toolErrors,
   };
 }
 
