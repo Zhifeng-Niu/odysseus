@@ -8,11 +8,10 @@
  * 单调性是 RSI 曲线的数学前提：成功率升 ⇒ score 升。
  * runners 可注入：测试零子进程零网络零 live；真实 runner 由 scripts 接。
  */
-import { runTaskSuite, type TaskSuiteSummary } from './task-suite.js';
-import { BASELINE_TASKS } from './baseline-tasks.js';
+import type { TaskSuiteSummary } from './task-suite.js';
 
 export interface FitnessRunners {
-  runScriptedSuite(): Promise<TaskSuiteSummary>;
+  runScriptedSuite(): Promise<Pick<TaskSuiteSummary, 'total' | 'succeeded' | 'successRate'>>;
   runUnitSuite(): Promise<boolean>;
 }
 
