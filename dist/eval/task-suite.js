@@ -18,7 +18,9 @@ import * as path from 'node:path';
 import { execFileNoThrow } from '../util/exec.js';
 import { CerebellumOrchestrator } from '../cerebellum/orchestrator.js';
 import { ToolRegistry } from '../tools/registry.js';
-import { FileReadTool, FileWriteTool } from '../tools/file.js';
+import { FileReadTool, FileWriteTool, FileEditTool } from '../tools/file.js';
+import { GitTool } from '../tools/git.js';
+import { BashTool } from '../tools/bash.js';
 export async function runTaskSuite(cases) {
     const results = [];
     for (const taskCase of cases) {
@@ -69,6 +71,13 @@ async function runSingleCase(taskCase) {
     const registry = new ToolRegistry();
     registry.register(new FileWriteTool());
     registry.register(new FileReadTool());
+    // M4: scripted 多步任务（write+edit 等）需要与生产面一致的编辑能力——
+    // 缺 file-edit 时 edit 步骤报 Unknown tool，假 DONE 直接通过（0.73 假低分
+    // 的根因）。Git/Bash 仅供透传（scripted 套件不触发）。
+    registry.register(new FileEditTool());
+    // 生产面对齐：scripted 任务的 bash/git 步骤同样需要这两个工具在册。
+    registry.register(new GitTool());
+    registry.register(new BashTool());
     const tracePath = path.join(root, '.odysseus', 'trace.jsonl');
     await fs.mkdir(path.dirname(tracePath), { recursive: true });
     // M4: declared acceptance lands BEFORE the waypoint runs — the artifact
@@ -84,6 +93,12 @@ async function runSingleCase(taskCase) {
         tracePath,
         verifyLayers: taskCase.verifyLayers ?? ['syntax'],
         autoApprove: true,
+    });
+    const toolErrors = [];
+    orch.on('event', (event) => {
+        if (event.type === 'tool-call-completed' && !event.ok) {
+            toolErrors.push(`${event.result ?? event.callId}`);
+        }
     });
     let outcome = 'abandoned';
     let iterationsUsed = 0;
@@ -109,6 +124,7 @@ async function runSingleCase(taskCase) {
         tokens,
         latencyMs,
         iterationsUsed,
+        toolErrors,
     };
 }
 /** Throwaway git repo per case — mirrors the e2e fixture, via execFileNoThrow. */
