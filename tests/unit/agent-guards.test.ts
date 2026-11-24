@@ -47,7 +47,16 @@ describe('installProcessGuards', () => {
     installed.uninstall();
     installed = null;
 
-    process.emit('unhandledRejection', new Error('after uninstall'), Promise.resolve());
+    // 守卫已卸载——这次发射在进程层是「真·未处理拒绝」，vitest 的错误收集器
+    // 会逮住它并把整个 run 的退出码打非零（2026-11-21 起污染 fitness 度量）。
+    // 断言目标只是「不再上报到 seen」——临时挂一个吞咽 handler 隔离进程层。
+    const swallow = (): void => {};
+    process.on('unhandledRejection', swallow);
+    try {
+      process.emit('unhandledRejection', new Error('after uninstall'), Promise.resolve());
+    } finally {
+      process.off('unhandledRejection', swallow);
+    }
     expect(seen).toHaveLength(0);
   });
 
