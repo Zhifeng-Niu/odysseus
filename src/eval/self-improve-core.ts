@@ -36,10 +36,10 @@ export type SelfImproveVerdict =
 export interface SelfImproveCycleResult {
   readonly verdict: SelfImproveVerdict;
   readonly fitnessBefore: number;
-  readonly fitnessAfter?: number;
-  readonly delta?: number;
+  readonly fitnessAfter?: number | undefined;
+  readonly delta?: number | undefined;
   readonly changedFiles: readonly string[];
-  readonly violations?: readonly string[];
+  readonly violations?: readonly string[] | undefined;
 }
 
 export interface CycleOptions {
