@@ -14,3 +14,4 @@ coverage/
 autodev_results.tsv
 AUTODEV_NOTES.md
 .claude/autodev-loop.local.md
+rsi-curve.jsonl
