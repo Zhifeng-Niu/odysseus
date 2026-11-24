@@ -23,8 +23,9 @@ describe('PERSONAL_DOMAIN_SECTION — prompt module', () => {
 
   test('ENGINEER_BASE_PROMPT interpolates the personal section', () => {
     expect(ENGINEER_BASE_PROMPT).toContain(PERSONAL_DOMAIN_SECTION);
-    // The original coding-agent anchor stays (baseline comparability).
-    expect(ENGINEER_BASE_PROMPT).toContain('You are Odysseus, a coding agent');
+    // Identity anchor: personal agent, not coding agent.
+    expect(ENGINEER_BASE_PROMPT).toContain("the user's personal agent");
+    expect(ENGINEER_BASE_PROMPT).toContain('个人 agent');
   });
 });
 
